@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход · Invoice Keeper</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/styles.css"><script src="/assets/login.js" defer></script></head>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-form-side">
+      <a class="brand brand-dark" href="/login"><img src="/assets/favicon.svg" alt="" width="37" height="37"><span>invoice<span class="brand-light">keeper</span></span></a>
+      <div class="login-content">
+        <span class="eyebrow">ВАШ ФИНАНСОВЫЙ ПОРЯДОК</span>
+        <h1>С возвращением.</h1>
+        <p class="muted login-intro">Все регулярные платежи — в одном месте.<br>Войдите, чтобы держать их под контролем.</p>
+        <form id="login-form">
+          <label for="username">Логин</label><input id="username" name="username" autocomplete="username" required maxlength="64" placeholder="Ваш логин" autofocus>
+          <label for="password">Пароль</label><div class="password-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="Введите пароль"><button type="button" id="toggle-password" class="text-button" aria-label="Показать пароль">Показать</button></div>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button class="button primary login-submit" type="submit">Войти в панель <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="login-help">Нет доступа? Попросите администратора<br>создать для вас учётную запись.</p>
+      </div>
+      <p class="login-footer">Invoice Keeper <span>Меньше рутины. Больше спокойствия.</span></p>
+    </section>
+    <section class="login-art" aria-label="Invoice Keeper напоминает о сроках и сохраняет историю оплат">
+      <div class="art-top"><span class="small-dot"></span> ОДНИМ ДЕЛОМ МЕНЬШЕ</div>
+      <h2>Помним о платежах.<br><em>Вы — о главном.</em></h2>
+      <div class="art-calendar"><div class="art-card-header"><span>ПЛАТЕЖИ НА МЕСЯЦ</span><span>↗</span></div><div class="art-amount">Всё под контролем<span class="art-check">✓</span></div><div class="art-pay"><span class="art-icon">⌂</span><span>Аренда офиса<small>Напомним за 3 дня</small></span><b>45 000 ₽</b></div><div class="art-pay"><span class="art-icon">☁</span><span>Облачный сервер<small>Каждый месяц, без пропусков</small></span><b>24 $</b></div><div class="art-pay"><span class="art-icon">✓</span><span>Командная подписка<small>История оплаты сохранена</small></span><span class="pill paid">Оплачено</span></div></div>
+      <div class="art-bottom"><span>01 /</span><p>Сроки, статусы и напоминания.<br>Одна понятная система для всей команды.</p></div>
+    </section>
+  </main>
+</body></html>

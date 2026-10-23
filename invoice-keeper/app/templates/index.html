@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Платежи · Invoice Keeper</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/styles.css"><script src="/assets/app.js" defer></script></head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <a class="brand" href="/"><img src="/assets/favicon.svg" alt="" width="36" height="36"><span>invoice<span class="brand-light">keeper</span></span></a>
+      <div class="workspace-label"><span class="workspace-avatar">IK</span><span>Рабочее пространство<small>Финансы команды</small></span><span class="small-dot"></span></div>
+      <p class="nav-label">УПРАВЛЕНИЕ</p>
+      <nav aria-label="Разделы"><button class="nav-item active" data-page="payments"><span aria-hidden="true">▦</span> Платежи <span class="nav-count" id="nav-count">—</span></button><button class="nav-item" data-page="recurring"><span aria-hidden="true">⟳</span> Регулярные</button><button class="nav-item" data-page="calendar"><span aria-hidden="true">▤</span> Календарь</button><button class="nav-item admin-only" data-page="users" hidden><span aria-hidden="true">♙</span> Команда</button><button class="nav-item admin-only" data-page="activity" hidden><span aria-hidden="true">≋</span> Журнал</button></nav>
+      <div class="sidebar-bottom"><div class="reminder-note"><span class="reminder-symbol">↗</span><b>Нужное напоминание.<br>В нужный момент.</b><p>За 3 дня до срока —<br>в ваш Telegram-чат.</p><span id="sidebar-telegram" class="sidebar-tag">Проверяем…</span></div><a class="docs-link" href="/api/v1/docs" target="_blank" rel="noopener">Документация API <span>↗</span></a><button class="profile" id="logout" title="Выйти из учётной записи"><span id="profile-avatar" class="profile-avatar">А</span><span id="profile-name">Загрузка…<small>Учётная запись</small></span><span class="logout-icon" aria-hidden="true">⇥</span></button></div>
+    </aside>
+    <div class="main-shell">
+      <header class="topbar"><span>Рабочее пространство <span class="breadcrumb">/</span> <b id="breadcrumb-page">Платежи</b></span><div class="topbar-right"><span class="small-dot"></span><span id="today-label">—</span><span class="timezone" id="timezone-label">—</span></div></header>
+      <main id="main-content">
+        <section class="page-heading"><div><div class="eyebrow">ПОРЯДОК В ДЕТАЛЯХ</div><h1 id="page-title">Обзор платежей</h1><p id="page-subtitle" class="muted">Планируйте расходы. Отмечайте оплату. Дальше — мы напомним.</p></div><button class="button primary admin-only" id="add-payment" hidden><span>＋</span> Добавить платёж</button></section>
+        <div id="global-error" class="notice error-notice" role="alert" hidden></div>
+        <section id="payments-page" class="page-panel">
+          <div class="period-heading"><div class="period-switcher"><button id="prev-month" class="icon-button" aria-label="Предыдущий месяц">‹</button><h2 id="month-label">—</h2><button id="next-month" class="icon-button" aria-label="Следующий месяц">›</button></div><button id="current-month" class="text-button">Текущий месяц ↗</button></div>
+          <div class="summary-grid" id="summary-cards" aria-live="polite"></div>
+          <div id="due-notice" class="notice" hidden></div>
+          <section class="ledger"><div class="ledger-toolbar"><div class="status-tabs" role="group" aria-label="Статус платежа"><button class="status-tab selected" data-status="all">Все <span id="count-all">0</span></button><button class="status-tab" data-status="unpaid">К оплате <span id="count-unpaid">0</span></button><button class="status-tab" data-status="overdue">Просрочено <span id="count-overdue">0</span></button><button class="status-tab" data-status="paid">Оплачено <span id="count-paid">0</span></button></div><div class="ledger-filters"><label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Найти платёж" aria-label="Найти платёж"></label><select id="currency-filter" aria-label="Валюта"><option value="">Все валюты</option>RUB</option><option>USD</option><option>EUR</option></select></div></div><div id="occurrence-table" class="table-wrap" aria-live="polite"><div class="empty-state">Загружаем платежи…</div></div><div class="ledger-footer"><span id="table-count">—</span><span>Суммы по валютам · без конвертации</span></div></section>
+          <div class="bottom-caption"><span><span class="small-dot"></span> Изменения сохраняются автоматически</span><span id="reminder-caption">Напоминания за 3 дня до срока</span></div>
+        </section>
+        <section id="recurring-page" class="page-panel" hidden><div class="notice">Каждый месяц создаётся отдельный период оплаты. Если нужного числа нет, срок переносится на последний день месяца.</div><div id="recurring-table" class="ledger table-wrap"></div></section>
+        <section id="calendar-page" class="page-panel" hidden><div class="period-heading"><div class="period-switcher"><button id="calendar-prev" class="icon-button" aria-label="Предыдущий месяц">‹</button><h2 id="calendar-month">—</h2><button id="calendar-next" class="icon-button" aria-label="Следующий месяц">›</button></div><span class="muted">План расходов по датам и валютам</span></div><div class="calendar" id="calendar-grid"></div></section>
+        <section id="users-page" class="page-panel" hidden><div class="notice">Администратор задаётся в .env. Здесь можно управлять обычными пользователями: они видят платежи и отмечают оплату.</div><div id="users-table" class="ledger table-wrap"></div></section>
+        <section id="activity-page" class="page-panel" hidden><div id="telegram-notice" class="notice"></div><h2 class="section-title">Напоминания в Telegram</h2><div id="reminder-table" class="ledger table-wrap"></div><h2 class="section-title">Последние действия</h2><div id="audit-table" class="ledger table-wrap"></div></section>
+      </main>
+      <footer class="app-footer"><span>invoicekeeper <span class="footer-dot">·</span> один платёж — одной заботой меньше</span><span>Сделано для спокойной работы ↗</span></footer>
+    </div>
+  </div>
+  <dialog id="modal"><div class="modal-header"><div><span class="eyebrow" id="modal-eyebrow">INVOICE KEEPER</span><h2 id="modal-title">Новый платёж</h2></div><button id="modal-close" class="icon-button" aria-label="Закрыть">×</button></div><div id="modal-body"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body></html>

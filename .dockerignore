@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+data/
+backups/
+bin/
+output/
+.git/
+frontend/node_modules/
+frontend/.next/
+frontend/out/

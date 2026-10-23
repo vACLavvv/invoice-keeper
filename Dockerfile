@@ -1,13 +1,14 @@
-FROM python:3.12-slim
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/invoice-keeper ./cmd/invoice-keeper
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
-    && groupadd --gid 10001 keeper \
-    && useradd --uid 10001 --gid 10001 --no-create-home keeper \
-    && mkdir /data && chown keeper:keeper /data
-COPY --chown=keeper:keeper app ./app
+FROM alpine:3.22
+RUN addgroup -g 10001 keeper && adduser -u 10001 -G keeper -H -D keeper && mkdir /data && chown keeper:keeper /data
+COPY --from=build /out/invoice-keeper /usr/local/bin/invoice-keeper
+WORKDIR /data
 USER keeper
 EXPOSE 8000
-CMD ["python", "-m", "app.run", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["invoice-keeper", "serve", "--host", "0.0.0.0", "--port", "8000"]

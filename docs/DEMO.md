@@ -18,22 +18,22 @@
 
 | Условие кейса | Реализация | Проверка |
 |---|---|---|
-| Закрытая панель и API | Cookie-сессия, закрытые HTML-шаблоны | `test_data_requires_authorization` |
-| Две роли | Проверки зависимостей API, UI по роли | `test_regular_user_permissions_and_user_lifecycle` |
-| Admin из .env | Виртуальная учётная запись id=0 | `test_admin_account_cannot_be_managed_in_panel` |
+| Закрытая панель и API | Cookie-сессия, закрытые HTML-шаблоны | `TestDataRequiresAuthorization` |
+| Две роли | Проверки зависимостей API, UI по роли | `TestRegularUserPermissionsAndUserLifecycle` |
+| Admin из .env | Виртуальная учётная запись id=0 | `TestAdminAccountCannotBeManagedInPanel` |
 | CRUD обычных пользователей | Раздел «Команда», API | lifecycle-тест |
 | Поля платежа | Название, Decimal-сумма, валюта, первый срок, monthly | тесты валидации |
-| Периоды независимо от оплаты | Отдельная таблица occurrences | `test_month_end_anchor_and_unpaid_independent_periods` |
+| Периоды независимо от оплаты | Отдельная таблица occurrences | `TestMonthEndAnchorAndUnpaidIndependentPeriods` |
 | 31-е и високосный год | Исходный anchor_day | тот же тест |
-| Просрочка, исправление, отмена | Вычисляемые поля из двух дат | `test_payment_date_correction_undo_and_due_day` |
-| RUB/USD/EUR отдельно | Целые центы, три отдельных итога | `test_currency_summary_exact_and_date_filters` |
+| Просрочка, исправление, отмена | Вычисляемые поля из двух дат | `TestPaymentDateCorrectionUndoAndDueDay` |
+| RUB/USD/EUR отдельно | Целые центы, три отдельных итога | `TestCurrencySummaryExactAndDateFilters` |
 | Напоминание за 3 дня | Сохраняемая очередь + фоновый поток | reminder-тесты |
-| Позднее добавление | BackgroundTasks после создания | `test_immediate_reminder_after_create_uses_background_task` |
+| Позднее добавление | Фоновый проход сразу после создания | `TestImmediateReminderAfterCreate` |
 | Отсутствие дублей | Уникальный ключ, claim-транзакции, uncertain | тесты двух workers, перезапуска, таймаута |
-| Оплаченный/удалённый не напоминает | Повторная проверка под блокировкой | `test_paid_archived_and_disabled_do_not_send` |
-| Сохранение истории | SQLite WAL + мягкое удаление | `test_archive_and_restart_preserve_history` |
-| Обязательные API | FastAPI-маршруты `/api/v1` | API-тесты + OpenAPI |
-| OpenAPI и Swagger | Статический JSON и локальные ресурсы Swagger | `test_swagger_is_local_and_openapi_is_exported` |
-| Передача решения | README, .env.example, bootstrap, zip | `scripts/package.py` |
+| Оплаченный/удалённый не напоминает | Повторная проверка под блокировкой | `TestPaidArchivedAndDisabledDoNotSend` |
+| Сохранение истории | SQLite WAL + мягкое удаление | `TestArchiveAndRestartPreserveHistory` |
+| Обязательные API | Маршруты `net/http` `/api/v1` | API-тесты + OpenAPI |
+| OpenAPI и Swagger | Статический JSON и локальные ресурсы Swagger | `TestSwaggerIsLocalAndOpenAPIIsServed` |
+| Передача решения | README, .env.example, bootstrap | `git archive` |
 
 Дополнительно: календарь, журнал действий, журнал отправки, адаптивная панель. Email, webhook, вложения, кнопка оплаты внутри Telegram, произвольные частоты и годовой бюджет в эту версию не входят.

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
-import { api, type ImportResult, type Occurrence, type Receipt, type Recurring, type TeamUser } from '@/lib/api';
+import { api, type Forecast, type ImportResult, type Occurrence, type Receipt, type Recurring, type TeamUser } from '@/lib/api';
 import { currencies, date, frequencies, frequencyName, longDate, moneyWith, type Frequency } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
@@ -282,19 +282,25 @@ export function PauseModal({ payment, onClose }: Close & { payment: Recurring })
   );
 }
 
-export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occurrence }) {
+/** Marks a period paid; a forecast date (no period yet) is created and paid ahead in one step. */
+export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occurrence | Forecast }) {
   const { settings, refresh } = useSession();
   const toast = useToast();
-  const paid = o.paid_at !== null;
+  const ahead = !('id' in o);
+  const paid = !ahead && o.paid_at !== null;
   return (
-    <Modal title={paid ? t('Изменить оплату') : t('Отметить оплату')} onClose={onClose}>
+    <Modal title={ahead ? t('Оплатить заранее') : paid ? t('Изменить оплату') : t('Отметить оплату')} onClose={onClose}>
       <ModalForm
         onSubmit={async (data, submitter) => {
           const undo = submitter?.value === 'undo';
-          await api(`/payment-occurrences/${o.id}`, { method: 'PATCH', body: undo ? { paid: false } : { paid: true, paid_at: data.get('paid_at') } });
+          if (ahead) {
+            await api(`/recurring-payments/${o.recurring_payment_id}/periods`, { method: 'POST', body: { due_date: o.due_date, paid_at: data.get('paid_at') } });
+          } else {
+            await api(`/payment-occurrences/${o.id}`, { method: 'PATCH', body: undo ? { paid: false } : { paid: true, paid_at: data.get('paid_at') } });
+          }
           onClose();
           refresh();
-          toast(undo ? t('Оплата отменена. Дата очищена.') : t('Оплата сохранена'));
+          toast(undo ? t('Оплата отменена. Дата очищена.') : ahead ? t('Оплачено заранее') : t('Оплата сохранена'));
         }}
         actions={<>
           {paid
@@ -310,12 +316,12 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
           {o.payment_details && <>{t('Реквизиты: {details}', { details: o.payment_details })}<br /></>}
           {o.wallet && <>{t('Кошелёк ({network}): {address}', { network: o.wallet.network, address: shortAddress(o.wallet.address) })}<br /></>}
           {o.payment_url && !o.wallet?.sanctioned && <><a href={o.payment_url} target="_blank" rel="noopener noreferrer">{t('Открыть ссылку на оплату ↗')}</a><br /></>}
-          {t('Изменение затронет только этот период.')}
+          {ahead ? t('Период появится в календаре уже оплаченным, напоминания по нему не будет.') : t('Изменение затронет только этот период.')}
         </InfoBox>
         <SanctionsWarning wallet={o.wallet} />
         <Field>
           {t('Фактическая дата оплаты')}
-          <Input name="paid_at" type="date" defaultValue={o.paid_at ?? settings.today} max={settings.today} required />
+          <Input name="paid_at" type="date" defaultValue={(!ahead && o.paid_at) || settings.today} max={settings.today} required />
           <small>{t('Оплата в день срока — вовремя. Исправление даты пересчитает просрочку, срок не изменится.')}</small>
         </Field>
       </ModalForm>

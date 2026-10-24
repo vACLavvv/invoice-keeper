@@ -29,6 +29,7 @@ const actions = (): Record<string, string> => ({
   'recurring.update': t('Изменён регулярный платёж'), 'recurring.pause': t('Платёж поставлен на паузу'), 'recurring.resume': t('Платёж снят с паузы'),
   'recurring.import': t('Импорт платежей из CSV'),
   'occurrence.paid': t('Отмечена или исправлена оплата'), 'occurrence.unpaid': t('Отменена оплата'),
+  'occurrence.prepaid': t('Оплачен будущий период'), 'occurrence.create': t('Создан будущий период'),
   'receipt.add': t('Прикреплён чек'), 'receipt.delete': t('Удалён чек'),
   'user.create': t('Создан пользователь'), 'user.update': t('Изменён пользователь'), 'user.delete': t('Удалён пользователь'),
   'password.change': t('Сменён пароль'), '2fa.enable': t('Включён двухфакторный вход'), '2fa.disable': t('Выключен двухфакторный вход'),

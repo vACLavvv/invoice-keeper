@@ -24,6 +24,8 @@ export type Occurrence = {
   frequency: Frequency; category: string | null; assignee: Person | null; receipts: number;
   payment_url: string | null; payment_details: string | null; wallet: Wallet | null; description: string | null;
 };
+/** A scheduled due date without a period yet (GET /payment-forecast). */
+export type Forecast = Omit<Occurrence, 'id' | 'paid_at' | 'status' | 'days_overdue' | 'is_late' | 'active' | 'updated_by' | 'receipts'>;
 export type Recurring = {
   id: number; title: string; amount: string; currency: Currency; first_due_date: string; anchor_day: number;
   frequency: Frequency; category: string | null; assignee: Person | null; active: boolean;

@@ -3,8 +3,8 @@ import styled, { css } from 'styled-components';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { PayModal } from '@/components/PaymentModals';
 import { Shell } from '@/components/Shell';
-import { Notice } from '@/components/ui';
-import { api, type Occurrence } from '@/lib/api';
+import { Muted, Notice } from '@/components/ui';
+import { api, type Forecast, type Occurrence } from '@/lib/api';
 import { moneyWith, statusName, type Status } from '@/lib/format';
 import { locale, t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
@@ -14,12 +14,14 @@ const weekdays = () => Array.from({ length: 7 }, (_, i) => new Intl.DateTimeForm
 
 export default function CalendarPage() {
   const { month, settings } = useSession();
-  const [paying, setPaying] = useState<Occurrence | null>(null);
+  const [paying, setPaying] = useState<Occurrence | Forecast | null>(null);
   const { data, error } = useLoad(() => api<Occurrence[]>('/payment-occurrences'), []);
 
   const [year, m] = month.split('-').map(Number);
   const leading = (new Date(year, m - 1, 1).getDay() + 6) % 7;
   const days = new Date(year, m, 0).getDate();
+  // Periods exist only through next month; later dates come from the schedule and can be paid ahead.
+  const forecast = useLoad(() => api<Forecast[]>(`/payment-forecast?from_date=${month}-01&to_date=${month}-${days}`), [month]).data ?? [];
   const trailing = (7 - ((leading + days) % 7)) % 7;
   const items = (data ?? []).filter((o) => o.due_date.startsWith(month));
 
@@ -27,6 +29,7 @@ export default function CalendarPage() {
     <Shell title={t('Календарь')} heading={t('календарь оплат')} subtitle={t('Как распределяются расходы в течение месяца.')}>
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
       <MonthSwitcher hint={t('план расходов по датам')} />
+      {forecast.length > 0 && <Muted as="p">{t('Пунктиром — будущие сроки по графику. Нажмите, чтобы оплатить заранее.')}</Muted>}
       <Grid>
         {weekdays().map((d) => <Weekday key={d}>{d}</Weekday>)}
         {Array.from({ length: leading }, (_, i) => <Day key={'lead' + i} $blank aria-hidden="true" />)}
@@ -40,6 +43,13 @@ export default function CalendarPage() {
                   title={`${o.title} · ${moneyWith(o.amount, o.currency)} · ${statusName(o.status)}`}>
                   <span>{o.title}</span>
                   <b>{moneyWith(o.amount, o.currency)}</b>
+                </Item>
+              ))}
+              {forecast.filter((f) => f.due_date === day).map((f) => (
+                <Item key={`plan-${f.recurring_payment_id}`} type="button" $status="planned" onClick={() => setPaying(f)}
+                  title={`${f.title} · ${moneyWith(f.amount, f.currency)} · ${t('по графику, можно оплатить заранее')}`}>
+                  <span>{f.title}</span>
+                  <b>{moneyWith(f.amount, f.currency)}</b>
                 </Item>
               ))}
             </Day>
@@ -92,7 +102,7 @@ const DayNumber = styled.span`
   text-align: center;
 `;
 
-const Item = styled.button<{ $status: Status }>`
+const Item = styled.button<{ $status: Status | 'planned' }>`
   display: grid;
   gap: 0.2rem;
   padding: 0.6rem 0.8rem;
@@ -101,7 +111,12 @@ const Item = styled.button<{ $status: Status }>`
   color: ${({ theme }) => theme.color.text};
   text-align: left;
   font-size: 1.2rem;
-  border-left: 0.3rem solid ${({ theme, $status }) => ({ paid: theme.color.paid, unpaid: theme.color.unpaid, overdue: theme.color.overdue })[$status]};
+  border-left: 0.3rem solid ${({ theme, $status }) => ({ paid: theme.color.paid, unpaid: theme.color.unpaid, overdue: theme.color.overdue, planned: theme.color.line })[$status]};
+  ${({ $status, theme }) => $status === 'planned' && css`
+    background: none;
+    border: 1px dashed ${theme.color.line};
+    border-left-width: 0.3rem;
+  `}
   span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: ${({ theme }) => theme.color.muted}; }
   b { font-weight: 500; color: ${({ theme }) => theme.color.strong}; }
   &:hover { background: ${({ theme }) => theme.color.surface}; }

@@ -226,3 +226,11 @@ func (a apiAdapter) ConfirmPairing(w http.ResponseWriter, r *http.Request) {
 func (a apiAdapter) ClaimPairing(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.pairingsClaim)
 }
+
+func (a apiAdapter) ListForecast(w http.ResponseWriter, r *http.Request, _ api.ListForecastParams) {
+	a.s.serveAPI(w, r, a.s.forecast)
+}
+
+func (a apiAdapter) CreatePeriod(w http.ResponseWriter, r *http.Request, _ int) {
+	a.s.serveAPI(w, r, a.s.periodCreate)
+}

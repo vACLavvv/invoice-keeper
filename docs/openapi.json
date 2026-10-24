@@ -3124,6 +3124,144 @@
           }
         }
       }
+    },
+    "/api/v1/payment-forecast": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Прогноз будущих сроков",
+        "operationId": "listForecast",
+        "description": "Сроки активных платежей по графику, которых ещё нет среди периодов оплаты: периоды создаются заранее только до конца следующего месяца. Даты внутри паузы не попадают. Диапазон — не больше 366 дней.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": true,
+            "description": "Срок не раньше этой даты",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": true,
+            "description": "Срок не позже этой даты",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Отсортировано по сроку",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ForecastPeriod"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/recurring-payments/{payment_id}/periods": {
+      "post": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Создать будущий период (оплата наперёд)",
+        "operationId": "createPeriod",
+        "description": "Создаёт период для срока из графика раньше, чем он появится сам, и сразу отмечает оплату, если передана `paid_at`. Срок должен быть по графику, не в прошлом, не дальше трёх лет и не внутри паузы. Если период уже есть — 409.",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "description": "ID регулярного платежа",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeriodCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Период создан",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Occurrence"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5046,6 +5184,100 @@
           "keyed": {
             "type": "boolean",
             "description": "Подписи сделаны ключом из DATA_ENCRYPTION_KEY, которого нет в базе: пересчитать цепочку без него нельзя"
+          }
+        }
+      },
+      "ForecastPeriod": {
+        "type": "object",
+        "description": "Будущий срок по графику платежа, которого ещё нет среди периодов оплаты",
+        "required": [
+          "recurring_payment_id",
+          "title",
+          "amount",
+          "currency",
+          "due_date",
+          "frequency",
+          "category",
+          "assignee",
+          "payment_url",
+          "payment_details",
+          "wallet",
+          "description"
+        ],
+        "properties": {
+          "recurring_payment_id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2027-01-10"
+          },
+          "frequency": {
+            "$ref": "#/components/schemas/Frequency"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Person"
+              }
+            ],
+            "nullable": true
+          },
+          "payment_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "payment_details": {
+            "type": "string",
+            "nullable": true
+          },
+          "wallet": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Wallet"
+              }
+            ],
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PeriodCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "due_date"
+        ],
+        "properties": {
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Срок из графика платежа (см. /payment-forecast)",
+            "example": "2027-01-10"
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "Фактическая дата оплаты, не позже сегодняшней; без неё период создаётся неоплаченным",
+            "example": "2026-10-25"
           }
         }
       }

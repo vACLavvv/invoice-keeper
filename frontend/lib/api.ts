@@ -5,7 +5,16 @@ export type User = { id: number; username: string; display_name: string; role: '
 export type Settings = {
   timezone: string; today: string; telegram_enabled: boolean; team_chat: boolean; bot_username: string;
   reminder_days: number; reminder_interval_seconds: number; support_telegram: string; support_email: string;
-  channels: Record<Channel, boolean>; overdue_reminders: boolean;
+  channels: Record<Channel, boolean>; overdue_reminders: boolean; sanctions_screening: boolean;
+  security: { encryption: boolean; login_alerts: boolean; paid_linked_only: boolean }; key_idle_days: number;
+};
+export type AuditCheck = { ok: boolean; checked: number; broken_id: number | null; reason?: string; keyed: boolean };
+export type WalletNetwork = 'BTC' | 'ETH' | 'TRON';
+/** sanctioned: null — the OFAC list is not loaded yet. */
+export type Screening = { sanctioned: boolean | null; match_name: string | null; match_uid: number | null; match_currency: string | null };
+export type Wallet = Screening & { network: WalletNetwork; address: string };
+export type SanctionsStatus = {
+  enabled: boolean; addresses: number; updated_at: string | null; publish_date: string | null; error: string | null; source: string;
 };
 export type Channel = 'telegram' | 'max' | 'email' | 'webhook';
 export type Person = { id: number; display_name: string; username: string };
@@ -13,12 +22,12 @@ export type Occurrence = {
   id: number; recurring_payment_id: number; title: string; amount: string; currency: Currency; due_date: string;
   paid_at: string | null; status: Status; days_overdue: number; is_late: boolean; active: boolean; updated_by: string | null;
   frequency: Frequency; category: string | null; assignee: Person | null; receipts: number;
-  payment_url: string | null; payment_details: string | null;
+  payment_url: string | null; payment_details: string | null; wallet: Wallet | null;
 };
 export type Recurring = {
   id: number; title: string; amount: string; currency: Currency; first_due_date: string; anchor_day: number;
   frequency: Frequency; category: string | null; assignee: Person | null; active: boolean;
-  payment_url: string | null; payment_details: string | null;
+  payment_url: string | null; payment_details: string | null; wallet: Wallet | null;
   paused: { from: string; until: string | null } | null; next_due_date: string | null;
   unpaid_count: number; created_at: string; deleted_at: string | null;
 };
@@ -72,6 +81,7 @@ const fieldName = (field: string) => ({
   current_password: t('Текущий пароль'), new_password: t('Новый пароль'), code: t('Код'), url: t('Ссылка'),
   file: t('Файл'), category: t('Категория'), assignee_id: t('Ответственный'), until: t('Дата окончания'), frequency: t('Периодичность'),
   payment_url: t('Ссылка на оплату'), payment_details: t('Реквизиты'), access: t('Доступ'), expires_in_days: t('Срок действия'), name: t('Название'),
+  wallet_network: t('Сеть кошелька'), wallet_address: t('Адрес кошелька'), network: t('Сеть'), address: t('Адрес'),
 } as Record<string, string>)[field] ?? field;
 
 let csrfToken = '';

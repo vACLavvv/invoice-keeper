@@ -5,7 +5,7 @@ package app
 
 import (
 	"crypto/hmac"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- TOTP (RFC 6238) is HMAC-SHA1: authenticator apps require it
 	"database/sql"
 	"encoding/base32"
 	"encoding/binary"
@@ -33,6 +33,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	f.require("current_password", "new_password")
 	current := f.text("current_password", textRule{min: 1, max: 128})
 	next := f.text("new_password", passwordRule)
+	checkPassword(f, "new_password", next, user.Username)
 	if err := f.err(); err != nil {
 		return err
 	}
@@ -111,7 +112,15 @@ func (s *Server) state(key string) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
-	return value, err
+	if err != nil {
+		return "", err
+	}
+	return decryptText("app_state."+key, value)
+}
+
+// setSecretState stores a secret (the TOTP keys) encrypted when DATA_ENCRYPTION_KEY is set.
+func setSecretState(q querier, key, value string) error {
+	return setState(q, key, encryptText("app_state."+key, value))
 }
 
 func setState(q querier, key, value string) error {
@@ -182,7 +191,7 @@ func (s *Server) twoFactorSetup(w http.ResponseWriter, r *http.Request) error {
 		return fail(409, "Двухфакторный вход уже включён")
 	}
 	secret := totpEncoding.EncodeToString(randomBytes(20))
-	if err := setState(s.DB, "admin_totp_pending", secret); err != nil {
+	if err := setSecretState(s.DB, "admin_totp_pending", secret); err != nil {
 		return err
 	}
 	label := url.PathEscape("Invoice Keeper:" + admin.Username)
@@ -217,10 +226,11 @@ func (s *Server) twoFactorEnable(w http.ResponseWriter, r *http.Request) error {
 	}
 	cookie, _ := r.Cookie(cookieName)
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		for key, value := range map[string]string{"admin_totp_secret": pending, "admin_totp_last_step": itoa(step)} {
-			if err := setState(tx, key, value); err != nil {
-				return err
-			}
+		if err := setSecretState(tx, "admin_totp_secret", pending); err != nil {
+			return err
+		}
+		if err := setState(tx, "admin_totp_last_step", itoa(step)); err != nil {
+			return err
 		}
 		if _, err := tx.Exec("DELETE FROM app_state WHERE key='admin_totp_pending'"); err != nil {
 			return err

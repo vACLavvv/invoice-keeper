@@ -1,16 +1,13 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/fs"
+	"invoice-keeper/internal/api"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
-
-	invoicekeeper "invoice-keeper"
 )
 
 func TestDataRequiresAuthorization(t *testing.T) {
@@ -23,7 +20,11 @@ func TestDataRequiresAuthorization(t *testing.T) {
 	for _, page := range []string{"/", "/recurring", "/calendar", "/team", "/activity"} {
 		r := c.get(page)
 		expect(t, page+" redirect", r.status, 303)
-		expect(t, page+" location", r.header.Get("Location"), "/login")
+		want := "/login" // after signing in the user comes back to the page
+		if page != "/" {
+			want += "?next=%2F" + page[1:]
+		}
+		expect(t, page+" location", r.header.Get("Location"), want)
 	}
 	login := c.get("/login")
 	expect(t, "login page", login.status, 200)
@@ -296,7 +297,7 @@ func TestAdminSessionRevokedWhenPasswordChanges(t *testing.T) {
 	e := setup(t)
 	c := e.client()
 	c.signIn()
-	e.settings.AdminPassword = "Another-Admin-Pass1!"
+	e.settings.AdminPassword = "Another-Owner-Pass1!"
 	expect(t, "fingerprint", c.get("/api/v1/auth/me").status, 401)
 }
 
@@ -396,31 +397,27 @@ func TestPanelPagesAndAssets(t *testing.T) {
 	expect(t, "pages are not cached", page.header.Get("Cache-Control"), "no-store")
 }
 
-func TestOpenAPIDocumentsEveryRoute(t *testing.T) {
+// Routes are generated from the spec, so a documented operation without a handler does not compile;
+// this checks that every operation is actually served (not the 404 of an unknown route).
+func TestEveryDocumentedOperationIsServed(t *testing.T) {
 	e := setup(t)
-	raw, err := fs.ReadFile(invoicekeeper.Assets, "docs/openapi.json")
+	e.settings.OFACListURL = "http://127.0.0.1:1/sdn.xml" // POST /sanctions/refresh must not download the real list
+	admin := e.client()
+	admin.signIn()
+	doc, err := api.GetSwagger()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var spec struct {
-		Paths map[string]map[string]any `json:"paths"`
-	}
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		t.Fatal(err)
-	}
-	documented := map[string]bool{}
-	for path, operations := range spec.Paths {
-		for method := range operations {
-			documented[strings.ToUpper(method)+" "+path] = true
+	served := 0
+	for path, item := range doc.Paths.Map() {
+		for method := range item.Operations() {
+			url := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, "1")
+			r := admin.do(method, url, nil)
+			if r.status == 405 || (r.status == 404 && strings.Contains(string(r.body), `"Not Found"`)) {
+				t.Errorf("%s %s is documented but not served: %d %s", method, path, r.status, r.body)
+			}
+			served++
 		}
 	}
-	for _, r := range e.server.apiRoutes() {
-		if !documented[r.pattern] {
-			t.Errorf("route %s is missing from docs/openapi.json", r.pattern)
-		}
-		delete(documented, r.pattern)
-	}
-	for operation := range documented {
-		t.Errorf("docs/openapi.json documents %s, but the server has no such route", operation)
-	}
+	expect(t, "all operations checked", served > 50, true)
 }

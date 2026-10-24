@@ -197,24 +197,25 @@ func projectedDates(p plan, pauses []pause, from, to time.Time) []time.Time {
 func money(cents int64) string { return fmt.Sprintf("%d.%02d", cents/100, cents%100) }
 
 type Occurrence struct {
-	ID                 int64   `json:"id"`
-	RecurringPaymentID int64   `json:"recurring_payment_id"`
-	Title              string  `json:"title"`
-	Amount             string  `json:"amount"`
-	Currency           string  `json:"currency"`
-	DueDate            string  `json:"due_date"`
-	PaidAt             *string `json:"paid_at"`
-	Status             string  `json:"status"`
-	DaysOverdue        int     `json:"days_overdue"`
-	IsLate             bool    `json:"is_late"`
-	Active             bool    `json:"active"`
-	UpdatedBy          *string `json:"updated_by"`
-	Frequency          string  `json:"frequency"`
-	Category           *string `json:"category"`
-	Assignee           *Person `json:"assignee"`
-	Receipts           int     `json:"receipts"`
-	PaymentURL         *string `json:"payment_url"`
-	PaymentDetails     *string `json:"payment_details"`
+	ID                 int64       `json:"id"`
+	RecurringPaymentID int64       `json:"recurring_payment_id"`
+	Title              string      `json:"title"`
+	Amount             string      `json:"amount"`
+	Currency           string      `json:"currency"`
+	DueDate            string      `json:"due_date"`
+	PaidAt             *string     `json:"paid_at"`
+	Status             string      `json:"status"`
+	DaysOverdue        int         `json:"days_overdue"`
+	IsLate             bool        `json:"is_late"`
+	Active             bool        `json:"active"`
+	UpdatedBy          *string     `json:"updated_by"`
+	Frequency          string      `json:"frequency"`
+	Category           *string     `json:"category"`
+	Assignee           *Person     `json:"assignee"`
+	Receipts           int         `json:"receipts"`
+	PaymentURL         *string     `json:"payment_url"`
+	PaymentDetails     *string     `json:"payment_details"`
+	Wallet             *walletInfo `json:"wallet"`
 
 	amountCents int64
 }
@@ -228,8 +229,9 @@ type Person struct {
 
 const occurrenceSelect = `SELECT o.id,o.recurring_payment_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,r.active,o.updated_by,
 r.frequency,r.category,u.id,u.display_name,u.username,(SELECT COUNT(*) FROM receipts x WHERE x.occurrence_id=o.id),
-r.payment_url,r.payment_details
-FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id LEFT JOIN users u ON u.id=r.assignee_id`
+r.payment_url,r.payment_details,r.wallet_network,r.wallet_address,x.sdn_name,x.currency,x.sdn_uid,EXISTS(SELECT 1 FROM sanctioned_addresses)
+FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id LEFT JOIN users u ON u.id=r.assignee_id
+LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -237,9 +239,16 @@ type scanner interface{ Scan(dest ...any) error }
 func scanOccurrence(row scanner, today time.Time) (Occurrence, error) {
 	var o Occurrence
 	var paid, updatedBy, category, assigneeName, assigneeLogin sql.NullString
-	var assigneeID sql.NullInt64
+	var walletNetwork, walletAddress, sdnName, sdnCurrency sql.NullString
+	var assigneeID, sdnUID sql.NullInt64
+	var listLoaded bool
 	if err := row.Scan(&o.ID, &o.RecurringPaymentID, &o.Title, &o.amountCents, &o.Currency, &o.DueDate, &paid, &o.Active, &updatedBy,
-		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts, &o.PaymentURL, &o.PaymentDetails); err != nil {
+		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts, &o.PaymentURL, &o.PaymentDetails,
+		&walletNetwork, &walletAddress, &sdnName, &sdnCurrency, &sdnUID, &listLoaded); err != nil {
+		return o, err
+	}
+	o.Wallet = makeWallet(walletNetwork, walletAddress, sdnName, sdnCurrency, sdnUID, listLoaded)
+	if err := decryptNullable("recurring_payments.payment_details", &o.PaymentDetails); err != nil {
 		return o, err
 	}
 	if category.Valid {
@@ -274,11 +283,6 @@ func scanOccurrence(row scanner, today time.Time) (Occurrence, error) {
 	o.DaysOverdue = max(0, int(reference.Sub(due).Hours()/24))
 	o.IsLate = o.DaysOverdue > 0
 	return o, nil
-}
-
-func audit(q querier, actor, action string, entity any) error {
-	_, err := q.Exec("INSERT INTO audit_log(actor,action,entity,created_at) VALUES(?,?,?,?)", actor, action, fmt.Sprint(entity), timestamp())
-	return err
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

@@ -5,6 +5,8 @@
 //	invoice-keeper backup [--destination path]
 //	invoice-keeper healthcheck [--port 8000]
 //	invoice-keeper 2fa-off
+//	invoice-keeper ofac-update [--file sdn.xml]
+//	invoice-keeper keygen
 package main
 
 import (
@@ -47,8 +49,12 @@ func main() {
 		err = healthcheck(args)
 	case "2fa-off":
 		err = twoFactorOff()
+	case "ofac-update":
+		err = ofacUpdate(args)
+	case "keygen":
+		fmt.Println("DATA_ENCRYPTION_KEY=" + app.NewEncryptionKey())
 	default:
-		err = fmt.Errorf("неизвестная команда %q; доступны serve, bootstrap, backup, healthcheck, 2fa-off", command)
+		err = fmt.Errorf("неизвестная команда %q; доступны serve, bootstrap, backup, healthcheck, 2fa-off, ofac-update, keygen", command)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -75,6 +81,9 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	if warning := app.EnvFileWarning(root()); warning != "" {
+		log.Print(warning)
+	}
 	db, err := app.OpenDB(settings.DatabasePath)
 	if err != nil {
 		return err
@@ -92,6 +101,8 @@ func serve(args []string) error {
 	maxBot := app.NewMaxBot(server, nil)
 	maxBot.Start()
 	defer maxBot.Stop()
+	server.Sanctions.Start()
+	defer server.Sanctions.Stop()
 
 	httpServer := &http.Server{
 		Addr:              net.JoinHostPort(*host, strconv.Itoa(*port)),
@@ -136,6 +147,36 @@ func backup(args []string) error {
 	return nil
 }
 
+// ofacUpdate loads the OFAC SDN list now: from OFAC_LIST_URL, or from a downloaded file
+// for servers without internet access.
+func ofacUpdate(args []string) error {
+	flags := flag.NewFlagSet("ofac-update", flag.ExitOnError)
+	file := flags.String("file", "", "Путь к скачанному SDN.XML; по умолчанию — загрузка с OFAC_LIST_URL")
+	flags.Parse(args)
+	settings, err := app.SettingsFromEnv(root())
+	if err != nil {
+		return err
+	}
+	db, err := app.OpenDB(settings.DatabasePath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := app.ConfigureEncryption(db, settings.EncryptionKey); err != nil {
+		return err
+	}
+	source := settings.OFACListURL
+	if *file != "" {
+		source = *file
+	}
+	count, err := app.ImportSanctions(db, source, nil)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Список OFAC загружен: %d криптоадресов.\n", count)
+	return nil
+}
+
 // twoFactorOff is the recovery path when the admin lost the authenticator.
 func twoFactorOff() error {
 	settings, err := app.SettingsFromEnv(root())
@@ -147,6 +188,9 @@ func twoFactorOff() error {
 		return err
 	}
 	defer db.Close()
+	if err := app.ConfigureEncryption(db, settings.EncryptionKey); err != nil {
+		return err
+	}
 	if err := app.DisableTwoFactor(db); err != nil {
 		return err
 	}

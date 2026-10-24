@@ -25,7 +25,32 @@ type ReminderRow struct {
 	DueDate        string
 	PaymentURL     string
 	PaymentDetails string
+	WalletNetwork  string
+	WalletAddress  string
+	SanctionsMatch string // the OFAC SDN name when the payee wallet is on the list
 }
+
+func (row ReminderRow) sanctioned() bool { return row.SanctionsMatch != "" }
+
+// openDetails decrypts the payment details read with reminderColumns.
+func (row *ReminderRow) openDetails() error {
+	details, err := decryptText("recurring_payments.payment_details", row.PaymentDetails)
+	row.PaymentDetails = details
+	return err
+}
+
+// payURL is the «Оплатить» link; a payee from the sanctions list gets none.
+func (row ReminderRow) payURL() string {
+	if row.sanctioned() {
+		return ""
+	}
+	return row.PaymentURL
+}
+
+// reminderColumns are read with every reminder; x is the OFAC match of the payee wallet.
+const reminderColumns = `COALESCE(r.payment_url,''),COALESCE(r.payment_details,''),COALESCE(r.wallet_network,''),COALESCE(r.wallet_address,''),COALESCE(x.sdn_name,'')`
+
+const sanctionsJoin = ` LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
 
 func (row ReminderRow) overdue() bool { return row.Kind == "overdue" }
 
@@ -47,6 +72,12 @@ func reminderText(row ReminderRow) string {
 	if row.PaymentDetails != "" {
 		text += "\nРеквизиты: " + row.PaymentDetails
 	}
+	if row.WalletAddress != "" {
+		text += fmt.Sprintf("\nКошелёк (%s): %s", row.WalletNetwork, row.WalletAddress)
+	}
+	if row.sanctioned() {
+		text += "\n\n⛔ Кошелёк получателя в санкционном списке OFAC (" + row.SanctionsMatch + "). Не оплачивайте, пока не разберётесь."
+	}
 	return text + "\n\nОплатили — нажмите «Оплачено» или отметьте в панели"
 }
 
@@ -54,8 +85,8 @@ func reminderText(row ReminderRow) string {
 // and, when the payment has a link, a «💳 Оплатить» button that opens it.
 func paidKeyboard(row ReminderRow) map[string]any {
 	buttons := [][]map[string]string{{{"text": "✅ Оплачено", "callback_data": "paid:" + itoa(row.OccurrenceID)}}}
-	if row.PaymentURL != "" {
-		buttons = append(buttons, []map[string]string{{"text": "💳 Оплатить", "url": row.PaymentURL}})
+	if link := row.payURL(); link != "" {
+		buttons = append(buttons, []map[string]string{{"text": "💳 Оплатить", "url": link}})
 	}
 	return map[string]any{"inline_keyboard": buttons}
 }
@@ -218,6 +249,9 @@ func (w *ReminderWorker) tick() error {
 				return err
 			}
 		}
+		if err := cleanupKeys(tx, w.Settings.KeyIdleDays, time.Now()); err != nil {
+			return err
+		}
 		return w.enqueueDeliveries(tx, today)
 	})
 	if err != nil {
@@ -242,11 +276,11 @@ func (w *ReminderWorker) sendTeam() error {
 		var row ReminderRow
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,COALESCE(r.payment_url,''),COALESCE(r.payment_details,'')
-				FROM reminders m JOIN payment_occurrences o ON o.id=m.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id
+			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
+				FROM reminders m JOIN payment_occurrences o ON o.id=m.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
 				WHERE m.state='pending' AND m.retry_after<=? AND r.active=1 AND o.paid_at IS NULL
 				ORDER BY o.due_date,o.id LIMIT 1`, time.Now().Unix()).Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate,
-				&row.PaymentURL, &row.PaymentDetails)
+				&row.PaymentURL, &row.PaymentDetails, &row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -254,6 +288,9 @@ func (w *ReminderWorker) sendTeam() error {
 				return err
 			}
 			found = true
+			if err := row.openDetails(); err != nil {
+				return err
+			}
 			_, err = tx.Exec("UPDATE reminders SET state='sending',attempts=attempts+1,attempted_at=? WHERE occurrence_id=?", time.Now().Unix(), row.OccurrenceID)
 			return err
 		})
@@ -307,13 +344,14 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 		var chat int64
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,COALESCE(r.payment_url,''),COALESCE(r.payment_details,''),t.chat_id
-				FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
+			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`,t.chat_id
+				FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
 				JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
 				WHERE r.active=1 AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
 				AND NOT EXISTS (SELECT 1 FROM personal_reminders p WHERE p.occurrence_id=o.id AND p.chat_id=t.chat_id)
 				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, formatDate(today), formatDate(today.AddDate(0, 0, 3))).
-				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails, &chat)
+				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
+					&row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch, &chat)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -321,6 +359,9 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 				return err
 			}
 			found = true
+			if err := row.openDetails(); err != nil {
+				return err
+			}
 			_, err = tx.Exec("INSERT INTO personal_reminders(occurrence_id,chat_id,state) VALUES(?,?,'sending')", row.OccurrenceID, chat)
 			return err
 		})

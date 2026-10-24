@@ -107,6 +107,13 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"sessions", "ip", "TEXT"},
 	{"api_keys", "access", "TEXT NOT NULL DEFAULT 'extension' CHECK(access IN ('extension','read','write'))"},
 	{"api_keys", "expires_at", "INTEGER"},
+	// Payee crypto wallet, screened against the OFAC list (sanctions.go); wallet_key is the comparison form.
+	{"recurring_payments", "wallet_network", "TEXT"},
+	{"recurring_payments", "wallet_address", "TEXT"},
+	{"recurring_payments", "wallet_key", "TEXT"},
+	// Tamper-evident journal (audit.go).
+	{"audit_log", "hash", "TEXT"},
+	{"audit_log", "chain", "TEXT"},
 }
 
 const schemaVersion = 4
@@ -151,7 +158,7 @@ func (db *DB) initialize() error {
 		return errors.New("Неизвестная версия базы. Запуск остановлен без изменения данных.")
 	}
 	return db.Write(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(schema + deliverySchema); err != nil {
+		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema); err != nil {
 			return err
 		}
 		for _, c := range addedColumns {

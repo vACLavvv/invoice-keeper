@@ -14,8 +14,8 @@ export const en: Record<string, string> = {
     'The administrator login and password are set in .env on the server and cannot be changed in the panel. Protect the sign-in with a second factor.',
   'Telegram отвязан': 'Telegram unlinked',
   'личные напоминания в Telegram': 'personal reminders in Telegram',
-  'Привяжите свой Telegram: напоминания по платежам, где вы ответственный, придут в личку с кнопкой «Оплачено». Отметка запишется от вашего имени.':
-    'Link your Telegram: reminders for payments assigned to you arrive in a private chat with a “Paid” button. The mark is recorded under your name.',
+  'Привяжите свой Telegram: напоминания по платежам, где вы ответственный, придут в личку с кнопкой «Оплачено». Отметка запишется от вашего имени. Сюда же придёт сообщение о каждом входе в вашу учётную запись.':
+    'Link your Telegram: reminders for payments assigned to you arrive in a private chat with a “Paid” button. The mark is recorded under your name. A message about every sign-in to your account arrives there too.',
   'Загружаем…': 'Loading…',
   'На сервере не настроен Telegram-бот (TELEGRAM_BOT_TOKEN).': 'The Telegram bot is not configured on the server (TELEGRAM_BOT_TOKEN).',
   'привязан': 'linked',
@@ -546,4 +546,93 @@ export const en: Record<string, string> = {
   'план': 'plan',
   'План и оплата по месяцам, {c}': 'Plan and payments by month, {c}',
   'План по категориям, {c}': 'Plan by category, {c}',
+  // OFAC wallet screening
+  'Обновлён список санкций OFAC': 'OFAC sanctions list updated',
+  'Сохранён кошелёк из списка санкций OFAC': 'A wallet from the OFAC sanctions list was saved',
+  'санкционный список OFAC': 'OFAC sanctions list',
+  'Список OFAC обновлён: {n} адресов': 'OFAC list updated: {n} addresses',
+  'Кошельки получателей сверяются со списком SDN Минфина США. Ловятся только адреса, которые опубликовал OFAC; это не оценка риска по истории транзакций. Список скачивается раз в сутки и только пока хотя бы у одного платежа указан кошелёк.':
+    'Payee wallets are checked against the U.S. Treasury SDN list. Only addresses published by OFAC are caught; this is not a risk score of the transaction history. The list is downloaded once a day and only while at least one payment has a wallet.',
+  '{n} криптоадресов · публикация OFAC {published} · загружен {date}': '{n} crypto addresses · OFAC publication {published} · loaded {date}',
+  'Список ещё не загружен': 'The list is not loaded yet',
+  'сверка выключена (OFAC_ENABLED=false)': 'screening is off (OFAC_ENABLED=false)',
+  'Скачиваем…': 'Downloading…',
+  'Обновить список': 'Update the list',
+  'Последняя загрузка не удалась: {error}. Используется прежний список.': 'The last download failed: {error}. The previous list is used.',
+  'Сеть': 'Network',
+  'Проверить адрес кошелька': 'Check a wallet address',
+  'Адрес кошелька': 'Wallet address',
+  'Проверить': 'Check',
+  'Совпадение: {name}': 'Match: {name}',
+  'Что значит «санкционный список OFAC» у кошелька?': 'What does “OFAC sanctions list” next to a wallet mean?',
+  'Если у платежа указан криптокошелёк получателя, он сверяется со списком санкций Минфина США (SDN). При совпадении платёж помечается ⛔, в напоминаниях появляется предупреждение и пропадает кнопка «Оплатить». Это проверка только по опубликованным адресам, а не оценка риска кошелька.':
+    'If a payment has a payee crypto wallet, it is checked against the U.S. Treasury sanctions list (SDN). On a match the payment is marked ⛔, reminders carry a warning and lose the “Pay” button. This checks published addresses only; it is not a wallet risk score.',
+  '⛔ санкции OFAC': '⛔ OFAC sanctions',
+  'Платёж добавлен, но кошелёк получателя в санкционном списке OFAC': 'Payment added, but the payee wallet is on the OFAC sanctions list',
+  'Сохранено, но кошелёк получателя в санкционном списке OFAC': 'Saved, but the payee wallet is on the OFAC sanctions list',
+  'Кошелёк ({network}): {address}': 'Wallet ({network}): {address}',
+  'Bitcoin: адреса 1…, 3… и bc1…': 'Bitcoin: addresses 1…, 3… and bc1…',
+  'Ethereum и совместимые сети, в том числе USDT и USDC (ERC-20): 0x…': 'Ethereum and compatible networks, including USDT and USDC (ERC-20): 0x…',
+  'TRON, в том числе USDT (TRC-20): T…': 'TRON, including USDT (TRC-20): T…',
+  'Список OFAC ещё не загружен': 'The OFAC list is not loaded yet',
+  'не проверен': 'not checked',
+  '⛔ санкционный список OFAC': '⛔ OFAC sanctions list',
+  'нет в списке OFAC': 'not on the OFAC list',
+  'OFAC: чисто': 'OFAC: clear',
+  'Кошелёк получателя в санкционном списке OFAC': 'The payee wallet is on the OFAC sanctions list',
+  'Совпадение: {name}. Не оплачивайте, пока не разберётесь: кнопки «Оплатить» в напоминаниях для этого платежа нет.':
+    'Match: {name}. Do not pay until you sort it out: reminders for this payment have no “Pay” button.',
+  'Сеть кошелька': 'Wallet network',
+  'Без кошелька': 'No wallet',
+  'Криптокошелёк получателя': 'Payee crypto wallet',
+  'Адрес для оплаты в криптовалюте': 'Address for paying in crypto',
+  'Сверяется со списком санкций OFAC при каждом показе и в напоминаниях': 'Checked against the OFAC sanctions list on every view and in reminders',
+  'Адрес': 'Address',
+  // security
+  'Журнал цел: проверено записей — {n}. Каждая запись подписана вместе с предыдущей, правка или удаление будут видны.':
+    'The journal is intact: {n} entries checked. Every entry is signed together with the previous one, so an edit or deletion shows.',
+  'Подпись — ключом вне базы.': 'Signed with a key kept outside the database.',
+  'Задайте DATA_ENCRYPTION_KEY, чтобы подпись нельзя было пересчитать, имея доступ к базе.':
+    'Set DATA_ENCRYPTION_KEY so that the signatures cannot be recomputed by someone with access to the database.',
+  'Журнал нарушен с записи #{id}': 'The journal is broken from entry #{id}',
+  'Пароли хешируются Argon2id; пароли из списков утечек, с логином внутри и простые последовательности не принимаются.':
+    'Passwords are hashed with Argon2id; leaked passwords, passwords containing the login and simple sequences are refused.',
+  'Секрет второго фактора, чеки и реквизиты хранятся зашифрованными (XChaCha20-Poly1305): копия базы без ключа их не раскрывает.':
+    'The second-factor secret, receipts and payment details are stored encrypted (XChaCha20-Poly1305): a copy of the database without the key does not reveal them.',
+  'Шифрование данных в базе выключено: задайте DATA_ENCRYPTION_KEY (invoice-keeper keygen).':
+    'Database encryption is off: set DATA_ENCRYPTION_KEY (invoice-keeper keygen).',
+  'Журнал защищён от подмены: каждая запись подписана вместе с предыдущей, проверка — во вкладке «Журнал».':
+    'The journal is tamper-evident: every entry is signed together with the previous one; check it in the “Journal” tab.',
+  'О каждом входе и о подборе пароля приходит сообщение в привязанный Telegram.':
+    'Every sign-in and every password-guessing attempt is reported to the linked Telegram.',
+  '«Оплачено» в Telegram могут нажать только участники, привязавшие аккаунт в панели.':
+    'Only members who linked their account in the panel can press “Paid” in Telegram.',
+  // payment method
+  '💳 Банк или карта': '💳 Bank or card',
+  'Ссылка на счёт и реквизиты': 'Invoice link and payment details',
+  '₿ Криптовалюта': '₿ Crypto',
+  'Кошелёк получателя, проверка по санкциям OFAC': 'Payee wallet, checked against OFAC sanctions',
+  'Как платим': 'How we pay',
+  'Учитывать в': 'Account in',
+  'Итоги и бюджет считаются в RUB, USD или EUR: стейблкоины USDT и USDC обычно учитывают как USD.':
+    'Totals and the budget are in RUB, USD or EUR: stablecoins USDT and USDC are usually accounted as USD.',
+  'дополнительно': 'more',
+  'При сохранении кошелёк будет удалён.': 'The wallet will be removed on save.',
+  'При сохранении ссылка на оплату и реквизиты будут удалены.': 'The payment link and details will be removed on save.',
+  // extension pairing
+  'В окне расширения укажите адрес сервера': 'In the extension window, enter the server address',
+  'и нажмите «Подключить» — откроется эта страница, подтвердите, и ключ придёт сам.': 'and press “Connect”: this page opens, you confirm, and the key arrives by itself.',
+  'Действует до': 'Valid until',
+  'Ключ, которым не пользовались {n} дней, отключается сам.': 'A key unused for {n} days is disabled automatically.',
+  'Отключены просроченные и неиспользуемые ключи': 'Expired and unused keys disabled',
+  'Расширение подключено': 'Extension connected',
+  'Подключить расширение?': 'Connect the extension?',
+  'Вернитесь в браузер и нажмите на значок Invoice Keeper — расширение заберёт ключ и будет готово. Ключ действует год.':
+    'Go back to the browser and press the Invoice Keeper icon: the extension picks up the key and is ready. The key is valid for a year.',
+  'Подключить': 'Connect',
+  'Расширение Invoice Keeper': 'Invoice Keeper extension',
+  'Будет отправлять найденные платежи в «Предложения» от имени @{login}. Других прав у ключа нет.':
+    'It will send found payments to “Suggestions” on behalf of @{login}. The key has no other rights.',
+  'Подтверждайте, только если вы сами только что нажали «Подключить» в расширении. Если ссылку прислал кто-то другой — нажмите «Отмена».':
+    'Confirm only if you have just pressed “Connect” in the extension yourself. If someone else sent you this link, press “Cancel”.',
 };

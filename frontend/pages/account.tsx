@@ -57,7 +57,7 @@ function TelegramTile() {
   return (
     <Tile>
       <TileTitle>{t('личные напоминания в Telegram')}</TileTitle>
-      <Muted>{t('Привяжите свой Telegram: напоминания по платежам, где вы ответственный, придут в личку с кнопкой «Оплачено». Отметка запишется от вашего имени.')}</Muted>
+      <Muted>{t('Привяжите свой Telegram: напоминания по платежам, где вы ответственный, придут в личку с кнопкой «Оплачено». Отметка запишется от вашего имени. Сюда же придёт сообщение о каждом входе в вашу учётную запись.')}</Muted>
       {!data ? <Muted>{t('Загружаем…')}</Muted> : !data.available ? (
         <Notice $tone="warning"><span>{t('На сервере не настроен Telegram-бот (TELEGRAM_BOT_TOKEN).')}</span></Notice>
       ) : data.linked ? (

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import styled from 'styled-components';
 import { ArchiveModal, EditPaymentModal, ImportModal, PauseModal } from '@/components/PaymentModals';
+import { ScreeningPill, shortAddress } from '@/components/Wallet';
 import { Shell } from '@/components/Shell';
 import { Button, Chevron, Empty, Muted, Notice, Pill, Row, Sticker, Tile, TileTitle, Wire } from '@/components/ui';
 import { api, type Recurring } from '@/lib/api';
@@ -45,16 +46,22 @@ export default function RecurringPage() {
                 {symbols[r.currency]} {money(r.amount)} {perPeriod(r.frequency)} · {frequencyName(r.frequency)}
                 {r.category ? ` · ${r.category}` : ''}
               </Muted>
-              <Wire height={r.payment_url || r.payment_details ? 21.3 : 17}>
+              <Wire height={17 + (payLine(r) ? 4.3 : 0) + (r.wallet ? 4.3 : 0)}>
                 <Line>{r.next_due_date ? t('ближайший срок {date}', { date: longDate(r.next_due_date) }) : t('с {date}', { date: longDate(r.first_due_date) })}</Line>
                 <Line>
                   {r.unpaid_count} {tp(r.unpaid_count, ['неоплаченный период', 'неоплаченных периода', 'неоплаченных периодов'], ['unpaid period', 'unpaid periods'])}
                   {r.assignee && <Muted>@{r.assignee.username}</Muted>}
                 </Line>
-                {(r.payment_url || r.payment_details) && (
+                {payLine(r) && (
                   <Line>
                     <Details title={r.payment_details ?? undefined}>{r.payment_details ?? ''}</Details>
-                    {r.payment_url && <PayLink href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('💳 оплатить ↗')}</PayLink>}
+                    {r.payment_url && !r.wallet?.sanctioned && <PayLink href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('💳 оплатить ↗')}</PayLink>}
+                  </Line>
+                )}
+                {r.wallet && (
+                  <Line>
+                    <Details title={r.wallet.address}>{r.wallet.network} · {shortAddress(r.wallet.address)}</Details>
+                    <ScreeningPill wallet={r.wallet} compact />
                   </Line>
                 )}
                 <Line>
@@ -87,6 +94,9 @@ export default function RecurringPage() {
     </Shell>
   );
 }
+
+/** Details or a usable payment link; a sanctioned payee gets no «оплатить». */
+const payLine = (r: Recurring) => !!r.payment_details || (!!r.payment_url && !r.wallet?.sanctioned);
 
 const Grid = styled.div`
   display: grid;

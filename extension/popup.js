@@ -7,10 +7,78 @@ let settings = { server: '', key: '' };
 let page = { host: '', url: '', pageTitle: '' };
 
 async function loadSettings() {
-  const stored = await chrome.storage.local.get(['server', 'key']);
+  const stored = await chrome.storage.local.get(['server', 'key', 'username']);
   settings = { server: stored.server || '', key: stored.key || '' };
   $('#server').value = settings.server;
   $('#key').value = settings.key;
+  $('#connected').hidden = !settings.key;
+  $('#connected-as').textContent = stored.username ? `подключено: @${stored.username}` : 'ключ сохранён';
+}
+
+// --- connecting through the panel: a random code, confirmed by the signed-in user, claimed once ---
+
+const PAIRING_TTL = 10 * 60 * 1000;
+
+function randomCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** «Chrome · macOS» — the name of the key in the panel. */
+function deviceName() {
+  const ua = navigator.userAgent;
+  const browser = [['Edg/', 'Edge'], ['YaBrowser/', 'Яндекс Браузер'], ['OPR/', 'Opera'], ['Firefox/', 'Firefox'], ['Chrome/', 'Chrome']].find(([m]) => ua.includes(m))?.[1] || 'Браузер';
+  const system = [['Windows', 'Windows'], ['Mac OS X', 'macOS'], ['Android', 'Android'], ['Linux', 'Linux'], ['CrOS', 'ChromeOS']].find(([m]) => ua.includes(m))?.[1];
+  return system ? `${browser} · ${system}` : browser;
+}
+
+async function connect() {
+  const status = $('#settings-status');
+  status.className = 'muted';
+  try {
+    const server = normalizeServer($('#server').value);
+    const code = randomCode();
+    await chrome.storage.local.set({ server, pendingCode: code, pendingAt: Date.now() });
+    const url = `${server}/extension?${new URLSearchParams({ connect: code, device: deviceName() })}`;
+    await chrome.tabs.create({ url });
+    status.textContent = 'подтвердите в панели, затем снова откройте расширение';
+  } catch (e) {
+    status.textContent = e.message;
+    status.className = 'bad';
+  }
+}
+
+/** Claims the key confirmed in the panel; returns a message for the user, or null when nothing is pending. */
+async function claimPending() {
+  const { server, pendingCode, pendingAt } = await chrome.storage.local.get(['server', 'pendingCode', 'pendingAt']);
+  if (!pendingCode) return null;
+  if (Date.now() - pendingAt > PAIRING_TTL) {
+    await chrome.storage.local.remove(['pendingCode', 'pendingAt']);
+    return { text: 'Подключение не подтвердили за 10 минут. Нажмите «Подключить» ещё раз.', bad: true };
+  }
+  let response;
+  try {
+    response = await fetch(server + '/api/v1/extension/pairings/claim', {
+      method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: pendingCode }),
+    });
+  } catch {
+    return { text: 'Сервер недоступен: подключение не завершено.', bad: true };
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 200 && data.token) {
+    await chrome.storage.local.set({ key: data.token, username: data.username });
+    await chrome.storage.local.remove(['pendingCode', 'pendingAt']);
+    await loadSettings();
+    return { text: `Подключено: @${data.username}. Ключ действует год.`, bad: false };
+  }
+  return { text: 'Подтвердите подключение во вкладке панели и снова откройте расширение.', bad: true };
+}
+
+async function disconnect() {
+  await chrome.storage.local.remove(['key', 'username']);
+  await loadSettings();
+  showSettings(true);
+  $('#settings-status').textContent = 'ключ удалён из браузера; в панели его можно отозвать';
 }
 
 function normalizeServer(value) {
@@ -51,7 +119,7 @@ async function saveSettings() {
   try {
     settings = { server: normalizeServer($('#server').value), key: $('#key').value.trim() };
     const me = await call('/extension/whoami');
-    await chrome.storage.local.set(settings);
+    await chrome.storage.local.set({ ...settings, username: me.username });
     status.textContent = `подключено: @${me.username}`;
     setTimeout(() => { showSettings(false); detect(); }, 700);
   } catch (e) {
@@ -159,11 +227,18 @@ async function send() {
 
 $('#toggle-settings').addEventListener('click', () => showSettings($('#settings').hidden));
 $('#save').addEventListener('click', saveSettings);
+$('#connect').addEventListener('click', connect);
+$('#disconnect').addEventListener('click', disconnect);
 $('#manual').addEventListener('click', () => addCard().querySelector('[name="amount"]').focus());
 $('#send').addEventListener('click', send);
 $('#list').addEventListener('change', updateSend);
 
-loadSettings().then(() => {
+loadSettings().then(async () => {
+  const connecting = await claimPending();
   if (!settings.server || !settings.key) showSettings(true);
-  detect();
+  await detect(); // clears notices, so the result of connecting is shown after it
+  if (connecting) {
+    notice(connecting.text, connecting.bad);
+    $('#settings-status').textContent = connecting.text;
+  }
 });

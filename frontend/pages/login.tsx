@@ -9,6 +9,12 @@ import { globe } from '@/styles/theme';
 
 // The sign-in page is the light "landing": glass globe hero, white sheet with the form.
 // With admin two-factor sign-in the server answers code=two_factor_required and a code field appears.
+/** Where to go after signing in: a page of this site from ?next=, otherwise the payments. */
+function nextPage() {
+  const next = new URLSearchParams(window.location.search).get('next') ?? '';
+  return next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/';
+}
+
 export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +30,7 @@ export default function Login() {
       const body: Record<string, FormDataEntryValue | null> = { username: data.get('username'), password: data.get('password') };
       if (needCode) body.code = data.get('code');
       await api('/auth/login', { method: 'POST', body });
-      window.location.assign('/');
+      window.location.assign(nextPage());
     } catch (e) {
       const err = e as ApiError;
       if (err.code === 'two_factor_required') {

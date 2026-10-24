@@ -6,6 +6,7 @@ package app
 // Telegram linking — stay panel-only, so a leaked token cannot lock the owner out or mint new tokens.
 
 import (
+	"cmp"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -115,7 +116,7 @@ func (s *Server) sessionsDelete(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		where, args := sessionOwner(user)
-		result, err := tx.Exec("DELETE FROM sessions WHERE substr(token_hash,1,16)=? AND "+where, append([]any{id}, args...)...)
+		result, err := tx.Exec("DELETE FROM sessions WHERE substr(token_hash,1,16)=? AND "+where, append([]any{id}, args...)...) // #nosec G202 -- where is a constant clause, values are parameters
 		if err != nil {
 			return err
 		}
@@ -139,7 +140,7 @@ func (s *Server) sessionsDeleteOthers(w http.ResponseWriter, r *http.Request) er
 	var closed int64
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		where, args := sessionOwner(user)
-		result, err := tx.Exec("DELETE FROM sessions WHERE token_hash<>? AND "+where, append([]any{currentTokenHash(r)}, args...)...)
+		result, err := tx.Exec("DELETE FROM sessions WHERE token_hash<>? AND "+where, append([]any{currentTokenHash(r)}, args...)...) // #nosec G202 -- where is a constant clause, values are parameters
 		if err != nil {
 			return err
 		}
@@ -165,10 +166,10 @@ func (s *Server) tokenUser(r *http.Request, allowed ...string) (*User, error) {
 	var keyID int64
 	var userID, expires sql.NullInt64
 	var isAdmin bool
-	var fingerprint sql.NullString
-	var access string
-	err := s.DB.QueryRow("SELECT id,user_id,is_admin,admin_fingerprint,access,expires_at FROM api_keys WHERE token_hash=?", digest(token)).
-		Scan(&keyID, &userID, &isAdmin, &fingerprint, &access, &expires)
+	var fingerprint, lastUsed sql.NullString
+	var access, createdAt string
+	err := s.DB.QueryRow("SELECT id,user_id,is_admin,admin_fingerprint,access,expires_at,last_used_at,created_at FROM api_keys WHERE token_hash=?", digest(token)).
+		Scan(&keyID, &userID, &isAdmin, &fingerprint, &access, &expires, &lastUsed, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Ключ API не найден или удалён")
 	}
@@ -176,7 +177,11 @@ func (s *Server) tokenUser(r *http.Request, allowed ...string) (*User, error) {
 		return nil, err
 	}
 	if expires.Valid && expires.Int64 <= time.Now().Unix() {
-		return nil, fail(401, "Срок действия ключа API истёк")
+		return nil, fail(401, "Срок действия ключа API истёк. Подключите расширение заново или создайте новый токен")
+	}
+	// The worker removes idle keys periodically; this check closes the gap until it runs.
+	if last := cmp.Or(lastUsed.String, createdAt); s.Settings.KeyIdleDays > 0 && last < idleCutoff(s.Settings.KeyIdleDays, time.Now()) {
+		return nil, fail(401, "Ключом не пользовались больше "+itoa(int64(s.Settings.KeyIdleDays))+" дней, и он отключён. Подключите расширение заново")
 	}
 	if !slices.Contains(allowed, access) {
 		switch access {

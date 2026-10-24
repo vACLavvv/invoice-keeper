@@ -372,6 +372,9 @@ func (s *Server) usersCreate(w http.ResponseWriter, r *http.Request) error {
 	if f.isNull("username") || f.isNull("display_name") || f.isNull("password") {
 		f.add("", "Поля пользователя не могут быть пустыми", "missing")
 	}
+	if username != nil {
+		checkPassword(f, "password", password, *username)
+	}
 	if err := f.err(); err != nil {
 		return err
 	}
@@ -418,6 +421,12 @@ func (s *Server) usersUpdate(w http.ResponseWriter, r *http.Request) error {
 	if len(f.values) == 0 || f.isNull("username") || f.isNull("display_name") || f.isNull("password") {
 		f.add("", "Укажите хотя бы одно непустое поле", "value_error")
 	}
+	// The login is checked when it changes together with the password; the stored one — below.
+	login := ""
+	if username != nil {
+		login = *username
+	}
+	checkPassword(f, "password", password, login)
 	if err := f.err(); err != nil {
 		return err
 	}

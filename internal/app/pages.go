@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -76,7 +77,12 @@ func (s *Server) panelPage(w http.ResponseWriter, r *http.Request) error {
 		return s.notFound(w, r)
 	}
 	if _, err := s.currentUser(r); err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		// After signing in, the user returns to this page with its query (e.g. connecting the extension).
+		target := "/login"
+		if r.URL.Path != "/" || r.URL.RawQuery != "" {
+			target += "?" + url.Values{"next": {r.URL.RequestURI()}}.Encode()
+		}
+		http.Redirect(w, r, target, http.StatusSeeOther)
 		return nil
 	}
 	return s.servePage(w, strings.TrimSuffix(name, ".html"), 200)
@@ -84,10 +90,18 @@ func (s *Server) panelPage(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.currentUser(r); err == nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusSeeOther) // #nosec G710 -- safeNext allows only a path on this site
 		return nil
 	}
 	return s.servePage(w, "login", 200)
+}
+
+// safeNext keeps a post-login redirect on this site: a path, never another host.
+func safeNext(next string) string {
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") || strings.ContainsAny(next, "\r\n") {
+		return "/"
+	}
+	return next
 }
 
 // notFound answers JSON for the API and the styled 404 page for everything else.

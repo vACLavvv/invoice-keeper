@@ -61,7 +61,7 @@ func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 	for channel, kinds := range w.broadcastChannels() {
 		for _, kind := range kinds {
 			window := windows[kind]
-			if _, err := tx.Exec("INSERT OR IGNORE INTO deliveries(occurrence_id,kind,channel,state) SELECT o.id,?,?,'pending' "+
+			if _, err := tx.Exec("INSERT OR IGNORE INTO deliveries(occurrence_id,kind,channel,state) SELECT o.id,?,?,'pending' "+ // #nosec G202 -- window clauses are constants, values are parameters
 				unpaidActive+" AND "+window[0].(string), append([]any{kind, channel}, window[1:]...)...); err != nil {
 				return err
 			}
@@ -71,6 +71,7 @@ func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 		// The same people as personal «due» reminders: the assignee, and the admin for assigned payments
 		// (or for all of them when there is no team chat).
 		window := windows["overdue"]
+		// #nosec G202 -- the window clause is a constant, values are parameters
 		if _, err := tx.Exec(`INSERT OR IGNORE INTO deliveries(occurrence_id,kind,channel,state)
 			SELECT o.id,'overdue','telegram:'||t.chat_id,'pending' FROM payment_occurrences o
 			JOIN recurring_payments r ON r.id=o.recurring_payment_id
@@ -126,12 +127,13 @@ func (w *ReminderWorker) deliver() error {
 		var channel string
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT d.channel,d.kind,o.id,r.title,o.amount_cents,o.currency,o.due_date,COALESCE(r.payment_url,''),COALESCE(r.payment_details,'')
-				FROM deliveries d JOIN payment_occurrences o ON o.id=d.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id
+			err := tx.QueryRow(`SELECT d.channel,d.kind,o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
+				FROM deliveries d JOIN payment_occurrences o ON o.id=d.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
 				WHERE d.state='pending' AND d.retry_after<=? AND r.active=1 AND o.paid_at IS NULL
 				AND (d.channel IN (`+in+`) OR (? AND d.channel LIKE 'telegram:%'))
 				ORDER BY o.due_date,o.id LIMIT 1`, append(append([]any{time.Now().Unix()}, args...), personal)...).
-				Scan(&channel, &row.Kind, &row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails)
+				Scan(&channel, &row.Kind, &row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
+					&row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -139,6 +141,9 @@ func (w *ReminderWorker) deliver() error {
 				return err
 			}
 			found = true
+			if err := row.openDetails(); err != nil {
+				return err
+			}
 			_, err = tx.Exec("UPDATE deliveries SET state='sending',attempts=attempts+1,attempted_at=? WHERE occurrence_id=? AND kind=? AND channel=?",
 				time.Now().Unix(), row.OccurrenceID, row.Kind, channel)
 			return err

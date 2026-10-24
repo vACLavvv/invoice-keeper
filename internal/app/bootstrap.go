@@ -12,14 +12,16 @@ import (
 // Bootstrap creates only project-local configuration and optional non-destructive demo data.
 func Bootstrap(root string, demo bool) error {
 	envPath := filepath.Join(root, ".env")
-	file, err := os.OpenFile(envPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	file, err := os.OpenFile(envPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- the .env path is chosen by the operator
 	switch {
 	case err == nil:
 		_, err = fmt.Fprintf(file, "ADMIN_USERNAME=admin\nADMIN_PASSWORD=%s\n"+
 			"APP_TIMEZONE=Europe/Moscow\nDATABASE_PATH=./data/invoice-keeper.sqlite3\n"+
 			"SESSION_HOURS=12\nCOOKIE_SECURE=false\nTELEGRAM_ENABLED=false\n"+
 			"TELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=\nREMINDER_INTERVAL_SECONDS=60\n"+
-			"DEMO_USERNAME=teammate\nDEMO_PASSWORD=%s\n", randomToken(20), randomToken(16))
+			"DEMO_USERNAME=teammate\nDEMO_PASSWORD=%s\n"+
+			"# Ключ шифрования данных в базе. Храните копию отдельно от базы: без него зашифрованное не прочитать.\n"+
+			"DATA_ENCRYPTION_KEY=%s\n", randomToken(20), randomToken(16), NewEncryptionKey())
 		if closeErr := file.Close(); err == nil {
 			err = closeErr
 		}
@@ -41,6 +43,9 @@ func Bootstrap(root string, demo bool) error {
 		return err
 	}
 	defer db.Close()
+	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
+		return err
+	}
 	if demo {
 		if err := seedDemo(db, settings); err != nil {
 			return err

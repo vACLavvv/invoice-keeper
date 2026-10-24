@@ -15,6 +15,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Код из docs/openapi.json не устарел (oapi-codegen)
+        run: go generate ./internal/api && git diff --exit-code -- internal/api
       - run: go vet ./...
       - run: go test -race -count=1 ./...
       - name: Сборка бинарника
@@ -26,6 +28,25 @@ jobs:
           /tmp/invoice-keeper serve --port 18080 &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:18080/healthz && break; sleep 1; done
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/v1/payment-occurrences)" = 401
+
+  security:
+    name: Безопасность — уязвимости и статический анализ
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: govulncheck — известные уязвимости в Go и зависимостях
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: gosec — статический анализ (G104 — необработанные ошибки Close/Rollback — исключён)
+        run: go run github.com/securego/gosec/v2/cmd/gosec@latest -quiet -exclude-generated -exclude=G104 ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit — уязвимости в зависимостях панели
+        working-directory: frontend
+        run: npm audit --audit-level=high
 
   frontend:
     name: Панель — типы, переводы, сборка

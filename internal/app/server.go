@@ -4,13 +4,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"invoice-keeper/internal/api"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -21,19 +24,24 @@ type Options struct {
 	Today    func() time.Time
 	Sender   Sender
 	Channels map[string]Sender // replaces the channels from .env (tests)
+	Notifier Notifier          // security alerts; by default the Telegram bot, when configured
 }
 
 type Server struct {
-	DB       *DB
-	Settings *Settings
-	Worker   *ReminderWorker
-	Today    func() time.Time
-	Now      func() time.Time // wall clock for one-time codes; replaceable in tests
+	DB        *DB
+	Settings  *Settings
+	Worker    *ReminderWorker
+	Sanctions *Sanctions
+	Today     func() time.Time
+	Now       func() time.Time // wall clock for one-time codes; replaceable in tests
 
 	assets      fs.FS
 	pages       map[string]page
 	adminHash   string
 	handler     http.Handler
+	limiter     *rateLimiter
+	notifier    Notifier
+	alerts      sync.WaitGroup
 	botUsername atomic.Value // set by the Telegram bot after getMe
 }
 
@@ -58,6 +66,14 @@ func NewServer(settings *Settings, db *DB, assets fs.FS, opts Options) (*Server,
 	if opts.Channels != nil {
 		s.Worker.Channels = opts.Channels
 	}
+	s.Sanctions = &Sanctions{DB: db, Settings: settings}
+	s.notifier = opts.Notifier
+	if s.notifier == nil && settings.TelegramBotToken != "" {
+		s.notifier = TelegramNotifier(settings, "")
+	}
+	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
+		return nil, err
+	}
 	if err := db.Write(func(tx *sql.Tx) error { return materialize(tx, today()) }); err != nil {
 		return nil, err
 	}
@@ -68,7 +84,8 @@ func NewServer(settings *Settings, db *DB, assets fs.FS, opts Options) (*Server,
 	if s.pages, err = loadPages(app); err != nil {
 		return nil, err
 	}
-	s.handler = securityHeaders(s.routes())
+	s.limiter = newRateLimiter(float64(settings.RateLimitPerSecond), float64(settings.RateLimitBurst))
+	s.handler = s.securityHeaders(s.rateLimit(s.routes()))
 	return s, nil
 }
 
@@ -83,7 +100,7 @@ func (h handlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var apiErr *apiError
 	if !errors.As(err, &apiErr) {
-		log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
+		log.Printf("%s %q: %v", r.Method, r.URL.Path, err) // #nosec G706 -- %q escapes the path, so it cannot forge log lines
 		apiErr = &apiError{Status: 500, Detail: "Внутренняя ошибка сервера"}
 	}
 	for key, values := range apiErr.Header {
@@ -107,14 +124,22 @@ func noContent(w http.ResponseWriter) error {
 	return nil
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cache-Control", "no-store")
-		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		// Other sites cannot hold a reference to our window or embed our responses.
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("X-Permitted-Cross-Domain-Policies", "none")
+		if s.Settings.CookieSecure {
+			// Secure cookies mean the site is served over HTTPS: browsers must never fall back to HTTP.
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		// Panel pages replace this with a policy that lists their inline scripts by hash.
 		scripts := "'self'"
 		if r.URL.Path == "/api/v1/docs" {
@@ -144,75 +169,26 @@ func (s *Server) routes() http.Handler {
 	preflight := cors(func(http.ResponseWriter, *http.Request) error { return nil })
 	handle("OPTIONS /api/v1/extension/whoami", preflight)
 	handle("OPTIONS /api/v1/payment-suggestions", preflight)
-	for _, route := range s.apiRoutes() {
-		handle(route.pattern, route.handler)
-	}
+	handle("OPTIONS /api/v1/extension/pairings/claim", preflight)
+	// API routes come from the spec: the generated code registers every documented operation.
+	api.HandlerWithOptions(apiAdapter{s}, api.StdHTTPServerOptions{BaseRouter: mux, ErrorHandlerFunc: parameterError})
 	return mux
 }
 
-type route struct {
-	pattern string
-	handler handlerFunc
-}
-
-// apiRoutes are the documented operations; a test checks them against docs/openapi.json.
-func (s *Server) apiRoutes() []route {
-	return []route{
-		{"GET /healthz", s.health},
-
-		{"POST /api/v1/auth/login", s.login},
-		{"GET /api/v1/auth/me", s.me},
-		{"POST /api/v1/auth/logout", s.logout},
-		{"GET /api/v1/settings", s.appSettings},
-		{"POST /api/v1/auth/password", s.changePassword},
-		{"GET /api/v1/auth/2fa", s.twoFactorStatus},
-		{"POST /api/v1/auth/2fa/setup", s.twoFactorSetup},
-		{"POST /api/v1/auth/2fa/enable", s.twoFactorEnable},
-		{"POST /api/v1/auth/2fa/disable", s.twoFactorDisable},
-		{"GET /api/v1/me/telegram", s.myTelegram},
-		{"POST /api/v1/me/telegram/link", s.myTelegramLinkCode},
-		{"DELETE /api/v1/me/telegram", s.myTelegramUnlink},
-		{"GET /api/v1/me/sessions", s.sessionsList},
-		{"DELETE /api/v1/me/sessions", s.sessionsDeleteOthers},
-		{"DELETE /api/v1/me/sessions/{session_id}", s.sessionsDelete},
-
-		{"GET /api/v1/recurring-payments", s.recurringList},
-		{"POST /api/v1/recurring-payments", s.recurringCreate},
-		{"DELETE /api/v1/recurring-payments/{payment_id}", s.recurringDelete},
-		{"PATCH /api/v1/recurring-payments/{payment_id}", s.recurringUpdate},
-		{"POST /api/v1/recurring-payments/{payment_id}/pause", s.recurringPause},
-		{"POST /api/v1/recurring-payments/{payment_id}/resume", s.recurringResume},
-		{"POST /api/v1/recurring-payments/import", s.recurringImport},
-		{"GET /api/v1/recurring-payments/import/template", s.importTemplate},
-
-		{"GET /api/v1/payment-occurrences", s.occurrenceList},
-		{"GET /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceGet},
-		{"PATCH /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceUpdate},
-		{"GET /api/v1/payments/summary", s.summary},
-		{"GET /api/v1/payment-occurrences/export", s.occurrencesExport},
-		{"GET /api/v1/payment-occurrences/{occurrence_id}/receipts", s.receiptsList},
-		{"POST /api/v1/payment-occurrences/{occurrence_id}/receipts", s.receiptsAdd},
-		{"GET /api/v1/receipts/{receipt_id}/file", s.receiptFile},
-		{"DELETE /api/v1/receipts/{receipt_id}", s.receiptsDelete},
-		{"GET /api/v1/budget", s.budget},
-
-		{"GET /api/v1/users", s.usersList},
-		{"POST /api/v1/users", s.usersCreate},
-		{"PATCH /api/v1/users/{user_id}", s.usersUpdate},
-		{"DELETE /api/v1/users/{user_id}", s.usersDelete},
-
-		{"GET /api/v1/reminders", s.remindersList},
-		{"GET /api/v1/deliveries", s.deliveriesList},
-		{"GET /api/v1/audit-log", s.auditList},
-
-		{"GET /api/v1/api-keys", s.apiKeysList},
-		{"POST /api/v1/api-keys", s.apiKeysCreate},
-		{"DELETE /api/v1/api-keys/{key_id}", s.apiKeysDelete},
-		{"GET /api/v1/extension/whoami", cors(s.extensionWhoami)},
-		{"POST /api/v1/payment-suggestions", cors(s.suggestionsSubmit)},
-		{"GET /api/v1/payment-suggestions", s.suggestionsList},
-		{"POST /api/v1/payment-suggestions/{suggestion_id}/accept", s.suggestionsAccept},
-		{"POST /api/v1/payment-suggestions/{suggestion_id}/reject", s.suggestionsReject},
+// onlyQuery refuses unknown query parameters, the way readForm refuses unknown body fields:
+// a misspelled filter must not silently return everything.
+func onlyQuery(allowed []string, next handlerFunc) handlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		var errs []fieldError
+		for name := range r.URL.Query() {
+			if !slices.Contains(allowed, name) {
+				errs = append(errs, fieldError{Loc: []any{"query", name}, Msg: "Неизвестный параметр", Type: "extra_forbidden"})
+			}
+		}
+		if len(errs) > 0 {
+			return &apiError{Status: 422, Detail: errs}
+		}
+		return next(w, r)
 	}
 }
 
@@ -288,11 +264,15 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	return user, err
 }
 
+// originCheck requires the Origin of this site on state-changing cookie requests. Browsers send it
+// with every POST, PATCH and DELETE, so a request without it is not from the panel; scripts use API tokens.
 func originCheck(r *http.Request) error {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		if parsed, err := url.Parse(origin); err != nil || parsed.Host != r.Host {
-			return fail(403, "Запрос с другого сайта запрещён")
-		}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return &apiError{Status: 403, Detail: "Нет заголовка Origin. Для скриптов используйте токен API", Code: "origin_required"}
+	}
+	if parsed, err := url.Parse(origin); err != nil || parsed.Host != r.Host {
+		return fail(403, "Запрос с другого сайта запрещён")
 	}
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 		return fail(403, "Запрос с другого сайта запрещён")
@@ -426,10 +406,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 		encoded = storedHash
 	}
 	if !verifyPassword(*password, encoded) || !(isAdmin || found) {
+		s.alertLockout(r, strings.ToLower(*username), keys[1])
 		return fail(401, "Неверный логин или пароль")
 	}
 	if isAdmin {
 		if err := s.checkSecondFactor(code); err != nil {
+			return err
+		}
+	} else if needsRehash(storedHash) {
+		// Upgrade a scrypt (or weaker Argon2id) hash now that the password is known.
+		if _, err := s.DB.Exec("UPDATE users SET password_hash=? WHERE id=? AND password_hash=?", hashPassword(*password), storedID, storedHash); err != nil {
 			return err
 		}
 	}
@@ -459,8 +445,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, MaxAge: maxAge, Path: "/", HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, MaxAge: maxAge, Path: "/", HttpOnly: true, // #nosec G124 -- Secure follows COOKIE_SECURE: false only for local HTTP
 		Secure: s.Settings.CookieSecure, SameSite: http.SameSiteStrictMode})
+	s.alertSignIn(r, storedID, isAdmin)
 	return writeJSON(w, 200, user)
 }
 
@@ -504,7 +491,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.DB.Exec("DELETE FROM sessions WHERE token_hash=?", digest(cookie.Value)); err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", MaxAge: -1, Path: "/", HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", MaxAge: -1, Path: "/", HttpOnly: true, // #nosec G124 -- Secure follows COOKIE_SECURE: false only for local HTTP
 		Secure: s.Settings.CookieSecure, SameSite: http.SameSiteStrictMode})
 	return noContent(w)
 }
@@ -518,6 +505,8 @@ func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) error {
 		"team_chat": s.Settings.TelegramEnabled && s.Settings.TelegramChatID != "", "bot_username": s.BotUsername(),
 		"reminder_days": 3, "reminder_interval_seconds": s.Settings.ReminderInterval,
 		"support_telegram": s.Settings.SupportTelegram, "support_email": s.Settings.SupportEmail,
-		"channels": s.channelNames(), "overdue_reminders": s.Settings.OverdueReminders,
+		"channels": s.channelNames(), "overdue_reminders": s.Settings.OverdueReminders, "sanctions_screening": s.Settings.OFACEnabled, "key_idle_days": s.Settings.KeyIdleDays,
+		"security": map[string]bool{"encryption": dataKey != nil, "login_alerts": s.Settings.LoginAlerts && s.notifier != nil,
+			"paid_linked_only": s.Settings.PaidLinkedOnly},
 	})
 }

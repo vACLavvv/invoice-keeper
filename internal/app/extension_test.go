@@ -96,7 +96,7 @@ func TestKeysDieWithTheirOwner(t *testing.T) {
 
 	admin.delete("/api/v1/users/" + id(created))
 	expect(t, "deleted user's key", userKey.get("/api/v1/extension/whoami").status, 401)
-	e.settings.AdminPassword = "Another-Admin-Pass1!"
+	e.settings.AdminPassword = "Another-Owner-Pass1!"
 	expect(t, "admin key after password change", adminKey.get("/api/v1/extension/whoami").status, 401)
 }
 

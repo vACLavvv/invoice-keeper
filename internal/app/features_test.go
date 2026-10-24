@@ -240,6 +240,7 @@ func (c *client) upload(path, name string, content []byte) response {
 	body, contentType := multipartFile(c.e.t, name, content)
 	request, _ := http.NewRequest("POST", c.e.http.URL+path, body)
 	request.Header.Set("Content-Type", contentType)
+	request.Header.Set("Origin", c.e.http.URL)
 	request.Header.Set("X-CSRF-Token", c.csrf)
 	result, err := c.http.Do(request)
 	if err != nil {
@@ -343,6 +344,7 @@ func TestCSVImport(t *testing.T) {
 		body, contentType := multipartFile(t, "платежи.csv", raw)
 		request, _ := http.NewRequest("POST", e.http.URL+"/api/v1/recurring-payments/import"+query, body)
 		request.Header.Set("Content-Type", contentType)
+		request.Header.Set("Origin", e.http.URL)
 		request.Header.Set("X-CSRF-Token", c.csrf)
 		result, err := c.http.Do(request)
 		if err != nil {

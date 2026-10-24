@@ -352,6 +352,12 @@ func (b *Bot) onCallback(c *tgCallback) error {
 	if !ok || err != nil {
 		return answer("Неизвестная кнопка")
 	}
+	// A team chat may include guests; only people who linked Telegram to a panel account mark payments.
+	if b.server.Settings.PaidLinkedOnly {
+		if _, linked := b.server.panelNameForTelegram(c.From.ID); !linked {
+			return answer("Привяжите Telegram в панели («Аккаунт»), чтобы отмечать оплату")
+		}
+	}
 	actor := b.actorName(c.From)
 	today := formatDate(b.server.Today())
 	already, err := b.server.markPaidFromMessenger(id, actor)

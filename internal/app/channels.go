@@ -68,8 +68,8 @@ func maxCall(client *http.Client, s *Settings, method, path string, payload any)
 // maxKeyboard mirrors the Telegram buttons: «Оплачено» (callback) and «Оплатить» (link).
 func maxKeyboard(row ReminderRow) []map[string]any {
 	buttons := [][]map[string]string{{{"type": "callback", "text": "✅ Оплачено", "payload": "paid:" + itoa(row.OccurrenceID)}}}
-	if row.PaymentURL != "" {
-		buttons = append(buttons, []map[string]string{{"type": "link", "text": "💳 Оплатить", "url": row.PaymentURL}})
+	if link := row.payURL(); link != "" {
+		buttons = append(buttons, []map[string]string{{"type": "link", "text": "💳 Оплатить", "url": link}})
 	}
 	return []map[string]any{{"type": "inline_keyboard", "payload": map[string]any{"buttons": buttons}}}
 }
@@ -121,6 +121,9 @@ func emailSubject(row ReminderRow) string {
 	if row.overdue() {
 		prefix = "Просрочен платёж"
 	}
+	if row.sanctioned() {
+		prefix = "⛔ Санкционный кошелёк · " + prefix
+	}
 	subject := fmt.Sprintf("%s: %s — %s %s до %s", prefix, row.Title, money(row.AmountCents), row.Currency, shortDateFull(row.DueDate))
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(subject)
 }
@@ -128,8 +131,8 @@ func emailSubject(row ReminderRow) string {
 func emailMessage(s *Settings, row ReminderRow, now time.Time) []byte {
 	text := reminderText(row)
 	text = strings.Replace(text, "нажмите «Оплачено» или отметьте в панели", "отметьте оплату в панели Invoice Keeper", 1)
-	if row.PaymentURL != "" {
-		text += "\n\nОплатить: " + row.PaymentURL
+	if link := row.payURL(); link != "" {
+		text += "\n\nОплатить: " + link
 	}
 	var body bytes.Buffer
 	qp := quotedprintable.NewWriter(&body)
@@ -247,14 +250,20 @@ func webhookPayload(row ReminderRow, now time.Time) map[string]any {
 		event = "reminder.overdue"
 	}
 	text := reminderText(row)
-	if row.PaymentURL != "" {
-		text += "\nОплатить: " + row.PaymentURL
+	if link := row.payURL(); link != "" {
+		text += "\nОплатить: " + link
+	}
+	var wallet any
+	if row.WalletAddress != "" {
+		wallet = map[string]any{"network": row.WalletNetwork, "address": row.WalletAddress,
+			"sanctioned": row.sanctioned(), "match_name": nullable(row.SanctionsMatch)}
 	}
 	return map[string]any{
 		"event": event,
 		"occurrence": map[string]any{
 			"id": row.OccurrenceID, "title": row.Title, "amount": money(row.AmountCents), "currency": row.Currency,
-			"due_date": row.DueDate, "payment_url": nullable(row.PaymentURL), "payment_details": nullable(row.PaymentDetails),
+			"due_date": row.DueDate, "payment_url": nullable(row.payURL()), "payment_details": nullable(row.PaymentDetails),
+			"wallet": wallet,
 		},
 		// text and content make the payload readable by Slack, Mattermost and Discord incoming webhooks.
 		"text": text, "content": text,

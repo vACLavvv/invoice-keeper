@@ -198,7 +198,7 @@ func (s *Server) recurringImport(w http.ResponseWriter, r *http.Request) error {
 	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mediaType == "multipart/form-data" {
 		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if err := r.ParseMultipartForm(1 << 20); err != nil { // #nosec G120 -- the body is limited by MaxBytesReader above
 			return fail(422, "Файл больше 1 МБ или повреждён")
 		}
 		file, _, err := r.FormFile("file")

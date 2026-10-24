@@ -14,13 +14,22 @@
 
   <section id="settings" hidden>
     <div class="ghost">НАСТРОЙКИ</div>
-    <label>Адрес сервера<input id="server" type="url" placeholder="http://217.144.184.107" autocomplete="off"></label>
-    <label>Ключ API<input id="key" type="password" placeholder="ik_…" autocomplete="off"></label>
-    <p class="hint">Ключ создаётся в панели: раздел «Расширение» → «Создать ключ». Ключ умеет только отправлять предложения платежей.</p>
+    <label>Адрес сервера<input id="server" type="url" placeholder="https://invoices.example.com" autocomplete="off"></label>
     <div class="row">
-      <button id="save" class="primary" type="button">Сохранить и проверить</button>
+      <button id="connect" class="primary" type="button">Подключить</button>
       <span id="settings-status" class="muted"></span>
     </div>
+    <p class="hint">Откроется панель: подтвердите подключение там — ключ придёт сам, копировать ничего не нужно. Ключ умеет только отправлять предложения платежей и действует год.</p>
+    <div id="connected" class="row" hidden>
+      <span id="connected-as" class="muted"></span>
+      <button id="disconnect" class="link" type="button">отключить</button>
+    </div>
+    <details>
+      <summary>ввести ключ вручную</summary>
+      <label>Ключ API<input id="key" type="password" placeholder="ik_…" autocomplete="off"></label>
+      <p class="hint">Ключ создаётся в панели: раздел «Расширение» → «Создать ключ».</p>
+      <button id="save" class="secondary" type="button">Сохранить и проверить</button>
+    </details>
   </section>
 
   <main id="main">

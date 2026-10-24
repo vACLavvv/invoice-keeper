@@ -3,9 +3,11 @@ package app
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +44,19 @@ type Settings struct {
 	WebhookURL    string // reminders as JSON POST, signed with HMAC-SHA256 when WebhookSecret is set
 	WebhookSecret string
 
+	EncryptionKey  []byte // DATA_ENCRYPTION_KEY: encrypts secrets, receipts and payment details in the database
+	LoginAlerts    bool   // Telegram message to the owner on every sign-in and on a sign-in lockout
+	PaidLinkedOnly bool   // «Оплачено» in Telegram only from members who linked their account in the panel
+
+	KeyIdleDays int // API keys and tokens unused this long stop working; 0 — never
+
+	RateLimitPerSecond int // API requests per second per IP or token (burst RateLimitBurst)
+	RateLimitBurst     int
+
+	OFACEnabled      bool // screen payee wallets against the OFAC SDN list
+	OFACListURL      string
+	OFACRefreshHours int
+
 	location *time.Location
 }
 
@@ -66,6 +81,9 @@ func (s *Settings) Validate() error {
 	n := len([]rune(s.AdminPassword))
 	if !usernamePattern.MatchString(s.AdminUsername) || n < 12 || n > 128 || s.AdminPassword == "replace-with-a-long-random-password" {
 		return errors.New("Задайте ADMIN_USERNAME и случайный ADMIN_PASSWORD (минимум 12 символов). Запуск: invoice-keeper bootstrap --demo")
+	}
+	if reason := weakPasswordReason(s.AdminPassword, s.AdminUsername); reason != "" {
+		return errors.New("ADMIN_PASSWORD слабый: " + reason + ". Сгенерируйте случайный, например: openssl rand -base64 24")
 	}
 	// Without TELEGRAM_CHAT_ID reminders go only to users who linked Telegram in the panel.
 	if s.TelegramEnabled && s.TelegramBotToken == "" {
@@ -97,6 +115,27 @@ func (s *Settings) Validate() error {
 	if s.WebhookURL != "" && !isWebURL(s.WebhookURL) {
 		return errors.New("WEBHOOK_URL должен начинаться с http:// или https://")
 	}
+	if s.KeyIdleDays < 0 || s.KeyIdleDays > 3650 {
+		return errors.New("KEY_IDLE_DAYS: от 0 (не отключать) до 3650")
+	}
+	if s.RateLimitPerSecond == 0 {
+		s.RateLimitPerSecond = 20
+	}
+	if s.RateLimitBurst == 0 {
+		s.RateLimitBurst = 120
+	}
+	if s.RateLimitPerSecond < 1 || s.RateLimitBurst < s.RateLimitPerSecond {
+		return errors.New("RATE_LIMIT_PER_SECOND должен быть не меньше 1, а RATE_LIMIT_BURST — не меньше него")
+	}
+	if s.OFACListURL == "" {
+		s.OFACListURL = defaultOFACURL
+	}
+	if s.OFACRefreshHours == 0 {
+		s.OFACRefreshHours = 24
+	}
+	if s.OFACRefreshHours < 1 || s.OFACRefreshHours > 720 {
+		return errors.New("OFAC_REFRESH_HOURS: от 1 до 720")
+	}
 	if s.SessionHours < 1 || s.SessionHours > 168 || s.ReminderInterval < 10 || s.ReminderInterval > 3600 {
 		return errors.New("Недопустимый срок сессии или интервал напоминаний")
 	}
@@ -110,9 +149,22 @@ func (s *Settings) Location() *time.Location {
 	return s.location
 }
 
+// EnvFileWarning reports a .env readable by other users of the system: it holds the admin password
+// and bot tokens. Windows has no such permission bits, so it is not checked there.
+func EnvFileWarning(root string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	info, err := os.Stat(filepath.Join(root, ".env"))
+	if err != nil || info.Mode().Perm()&0o077 == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Файл .env доступен другим пользователям системы (права %o). Выполните: chmod 600 .env", info.Mode().Perm())
+}
+
 // LoadDotenv sets variables from the file without overriding the real environment.
 func LoadDotenv(path string) error {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- the .env path is chosen by the operator
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -181,6 +233,26 @@ func SettingsFromEnv(root string) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
+	ofacHours, err := envInt("OFAC_REFRESH_HOURS", 24)
+	if err != nil {
+		return nil, err
+	}
+	keyIdleDays, err := envInt("KEY_IDLE_DAYS", 90)
+	if err != nil {
+		return nil, err
+	}
+	ratePerSecond, err := envInt("RATE_LIMIT_PER_SECOND", 20)
+	if err != nil {
+		return nil, err
+	}
+	rateBurst, err := envInt("RATE_LIMIT_BURST", 120)
+	if err != nil {
+		return nil, err
+	}
+	encryptionKey, err := ParseEncryptionKey(strings.TrimSpace(env("DATA_ENCRYPTION_KEY", "")))
+	if err != nil {
+		return nil, err
+	}
 	var smtpTo []string
 	for _, address := range strings.Split(env("SMTP_TO", ""), ",") {
 		if address = strings.TrimSpace(address); address != "" {
@@ -188,32 +260,41 @@ func SettingsFromEnv(root string) (*Settings, error) {
 		}
 	}
 	s := &Settings{
-		DatabasePath:     dbPath,
-		AdminUsername:    env("ADMIN_USERNAME", "admin"),
-		AdminPassword:    env("ADMIN_PASSWORD", ""),
-		Timezone:         env("APP_TIMEZONE", "Europe/Moscow"),
-		SessionHours:     sessionHours,
-		CookieSecure:     strings.EqualFold(env("COOKIE_SECURE", "false"), "true"),
-		TelegramEnabled:  strings.EqualFold(env("TELEGRAM_ENABLED", "false"), "true"),
-		TelegramBotToken: env("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:   env("TELEGRAM_CHAT_ID", ""),
-		ReminderInterval: interval,
-		SupportTelegram:  strings.TrimSpace(env("SUPPORT_TELEGRAM", "")),
-		SupportEmail:     strings.TrimSpace(env("SUPPORT_EMAIL", "")),
-		OverdueReminders: !strings.EqualFold(env("OVERDUE_REMINDERS", "true"), "false"),
-		MaxBotToken:      strings.TrimSpace(env("MAX_BOT_TOKEN", "")),
-		MaxChatID:        strings.TrimSpace(env("MAX_CHAT_ID", "")),
-		MaxAPIURL:        strings.TrimRight(strings.TrimSpace(env("MAX_API_URL", "")), "/"),
-		MaxCAFile:        strings.TrimSpace(env("MAX_CA_FILE", "")),
-		SMTPHost:         strings.TrimSpace(env("SMTP_HOST", "")),
-		SMTPPort:         smtpPort,
-		SMTPUsername:     env("SMTP_USERNAME", ""),
-		SMTPPassword:     env("SMTP_PASSWORD", ""),
-		SMTPFrom:         strings.TrimSpace(env("SMTP_FROM", "")),
-		SMTPTo:           smtpTo,
-		SMTPSecurity:     strings.ToLower(strings.TrimSpace(env("SMTP_SECURITY", ""))),
-		WebhookURL:       strings.TrimSpace(env("WEBHOOK_URL", "")),
-		WebhookSecret:    env("WEBHOOK_SECRET", ""),
+		DatabasePath:       dbPath,
+		AdminUsername:      env("ADMIN_USERNAME", "admin"),
+		AdminPassword:      env("ADMIN_PASSWORD", ""),
+		Timezone:           env("APP_TIMEZONE", "Europe/Moscow"),
+		SessionHours:       sessionHours,
+		CookieSecure:       strings.EqualFold(env("COOKIE_SECURE", "false"), "true"),
+		TelegramEnabled:    strings.EqualFold(env("TELEGRAM_ENABLED", "false"), "true"),
+		TelegramBotToken:   env("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:     env("TELEGRAM_CHAT_ID", ""),
+		ReminderInterval:   interval,
+		SupportTelegram:    strings.TrimSpace(env("SUPPORT_TELEGRAM", "")),
+		SupportEmail:       strings.TrimSpace(env("SUPPORT_EMAIL", "")),
+		OverdueReminders:   !strings.EqualFold(env("OVERDUE_REMINDERS", "true"), "false"),
+		MaxBotToken:        strings.TrimSpace(env("MAX_BOT_TOKEN", "")),
+		MaxChatID:          strings.TrimSpace(env("MAX_CHAT_ID", "")),
+		MaxAPIURL:          strings.TrimRight(strings.TrimSpace(env("MAX_API_URL", "")), "/"),
+		MaxCAFile:          strings.TrimSpace(env("MAX_CA_FILE", "")),
+		SMTPHost:           strings.TrimSpace(env("SMTP_HOST", "")),
+		SMTPPort:           smtpPort,
+		SMTPUsername:       env("SMTP_USERNAME", ""),
+		SMTPPassword:       env("SMTP_PASSWORD", ""),
+		SMTPFrom:           strings.TrimSpace(env("SMTP_FROM", "")),
+		SMTPTo:             smtpTo,
+		SMTPSecurity:       strings.ToLower(strings.TrimSpace(env("SMTP_SECURITY", ""))),
+		WebhookURL:         strings.TrimSpace(env("WEBHOOK_URL", "")),
+		WebhookSecret:      env("WEBHOOK_SECRET", ""),
+		OFACEnabled:        !strings.EqualFold(env("OFAC_ENABLED", "true"), "false"),
+		OFACListURL:        strings.TrimSpace(env("OFAC_LIST_URL", "")),
+		OFACRefreshHours:   ofacHours,
+		EncryptionKey:      encryptionKey,
+		LoginAlerts:        !strings.EqualFold(env("LOGIN_ALERTS", "true"), "false"),
+		PaidLinkedOnly:     !strings.EqualFold(env("TELEGRAM_PAID_LINKED_ONLY", "true"), "false"),
+		KeyIdleDays:        keyIdleDays,
+		RateLimitPerSecond: ratePerSecond,
+		RateLimitBurst:     rateBurst,
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err

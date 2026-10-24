@@ -15,7 +15,10 @@ import (
 	invoicekeeper "invoice-keeper"
 )
 
-const testPassword = "TestAdmin-Only123!"
+const testPassword = "Test-Owner-Only123!"
+
+// Tests hash many passwords; production cost would only make them slow, the format is the same.
+func init() { argonParams = argonCost{memory: 1024, passes: 1, threads: 1} }
 
 type clock struct {
 	mu  sync.Mutex
@@ -56,7 +59,7 @@ func (e *harness) start() {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.db, e.server, e.http = db, server, httptest.NewServer(server)
+	e.db, e.server, e.http = db, server, httptest.NewServer(validateContract(e.t, server))
 	e.t.Cleanup(func() {
 		e.http.Close()
 		server.Worker.Wait()
@@ -110,6 +113,7 @@ func (c *client) do(method, path string, body any, headers ...string) response {
 	}
 	request, _ := http.NewRequest(method, c.e.http.URL+path, reader)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", c.e.http.URL) // browsers send it with every request of the panel
 	if c.csrf != "" {
 		request.Header.Set("X-CSRF-Token", c.csrf)
 	}
@@ -125,8 +129,9 @@ func (c *client) do(method, path string, body any, headers ...string) response {
 	}
 	defer result.Body.Close()
 	data, _ := io.ReadAll(result.Body)
-	// Background reminder passes finish before the test looks at the outcome.
+	// Background reminder passes and security alerts finish before the test looks at the outcome.
 	c.e.server.Worker.Wait()
+	c.e.server.WaitAlerts()
 	return response{result.StatusCode, result.Header, data}
 }
 

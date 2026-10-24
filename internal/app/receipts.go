@@ -56,6 +56,9 @@ func (s *Server) receiptsList(w http.ResponseWriter, r *http.Request) error {
 		if err := rows.Scan(&item.ID, &item.Kind, &item.URL, &item.FileName, &item.ContentType, &item.Size, &item.CreatedBy, &item.CreatedAt); err != nil {
 			return err
 		}
+		if err := decryptNullable("receipts.url", &item.URL); err != nil {
+			return err
+		}
 		if item.Kind == "file" {
 			link := "/api/v1/receipts/" + itoa(item.ID) + "/file"
 			item.DownloadURL = &link
@@ -102,7 +105,7 @@ func (s *Server) receiptsAdd(w http.ResponseWriter, r *http.Request) error {
 	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mediaType == "multipart/form-data" {
 		r.Body = http.MaxBytesReader(w, r.Body, maxReceiptBytes+1<<20)
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if err := r.ParseMultipartForm(1 << 20); err != nil { // #nosec G120 -- the body is limited by MaxBytesReader above
 			return &apiError{Status: 422, Detail: []fieldError{{Loc: []any{"body", "file"}, Msg: "Файл больше 5 МБ или повреждён", Type: "file_too_large"}}}
 		}
 		file, header, err := r.FormFile("file")
@@ -156,7 +159,10 @@ func (s *Server) receiptsAdd(w http.ResponseWriter, r *http.Request) error {
 		}
 		var blob any
 		if data != nil {
-			blob = data
+			blob = encryptBlob("receipts.data", data)
+		}
+		if text, ok := link.(string); ok {
+			link = encryptText("receipts.url", text)
 		}
 		result, err := tx.Exec(`INSERT INTO receipts(occurrence_id,kind,url,file_name,content_type,size,data,created_by,author_user_id,created_at)
 			VALUES(?,?,?,?,?,?,?,?,?,?)`, id, kind, link, name, contentType, size, blob, user.Username, authorID, timestamp())
@@ -187,6 +193,9 @@ func (s *Server) receiptFile(w http.ResponseWriter, r *http.Request) error {
 		return fail(404, "Чек не найден")
 	}
 	if err != nil {
+		return err
+	}
+	if data, err = decryptBlob("receipts.data", data); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", contentType.String)

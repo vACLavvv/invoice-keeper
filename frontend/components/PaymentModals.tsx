@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
-import styled from 'styled-components';
+import styled, { css } from 'styled-components';
 import { api, type ImportResult, type Occurrence, type Receipt, type Recurring, type TeamUser } from '@/lib/api';
 import { currencies, date, frequencies, frequencyName, longDate, moneyWith, type Frequency } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 import { FormRow, InfoBox, Modal, ModalForm } from './Modal';
+import { SanctionsWarning, WalletFields, walletBody, shortAddress } from './Wallet';
 import { Button, Empty, Field, Input, Muted, Notice, Pill, Row, Select, TableWrap } from './ui';
 
 type Close = { onClose: () => void };
@@ -59,6 +60,46 @@ function PaymentLinkFields({ payment }: { payment?: Recurring }) {
   );
 }
 
+type Method = 'fiat' | 'crypto';
+
+/** «Как платим»: a bank transfer or card (link and requisites) or a crypto wallet — never both. */
+function MethodToggle({ method, onChange }: { method: Method; onChange: (m: Method) => void }) {
+  const options: [Method, string, string][] = [
+    ['fiat', t('💳 Банк или карта'), t('Ссылка на счёт и реквизиты')],
+    ['crypto', t('₿ Криптовалюта'), t('Кошелёк получателя, проверка по санкциям OFAC')],
+  ];
+  return (
+    <Field as="div">
+      {t('Как платим')}
+      <Segmented role="radiogroup" aria-label={t('Как платим')}>
+        {options.map(([value, label, hint]) => (
+          <Segment key={value} type="button" role="radio" aria-checked={method === value} $selected={method === value} onClick={() => onChange(value)}>
+            <b>{label}</b>
+            <small>{hint}</small>
+          </Segment>
+        ))}
+      </Segmented>
+    </Field>
+  );
+}
+
+/** The fields of the chosen method; the other method's values are cleared on save. */
+function MethodFields({ method, payment }: { method: Method; payment?: Recurring }) {
+  if (method === 'fiat') return <PaymentLinkFields payment={payment} />;
+  return (
+    <>
+      <WalletFields wallet={payment?.wallet} required />
+      <SanctionsWarning wallet={payment?.wallet ?? null} />
+    </>
+  );
+}
+
+/** Request fields for the chosen method: the other one is sent as null, so a payment never has both. */
+function methodBody(method: Method, data: FormData) {
+  if (method === 'crypto') return { payment_url: null, payment_details: null, ...walletBody(data) };
+  return { payment_url: optional(data.get('payment_url')), payment_details: optional(data.get('payment_details')), wallet_network: null, wallet_address: null };
+}
+
 const optional = (value: FormDataEntryValue | null) => {
   const text = String(value ?? '').trim();
   return text === '' ? null : text;
@@ -68,6 +109,7 @@ export function CreatePaymentModal({ onClose }: Close) {
   const { settings, setMonth, refresh } = useSession();
   const toast = useToast();
   const { users, categories } = usePaymentChoices();
+  const [method, setMethod] = useState<Method>('fiat');
   return (
     <Modal title={t('Новый регулярный платёж')} onClose={onClose}>
       <ModalForm
@@ -78,13 +120,14 @@ export function CreatePaymentModal({ onClose }: Close) {
             body: {
               title: data.get('title'), amount: data.get('amount'), currency: data.get('currency'), first_due_date: data.get('first_due_date'),
               frequency: data.get('frequency'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
-              payment_url: optional(data.get('payment_url')), payment_details: optional(data.get('payment_details')),
+              ...methodBody(method, data),
             },
           });
           onClose();
           setMonth(created.first_due_date.slice(0, 7));
           refresh();
-          toast(t('Регулярный платёж добавлен'));
+          if (created.wallet?.sanctioned) toast(t('Платёж добавлен, но кошелёк получателя в санкционном списке OFAC'), true);
+          else toast(t('Регулярный платёж добавлен'));
         }}
         actions={<>
           <Button type="button" $variant="secondary" onClick={onClose}>{t('Отмена')}</Button>
@@ -92,10 +135,15 @@ export function CreatePaymentModal({ onClose }: Close) {
         </>}
       >
         <Field>{t('Название платежа')}<Input name="title" maxLength={120} required placeholder={t('Например, аренда офиса')} autoFocus /></Field>
+        <MethodToggle method={method} onChange={setMethod} />
         <FormRow>
           <Field>{t('Сумма')}<Input name="amount" type="number" step="0.01" min="0.01" max="9999999999.99" required placeholder="0,00" inputMode="decimal" /></Field>
-          <Field>{t('Валюта')}<Select name="currency" defaultValue="RUB">{currencies.map((c) => <option key={c}>{c}</option>)}</Select></Field>
+          <Field>
+            {method === 'crypto' ? t('Учитывать в') : t('Валюта')}
+            <Select name="currency" key={method} defaultValue={method === 'crypto' ? 'USD' : 'RUB'}>{currencies.map((c) => <option key={c}>{c}</option>)}</Select>
+          </Field>
         </FormRow>
+        {method === 'crypto' && <Muted>{t('Итоги и бюджет считаются в RUB, USD или EUR: стейблкоины USDT и USDC обычно учитывают как USD.')}</Muted>}
         <FormRow>
           <Field>
             {t('Первая дата оплаты')}
@@ -106,9 +154,10 @@ export function CreatePaymentModal({ onClose }: Close) {
             <Select name="frequency" defaultValue="monthly">{frequencies.map((f) => <option key={f} value={f}>{frequencyName(f)}</option>)}</Select>
           </Field>
         </FormRow>
+        <MethodFields method={method} />
+        <Group>{t('дополнительно')}</Group>
         <CategoryField categories={categories} />
         {users.length > 0 && <AssigneeField users={users} />}
-        <PaymentLinkFields />
         <InfoBox>
           {t('Каждый период — своя отметка оплаты. Если в месяце нет нужного числа, срок — последний день месяца. Если до срока меньше 3 дней, напоминание уйдёт сразу.')}
           <br /><Muted>{t('Часовой пояс: {tz}', { tz: settings.timezone })}</Muted>
@@ -122,21 +171,23 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
   const { refresh } = useSession();
   const toast = useToast();
   const { users, categories } = usePaymentChoices();
+  const [method, setMethod] = useState<Method>(payment.wallet ? 'crypto' : 'fiat');
   return (
     <Modal title={t('Изменить платёж')} onClose={onClose}>
       <ModalForm
         onSubmit={async (data) => {
           const assignee = optional(data.get('assignee_id'));
-          await api(`/recurring-payments/${payment.id}`, {
+          const saved = await api<Recurring>(`/recurring-payments/${payment.id}`, {
             method: 'PATCH',
             body: {
               title: data.get('title'), amount: data.get('amount'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
-              payment_url: optional(data.get('payment_url')), payment_details: optional(data.get('payment_details')),
+              ...methodBody(method, data),
             },
           });
           onClose();
           refresh();
-          toast(t('Платёж изменён'));
+          if (saved.wallet?.sanctioned) toast(t('Сохранено, но кошелёк получателя в санкционном списке OFAC'), true);
+          else toast(t('Платёж изменён'));
         }}
         actions={<>
           <Button type="button" $variant="secondary" onClick={onClose}>{t('Отмена')}</Button>
@@ -149,9 +200,13 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
           <Input name="amount" type="number" step="0.01" min="0.01" defaultValue={payment.amount} required />
           <small>{t('Новая сумма применится к неоплаченным периодам с сегодняшнего дня; оплаченные останутся как были.')}</small>
         </Field>
+        <MethodToggle method={method} onChange={setMethod} />
+        <MethodFields method={method} payment={payment} />
+        {method === 'fiat' && payment.wallet && <Muted>{t('При сохранении кошелёк будет удалён.')}</Muted>}
+        {method === 'crypto' && (payment.payment_url || payment.payment_details) && <Muted>{t('При сохранении ссылка на оплату и реквизиты будут удалены.')}</Muted>}
+        <Group>{t('дополнительно')}</Group>
         <CategoryField value={payment.category} categories={categories} />
         <AssigneeField value={payment.assignee?.id} users={users} />
-        <PaymentLinkFields payment={payment} />
       </ModalForm>
     </Modal>
   );
@@ -214,9 +269,11 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
           <b>{o.title}</b><br />
           {moneyWith(o.amount, o.currency)} · {t('срок {date}', { date: longDate(o.due_date) })}<br />
           {o.payment_details && <>{t('Реквизиты: {details}', { details: o.payment_details })}<br /></>}
-          {o.payment_url && <><a href={o.payment_url} target="_blank" rel="noopener noreferrer">{t('Открыть ссылку на оплату ↗')}</a><br /></>}
+          {o.wallet && <>{t('Кошелёк ({network}): {address}', { network: o.wallet.network, address: shortAddress(o.wallet.address) })}<br /></>}
+          {o.payment_url && !o.wallet?.sanctioned && <><a href={o.payment_url} target="_blank" rel="noopener noreferrer">{t('Открыть ссылку на оплату ↗')}</a><br /></>}
           {t('Изменение затронет только этот период.')}
         </InfoBox>
+        <SanctionsWarning wallet={o.wallet} />
         <Field>
           {t('Фактическая дата оплаты')}
           <Input name="paid_at" type="date" defaultValue={o.paid_at ?? settings.today} max={settings.today} required />
@@ -410,6 +467,42 @@ export function ImportModal({ onClose }: Close) {
     </Modal>
   );
 }
+
+const Segmented = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+  ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }
+`;
+
+const Segment = styled.button<{ $selected: boolean }>`
+  display: grid;
+  gap: 0.2rem;
+  padding: 1.2rem 1.4rem;
+  text-align: left;
+  border-radius: ${({ theme }) => theme.radius.md};
+  border: 1px solid ${({ theme }) => theme.color.line};
+  background: ${({ theme }) => theme.color.tile};
+  color: ${({ theme }) => theme.color.muted};
+  b { color: ${({ theme }) => theme.color.text}; font-weight: 500; }
+  small { font-size: 1.3rem; }
+  &:hover { border-color: ${({ theme }) => theme.color.faint}; }
+  ${({ $selected, theme }) => $selected && css`
+    border-color: ${theme.color.accent};
+    background: ${theme.color.accentSoft};
+    b { color: ${theme.color.strong}; }
+  `}
+`;
+
+const Group = styled.div`
+  margin-top: 0.4rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid ${({ theme }) => theme.color.line};
+  color: ${({ theme }) => theme.color.muted};
+  font-size: 1.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+`;
 
 const List = styled.div`
   display: grid;

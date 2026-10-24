@@ -83,7 +83,7 @@ func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error 
 	}
 	where, args := ownerClause(user)
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		result, err := tx.Exec("DELETE FROM telegram_links WHERE "+where, args...)
+		result, err := tx.Exec("DELETE FROM telegram_links WHERE "+where, args...) // #nosec G202 -- owner is a constant clause, values are parameters
 		if err != nil {
 			return err
 		}

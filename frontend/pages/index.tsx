@@ -158,7 +158,7 @@ export default function Payments() {
                         <CurrencyBadge aria-hidden="true">{symbols[o.currency]}</CurrencyBadge>
                         <b>{o.title}</b>
                         <small>
-                          {[o.category, o.assignee && (o.assignee.id === user.id && !isAdmin ? t('вы') : '@' + o.assignee.username), !o.active && t('архив')]
+                          {[o.wallet?.sanctioned && t('⛔ санкции OFAC'), o.category, o.assignee && (o.assignee.id === user.id && !isAdmin ? t('вы') : '@' + o.assignee.username), !o.active && t('архив')]
                             .filter(Boolean).join(' · ')}
                         </small>
                       </PaymentName>
@@ -172,7 +172,7 @@ export default function Payments() {
                     <td><Muted>{o.paid_at ? numericDate(o.paid_at) : '—'}</Muted></td>
                     <td>
                       <Row $gap={0.6}>
-                        {o.payment_url && o.status !== 'paid' && (
+                        {o.payment_url && o.status !== 'paid' && !o.wallet?.sanctioned && (
                           <Button as="a" href={o.payment_url} target="_blank" rel="noopener noreferrer" $small $variant="secondary"
                             title={o.payment_details ? t('Оплатить · {details}', { details: o.payment_details }) : t('Открыть ссылку на оплату')}
                             aria-label={t('Открыть ссылку на оплату')}>💳</Button>

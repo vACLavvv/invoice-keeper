@@ -1,0 +1,11 @@
+# Go code generated from docs/openapi.json: request/response types, the ServerInterface with one
+# method per operation and the routing for net/http, and the embedded spec for validation.
+# Regenerate after editing the spec: go generate ./internal/api
+package: api
+output: api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  embedded-spec: true
+output-options:
+  skip-prune: true

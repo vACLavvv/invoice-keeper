@@ -1,9 +1,9 @@
 {
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "info": {
     "title": "Invoice Keeper API",
     "version": "1.0.0",
-    "description": "Учёт регулярных платежей команды: периоды оплаты, просрочки, итоги по валютам и напоминания в Telegram.\n\n**Авторизация.** `POST /auth/login` ставит HttpOnly-cookie `invoice_session` и возвращает `csrf_token`.\nВсе изменяющие запросы (кроме входа) требуют заголовок `X-CSRF-Token` с этим значением; токен также отдаёт `GET /auth/me`.\nВ Swagger браузер использует открытую cookie-сессию — укажите токен в Authorize → csrfToken.\n\n**Форматы.** Суммы — десятичные строки с двумя знаками (`\"45000.00\"`), без конвертации между валютами.\nДаты — `YYYY-MM-DD` в часовом поясе приложения (`GET /settings`). Ошибки: `{\"detail\": \"текст\"}` или список ошибок полей.\n\n**Роли.** `admin` задаётся в `.env`; `user` создаёт администратор. Ограничения ролей проверяются на сервере."
+    "description": "Учёт регулярных платежей команды: периоды оплаты, просрочки, итоги по валютам и напоминания в Telegram.\n\n**Авторизация.** `POST /auth/login` ставит HttpOnly-cookie `invoice_session` и возвращает `csrf_token`.\nВсе изменяющие запросы (кроме входа) требуют заголовок `X-CSRF-Token` с этим значением; токен также отдаёт `GET /auth/me`.\nВ Swagger браузер использует открытую cookie-сессию — укажите токен в Authorize → csrfToken.\n\n**Форматы.** Суммы — десятичные строки с двумя знаками (`\"45000.00\"`), без конвертации между валютами.\nДаты — `YYYY-MM-DD` в часовом поясе приложения (`GET /settings`). Ошибки: `{\"detail\": \"текст\"}` или список ошибок полей.\n\n**Роли.** `admin` задаётся в `.env`; `user` создаёт администратор. Ограничения ролей проверяются на сервере.\n\n**Изменяющие запросы с cookie** обязаны нести заголовок `Origin` этого сайта (браузер ставит его сам); скриптам нужен токен API. Неизвестные параметры строки запроса отклоняются с 422. Частота запросов ограничена (429 и `Retry-After`)."
   },
   "servers": [
     {
@@ -115,6 +115,15 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -141,6 +150,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -216,6 +231,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -253,6 +274,12 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -313,6 +340,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -376,6 +406,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -405,6 +438,15 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -432,6 +474,12 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -482,6 +530,12 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -517,6 +571,15 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -565,6 +628,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -630,6 +696,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -676,6 +745,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -744,6 +816,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -802,6 +877,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -886,6 +964,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -921,6 +1002,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1025,6 +1112,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -1078,6 +1171,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -1176,6 +1275,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1227,6 +1329,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -1275,6 +1383,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1323,6 +1434,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -1430,6 +1547,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -1480,6 +1603,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -1543,6 +1672,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1608,6 +1740,12 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -1646,6 +1784,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1696,6 +1840,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1764,6 +1911,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -1810,6 +1960,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1842,6 +1995,15 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -1880,6 +2042,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1918,6 +2086,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -1950,6 +2124,15 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -1965,7 +2148,7 @@
             "csrfToken": []
           }
         ],
-        "description": "Ключ показывается один раз; хранится только его SHA-256. `access: extension` (по умолчанию) — только `/extension/whoami` и `POST /payment-suggestions`; `read` — любые GET-запросы к данным с правами владельца; `write` — ещё и изменения (без X-CSRF-Token). Настройки аккаунта (пароль, 2FA, токены, сессии, Telegram) по токену недоступны. Не больше 20 ключей на учётную запись.",
+        "description": "Ключ показывается один раз; хранится только его SHA-256. `access: extension` (по умолчанию) — только `/extension/whoami` и `POST /payment-suggestions`; `read` — любые GET-запросы к данным с правами владельца; `write` — ещё и изменения (без X-CSRF-Token). Настройки аккаунта (пароль, 2FA, токены, сессии, Telegram) по токену недоступны. Не больше 20 ключей на учётную запись. Ключ расширения без указанного срока действует 1 год. Любой ключ или токен, которым не пользовались KEY_IDLE_DAYS дней (по умолчанию 90), отключается и удаляется.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1998,6 +2181,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2042,6 +2228,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2072,6 +2261,15 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       }
@@ -2128,6 +2326,9 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -2182,6 +2383,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2250,6 +2454,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2308,6 +2515,9 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2332,7 +2542,9 @@
                   ],
                   "properties": {
                     "status": {
-                      "const": "ok"
+                      "enum": [
+                        "ok"
+                      ]
                     }
                   }
                 }
@@ -2374,6 +2586,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       },
@@ -2413,6 +2631,12 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2457,6 +2681,12 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2495,6 +2725,402 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/sanctions": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Состояние списка OFAC",
+        "operationId": "sanctionsStatus",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "description": "Список скачивается автоматически раз в OFAC_REFRESH_HOURS, только пока хотя бы у одного активного платежа указан кошелёк.",
+        "responses": {
+          "200": {
+            "description": "Состояние",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SanctionsStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/sanctions/refresh": {
+      "post": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Скачать список OFAC сейчас",
+        "operationId": "sanctionsRefresh",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "description": "Только администратор. При ошибке прежний список сохраняется.",
+        "responses": {
+          "200": {
+            "description": "Список обновлён",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SanctionsStatus"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Не удалось скачать или разобрать список",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/sanctions/check": {
+      "post": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Проверить кошелёк по списку OFAC без сохранения",
+        "operationId": "sanctionsCheck",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "network",
+                  "address"
+                ],
+                "properties": {
+                  "network": {
+                    "$ref": "#/components/schemas/WalletNetwork"
+                  },
+                  "address": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "example": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат сверки",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "network",
+                    "address",
+                    "screening",
+                    "list_updated_at"
+                  ],
+                  "properties": {
+                    "network": {
+                      "$ref": "#/components/schemas/WalletNetwork"
+                    },
+                    "address": {
+                      "type": "string"
+                    },
+                    "screening": {
+                      "$ref": "#/components/schemas/Screening"
+                    },
+                    "list_updated_at": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/audit-log/verify": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Проверить целостность журнала",
+        "operationId": "verifyAuditLog",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "description": "Только администратор. Каждая запись подписана HMAC от своих полей и хеша предыдущей; изменение, вставка или удаление записи (в том числе последних) обнаруживается.",
+        "responses": {
+          "200": {
+            "description": "Результат проверки",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditCheck"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/extension/pairings": {
+      "post": {
+        "tags": [
+          "Расширение"
+        ],
+        "summary": "Подтвердить подключение расширения",
+        "operationId": "confirmPairing",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "description": "Только из панели. Выпускает ключ расширения на 1 год и оставляет его под хешем кода на 10 минут — расширение заберёт его один раз через `/extension/pairings/claim`. Незабранный ключ удаляется.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "description": "Случайный код, созданный расширением (256 бит, base64url)"
+                  },
+                  "device": {
+                    "type": "string",
+                    "maxLength": 40,
+                    "example": "Chrome · macOS"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ключ выпущен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/extension/pairings/claim": {
+      "post": {
+        "tags": [
+          "Расширение"
+        ],
+        "summary": "Забрать ключ после подтверждения в панели",
+        "operationId": "claimPairing",
+        "security": [],
+        "description": "Без авторизации: код знает только расширение. Ключ выдаётся один раз. CORS открыт для любого источника без cookie.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "description": "Случайный код, созданный расширением (256 бит, base64url)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ключ выдан",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "token",
+                    "username",
+                    "display_name"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "connected"
+                      ]
+                    },
+                    "token": {
+                      "type": "string",
+                      "example": "ik_…"
+                    },
+                    "username": {
+                      "type": "string"
+                    },
+                    "display_name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Подключение ещё не подтверждено (или код неизвестен)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -2573,19 +3199,18 @@
         }
       },
       "TooManyRequests": {
-        "description": "Слишком много попыток входа",
+        "description": "Слишком много запросов; повторите через `Retry-After` секунд",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Error"
-            }
-          }
-        },
-        "headers": {
-          "Retry-After": {
-            "description": "Через сколько секунд повторить",
-            "schema": {
-              "type": "integer"
             }
           }
         }
@@ -2642,13 +3267,11 @@
             "example": "2026-10-25"
           },
           "until": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date",
             "example": null,
-            "description": "null — до возобновления"
+            "description": "null — до возобновления",
+            "nullable": true
           }
         }
       },
@@ -2671,41 +3294,49 @@
               },
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": true,
+                "minimum": 0
               }
             ]
           },
           "category": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 40
+            "type": "string",
+            "maxLength": 40,
+            "nullable": true
           },
           "assignee_id": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           },
           "payment_url": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "maxLength": 500,
             "format": "uri",
             "description": "Ссылка на счёт или кабинет оплаты (http/https). В напоминаниях — кнопка «💳 Оплатить»",
-            "example": "https://my.aeza.ru/billing"
+            "example": "https://my.aeza.ru/billing",
+            "nullable": true
           },
           "payment_details": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "maxLength": 500,
             "description": "Реквизиты или комментарий для оплаты; показываются в напоминании",
-            "example": "ИНН 7700000000, договор №15"
+            "example": "ИНН 7700000000, договор №15",
+            "nullable": true
+          },
+          "wallet_network": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WalletNetwork"
+              }
+            ],
+            "nullable": true
+          },
+          "wallet_address": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Адрес кошелька получателя; передаётся вместе с wallet_network, null в обоих полях — убрать кошелёк",
+            "example": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            "nullable": true
           }
         }
       },
@@ -2822,35 +3453,26 @@
             ]
           },
           "url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "file_name": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "content_type": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "enum": [
               "application/pdf",
               "image/png",
               "image/jpeg",
-              "image/webp",
-              null
-            ]
+              "image/webp"
+            ],
+            "nullable": true
           },
           "size": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           },
           "created_by": {
             "type": "string"
@@ -2860,10 +3482,8 @@
             "format": "date-time"
           },
           "download_url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -2949,10 +3569,8 @@
               ],
               "properties": {
                 "category": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string",
+                  "nullable": true
                 },
                 "currencies": {
                   "$ref": "#/components/schemas/BudgetByCurrency"
@@ -3024,17 +3642,13 @@
             "type": "boolean"
           },
           "username": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "linked_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "bot_username": {
             "type": "string"
@@ -3086,9 +3700,13 @@
           "loc": {
             "type": "array",
             "items": {
-              "type": [
-                "string",
-                "integer"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
               ]
             },
             "example": [
@@ -3252,6 +3870,30 @@
           "overdue_reminders": {
             "type": "boolean",
             "description": "Повторное напоминание на следующий день после неоплаченного срока"
+          },
+          "sanctions_screening": {
+            "type": "boolean",
+            "description": "Сверка кошельков со списком OFAC включена"
+          },
+          "security": {
+            "type": "object",
+            "description": "Включённые меры защиты",
+            "properties": {
+              "encryption": {
+                "type": "boolean",
+                "description": "Секреты, чеки и реквизиты зашифрованы ключом DATA_ENCRYPTION_KEY"
+              },
+              "login_alerts": {
+                "type": "boolean"
+              },
+              "paid_linked_only": {
+                "type": "boolean"
+              }
+            }
+          },
+          "key_idle_days": {
+            "type": "integer",
+            "description": "Через сколько дней без использования ключи и токены отключаются; 0 — никогда"
           }
         }
       },
@@ -3280,7 +3922,8 @@
               },
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": true,
+                "minimum": 0
               }
             ],
             "example": "24.00"
@@ -3298,38 +3941,45 @@
             "$ref": "#/components/schemas/Frequency"
           },
           "category": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "maxLength": 40,
-            "example": "IT"
+            "example": "IT",
+            "nullable": true
           },
           "assignee_id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Ответственный — обычный пользователь"
+            "type": "integer",
+            "description": "Ответственный — обычный пользователь",
+            "nullable": true
           },
           "payment_url": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "maxLength": 500,
             "format": "uri",
             "description": "Ссылка на счёт или кабинет оплаты (http/https). В напоминаниях — кнопка «💳 Оплатить»",
-            "example": "https://my.aeza.ru/billing"
+            "example": "https://my.aeza.ru/billing",
+            "nullable": true
           },
           "payment_details": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "maxLength": 500,
             "description": "Реквизиты или комментарий для оплаты; показываются в напоминании",
-            "example": "ИНН 7700000000, договор №15"
+            "example": "ИНН 7700000000, договор №15",
+            "nullable": true
+          },
+          "wallet_network": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WalletNetwork"
+              }
+            ],
+            "nullable": true
+          },
+          "wallet_address": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Адрес кошелька получателя; передаётся вместе с wallet_network, null в обоих полях — убрать кошелёк",
+            "example": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            "nullable": true
           }
         }
       },
@@ -3352,7 +4002,8 @@
           "created_at",
           "deleted_at",
           "payment_url",
-          "payment_details"
+          "payment_details",
+          "wallet"
         ],
         "properties": {
           "id": {
@@ -3385,40 +4036,32 @@
             "description": "false — в архиве"
           },
           "category": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "assignee": {
-            "oneOf": [
+            "allOf": [
               {
                 "$ref": "#/components/schemas/Person"
-              },
-              {
-                "type": "null"
               }
-            ]
+            ],
+            "nullable": true
           },
           "paused": {
-            "oneOf": [
+            "description": "Пауза, действующая сегодня или позже",
+            "allOf": [
               {
                 "$ref": "#/components/schemas/PauseInfo"
-              },
-              {
-                "type": "null"
               }
             ],
-            "description": "Пауза, действующая сегодня или позже"
+            "nullable": true
           },
           "next_due_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date",
             "example": null,
-            "description": "Ближайший неоплаченный срок"
+            "description": "Ближайший неоплаченный срок",
+            "nullable": true
           },
           "unpaid_count": {
             "type": "integer"
@@ -3428,23 +4071,25 @@
             "format": "date-time"
           },
           "deleted_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "payment_url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "payment_details": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
+          },
+          "wallet": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Wallet"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -3468,7 +4113,8 @@
           "assignee",
           "receipts",
           "payment_url",
-          "payment_details"
+          "payment_details",
+          "wallet"
         ],
         "properties": {
           "id": {
@@ -3492,13 +4138,11 @@
             "example": "2026-10-25"
           },
           "paid_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date",
             "example": null,
-            "description": "Фактическая дата оплаты; null — не оплачено"
+            "description": "Фактическая дата оплаты; null — не оплачено",
+            "nullable": true
           },
           "status": {
             "$ref": "#/components/schemas/Status"
@@ -3516,46 +4160,44 @@
             "description": "Регулярный платёж не в архиве"
           },
           "updated_by": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Кто отметил: логин панели или tg:@ник"
+            "type": "string",
+            "description": "Кто отметил: логин панели или tg:@ник",
+            "nullable": true
           },
           "frequency": {
             "$ref": "#/components/schemas/Frequency"
           },
           "category": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "assignee": {
-            "oneOf": [
+            "allOf": [
               {
                 "$ref": "#/components/schemas/Person"
-              },
-              {
-                "type": "null"
               }
-            ]
+            ],
+            "nullable": true
           },
           "receipts": {
             "type": "integer",
             "description": "Сколько чеков и ссылок прикреплено"
           },
           "payment_url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "payment_details": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
+          },
+          "wallet": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Wallet"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -3569,12 +4211,10 @@
             "type": "boolean"
           },
           "paid_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date",
-            "example": null
+            "example": null,
+            "nullable": true
           }
         }
       },
@@ -3614,20 +4254,16 @@
         ],
         "properties": {
           "from_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date",
-            "example": null
+            "example": null,
+            "nullable": true
           },
           "to_date": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date",
-            "example": null
+            "example": null,
+            "nullable": true
           },
           "currencies": {
             "type": "object",
@@ -3670,7 +4306,9 @@
             "type": "string"
           },
           "role": {
-            "const": "user"
+            "enum": [
+              "user"
+            ]
           },
           "created_at": {
             "type": "string",
@@ -3765,34 +4403,26 @@
             "type": "integer"
           },
           "attempted_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Unix-время"
+            "type": "integer",
+            "description": "Unix-время",
+            "nullable": true
           },
           "retry_after": {
             "type": "integer",
             "description": "Unix-время"
           },
           "sent_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "message_id": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "title": {
             "type": "string"
@@ -3831,11 +4461,9 @@
             "format": "date-time"
           },
           "last_used_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "access": {
             "type": "string",
@@ -3847,12 +4475,10 @@
             "description": "`extension` — только расширение; `read` — чтение (GET); `write` — чтение и изменения"
           },
           "expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date-time",
-            "description": "null — бессрочный"
+            "description": "null — бессрочный",
+            "nullable": true
           }
         }
       },
@@ -3879,17 +4505,14 @@
             "default": "extension"
           },
           "expires_in_days": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "enum": [
               30,
               90,
-              365,
-              null
+              365
             ],
-            "description": "Срок действия; null или отсутствие — бессрочно"
+            "description": "Срок действия; null или отсутствие — бессрочно",
+            "nullable": true
           }
         }
       },
@@ -3983,7 +4606,8 @@
               },
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": true,
+                "minimum": 0
               }
             ],
             "example": "9.89"
@@ -4016,7 +4640,8 @@
               },
               {
                 "type": "number",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": true,
+                "minimum": 0
               }
             ]
           },
@@ -4054,10 +4679,8 @@
             "type": "string"
           },
           "source_url": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "title": {
             "type": "string"
@@ -4085,10 +4708,8 @@
             "type": "string"
           },
           "recurring_payment_id": {
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -4172,35 +4793,27 @@
             "description": "Сессия этого браузера"
           },
           "created_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "last_seen_at": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date-time",
-            "description": "Обновляется не чаще раза в минуту"
+            "description": "Обновляется не чаще раза в минуту",
+            "nullable": true
           },
           "expires_at": {
             "type": "string",
             "format": "date-time"
           },
           "user_agent": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "ip": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -4256,24 +4869,18 @@
             "type": "integer"
           },
           "attempted_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "description": "Unix-время"
+            "type": "integer",
+            "description": "Unix-время",
+            "nullable": true
           },
           "sent_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           },
           "error": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "nullable": true
           },
           "title": {
             "type": "string"
@@ -4281,6 +4888,139 @@
           "due_date": {
             "type": "string",
             "format": "date"
+          }
+        }
+      },
+      "WalletNetwork": {
+        "type": "string",
+        "enum": [
+          "BTC",
+          "ETH",
+          "TRON"
+        ],
+        "description": "BTC — Base58 и Bech32/Bech32m; ETH — Ethereum и совместимые сети (USDT/USDC в ERC-20), регистр проверяется по EIP-55; TRON — в том числе USDT TRC-20"
+      },
+      "Screening": {
+        "type": "object",
+        "required": [
+          "sanctioned",
+          "match_name",
+          "match_uid",
+          "match_currency"
+        ],
+        "properties": {
+          "sanctioned": {
+            "type": "boolean",
+            "description": "Есть ли адрес в списке OFAC SDN; null — список ещё не загружен",
+            "nullable": true
+          },
+          "match_name": {
+            "type": "string",
+            "description": "Имя санкционного лица из списка",
+            "nullable": true
+          },
+          "match_uid": {
+            "type": "integer",
+            "description": "UID записи в списке SDN",
+            "nullable": true
+          },
+          "match_currency": {
+            "type": "string",
+            "description": "Монета, под которой адрес указан в списке (XBT, ETH, TRX, USDT…)",
+            "nullable": true
+          }
+        }
+      },
+      "Wallet": {
+        "allOf": [
+          {
+            "type": "object",
+            "required": [
+              "network",
+              "address"
+            ],
+            "properties": {
+              "network": {
+                "$ref": "#/components/schemas/WalletNetwork"
+              },
+              "address": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/Screening"
+          }
+        ],
+        "description": "Криптокошелёк получателя и результат сверки со списком OFAC. Проверяются только адреса, опубликованные OFAC; это не оценка риска по истории транзакций."
+      },
+      "SanctionsStatus": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "addresses",
+          "updated_at",
+          "publish_date",
+          "error",
+          "source"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "addresses": {
+            "type": "integer",
+            "description": "Сколько криптоадресов в загруженном списке"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Когда список загружен",
+            "nullable": true
+          },
+          "publish_date": {
+            "type": "string",
+            "description": "Дата публикации OFAC (MM/DD/YYYY)",
+            "example": "10/21/2026",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "description": "Ошибка последней загрузки; прежний список при этом сохраняется",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditCheck": {
+        "type": "object",
+        "required": [
+          "ok",
+          "checked",
+          "broken_id",
+          "keyed"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Цепочка журнала цела"
+          },
+          "checked": {
+            "type": "integer",
+            "description": "Сколько записей проверено"
+          },
+          "broken_id": {
+            "type": "integer",
+            "description": "Первая запись, с которой цепочка нарушена",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string"
+          },
+          "keyed": {
+            "type": "boolean",
+            "description": "Подписи сделаны ключом из DATA_ENCRYPTION_KEY, которого нет в базе: пересчитать цепочку без него нельзя"
           }
         }
       }

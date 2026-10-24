@@ -98,40 +98,21 @@ func (s *Server) apiKeysCreate(w http.ResponseWriter, r *http.Request) error {
 	if err := f.err(); err != nil {
 		return err
 	}
-	token := keyPrefix + randomToken(24)
-	created := apiKey{Name: *name, Prefix: token[:len(keyPrefix)+6], Access: "extension", CreatedAt: timestamp()}
+	kind := "extension"
 	if access != nil {
-		created.Access = *access
+		kind = *access
 	}
-	var expires any
-	if days != nil {
-		at := time.Now().Add(time.Duration(*days) * 24 * time.Hour).Unix()
-		expires, created.ExpiresAt = at, unixTime(sql.NullInt64{Int64: at, Valid: true})
+	// Extension keys live a year unless chosen otherwise; an explicit null means no expiry.
+	if days == nil && !f.has("expires_in_days") && kind == "extension" {
+		year := int64(extensionKeyLifetime)
+		days = &year
 	}
+	var created apiKey
+	var token string
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		where, args := ownerClause(user)
-		var count int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM api_keys WHERE "+where, args...).Scan(&count); err != nil {
-			return err
-		}
-		if count >= maxKeysPerOwner {
-			return fail(409, "Слишком много ключей. Удалите ненужные")
-		}
-		var userID, fingerprint any
-		if user.Role == "admin" {
-			fingerprint = s.adminFingerprint()
-		} else {
-			userID = user.ID
-		}
-		result, err := tx.Exec("INSERT INTO api_keys(token_hash,prefix,name,user_id,is_admin,admin_fingerprint,access,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-			digest(token), created.Prefix, created.Name, userID, user.Role == "admin", fingerprint, created.Access, expires, created.CreatedAt)
-		if err != nil {
-			return err
-		}
-		if created.ID, err = result.LastInsertId(); err != nil {
-			return err
-		}
-		return audit(tx, user.Username, "api_key.create", created.ID)
+		var err error
+		created, token, err = s.issueKey(tx, user, *name, kind, days)
+		return err
 	})
 	if err != nil {
 		return err
@@ -154,7 +135,7 @@ func (s *Server) apiKeysDelete(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		where, args := ownerClause(user)
-		result, err := tx.Exec("DELETE FROM api_keys WHERE id=? AND "+where, append([]any{id}, args...)...)
+		result, err := tx.Exec("DELETE FROM api_keys WHERE id=? AND "+where, append([]any{id}, args...)...) // #nosec G202 -- where is a constant clause, values are parameters
 		if err != nil {
 			return err
 		}

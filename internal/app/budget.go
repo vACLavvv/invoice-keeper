@@ -160,7 +160,7 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 		Currencies map[string]budgetLine `json:"currencies"`
 		Months     []monthOut            `json:"months"`
 		Categories []categoryOut         `json:"categories"`
-	}{Year: year, Currencies: total.lines()}
+	}{Year: year, Currencies: total.lines(), Categories: []categoryOut{}} // [] even for a year without payments
 	for i, book := range months {
 		result.Months = append(result.Months, monthOut{civil(year, time.Month(i+1), 1).Format("2006-01"), book.lines()})
 	}

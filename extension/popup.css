@@ -57,3 +57,8 @@ form { display: grid; gap: 10px; margin-top: 12px; max-height: 340px; overflow-y
 .status.ok { color: var(--ok); }
 .status.warn { color: var(--warn); }
 .status.bad { color: var(--bad); }
+
+details { margin-top: 14px; }
+details summary { cursor: pointer; color: var(--muted, #8b8b8b); font-size: 13px; }
+details[open] summary { margin-bottom: 10px; }
+details label, details .hint { display: block; margin-bottom: 8px; }

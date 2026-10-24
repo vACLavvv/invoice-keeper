@@ -2,16 +2,17 @@ import { locale, t, tp } from './i18n';
 
 export type Currency = 'RUB' | 'USD' | 'EUR';
 export type Status = 'paid' | 'unpaid' | 'overdue';
-export type Frequency = 'monthly' | 'quarterly' | 'yearly';
+export type Frequency = 'monthly' | 'quarterly' | 'yearly' | 'once';
 
 export const currencies: Currency[] = ['RUB', 'USD', 'EUR'];
+/** Repeating frequencies for the «Повтор» select; a one-time payment is chosen separately. */
 export const frequencies: Frequency[] = ['monthly', 'quarterly', 'yearly'];
 export const symbols: Record<Currency, string> = { RUB: '₽', USD: '$', EUR: '€' };
 
 export const currencyName = (c: Currency) => ({ RUB: t('рубли'), USD: t('доллары'), EUR: t('евро') })[c];
 export const statusName = (s: Status) => ({ paid: t('оплачено'), unpaid: t('к оплате'), overdue: t('просрочено') })[s];
-export const frequencyName = (f: Frequency) => ({ monthly: t('ежемесячно'), quarterly: t('ежеквартально'), yearly: t('ежегодно') })[f];
-export const perPeriod = (f: Frequency) => ({ monthly: t('/ месяц'), quarterly: t('/ квартал'), yearly: t('/ год') })[f];
+export const frequencyName = (f: Frequency) => ({ monthly: t('ежемесячно'), quarterly: t('ежеквартально'), yearly: t('ежегодно'), once: t('разово') })[f];
+export const perPeriod = (f: Frequency) => ({ monthly: t('/ месяц'), quarterly: t('/ квартал'), yearly: t('/ год'), once: '' })[f];
 
 export function money(value: string | number): string {
   const n = Number(value);

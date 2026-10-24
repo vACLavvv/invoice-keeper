@@ -22,12 +22,12 @@ export type Occurrence = {
   id: number; recurring_payment_id: number; title: string; amount: string; currency: Currency; due_date: string;
   paid_at: string | null; status: Status; days_overdue: number; is_late: boolean; active: boolean; updated_by: string | null;
   frequency: Frequency; category: string | null; assignee: Person | null; receipts: number;
-  payment_url: string | null; payment_details: string | null; wallet: Wallet | null;
+  payment_url: string | null; payment_details: string | null; wallet: Wallet | null; description: string | null;
 };
 export type Recurring = {
   id: number; title: string; amount: string; currency: Currency; first_due_date: string; anchor_day: number;
   frequency: Frequency; category: string | null; assignee: Person | null; active: boolean;
-  payment_url: string | null; payment_details: string | null; wallet: Wallet | null;
+  payment_url: string | null; payment_details: string | null; wallet: Wallet | null; description: string | null;
   paused: { from: string; until: string | null } | null; next_due_date: string | null;
   unpaid_count: number; created_at: string; deleted_at: string | null;
 };
@@ -81,7 +81,7 @@ const fieldName = (field: string) => ({
   current_password: t('Текущий пароль'), new_password: t('Новый пароль'), code: t('Код'), url: t('Ссылка'),
   file: t('Файл'), category: t('Категория'), assignee_id: t('Ответственный'), until: t('Дата окончания'), frequency: t('Периодичность'),
   payment_url: t('Ссылка на оплату'), payment_details: t('Реквизиты'), access: t('Доступ'), expires_in_days: t('Срок действия'), name: t('Название'),
-  wallet_network: t('Сеть кошелька'), wallet_address: t('Адрес кошелька'), network: t('Сеть'), address: t('Адрес'),
+  description: t('За что платим'), wallet_network: t('Сеть кошелька'), wallet_address: t('Адрес кошелька'), network: t('Сеть'), address: t('Адрес'),
 } as Record<string, string>)[field] ?? field;
 
 let csrfToken = '';

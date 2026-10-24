@@ -768,7 +768,7 @@
             "apiKey": []
           }
         ],
-        "description": "Только администратор. С сегодняшнего дня до даты или до возобновления новых периодов и напоминаний нет; неоплаченные периоды внутри паузы удаляются, история остаётся. Пропущенные месяцы потом не становятся просрочкой.",
+        "description": "Только администратор. С сегодняшнего дня до даты или до возобновления новых периодов и напоминаний нет; неоплаченные периоды внутри паузы удаляются, история остаётся. Пропущенные месяцы потом не становятся просрочкой. Разовый платёж поставить на паузу нельзя (409).",
         "parameters": [
           {
             "name": "payment_id",
@@ -3230,10 +3230,11 @@
         "enum": [
           "monthly",
           "quarterly",
-          "yearly"
+          "yearly",
+          "once"
         ],
         "default": "monthly",
-        "description": "Даты считаются от первой оплаты: 31 января → 28 февраля → 31 марта; 29 февраля раз в год → 28 февраля"
+        "description": "Повтор от якорного дня первой даты; `once` — разовый платёж: один срок, без повторов"
       },
       "Person": {
         "type": "object",
@@ -3337,6 +3338,13 @@
             "description": "Адрес кошелька получателя; передаётся вместе с wallet_network, null в обоих полях — убрать кошелёк",
             "example": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
             "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "За что платим — необязательное описание работы, услуги или покупки",
+            "example": "Макеты страницы продукта"
           }
         }
       },
@@ -3980,6 +3988,13 @@
             "description": "Адрес кошелька получателя; передаётся вместе с wallet_network, null в обоих полях — убрать кошелёк",
             "example": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
             "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "За что платим — необязательное описание работы, услуги или покупки",
+            "example": "Макеты страницы продукта"
           }
         }
       },
@@ -4003,7 +4018,8 @@
           "deleted_at",
           "payment_url",
           "payment_details",
-          "wallet"
+          "wallet",
+          "description"
         ],
         "properties": {
           "id": {
@@ -4090,6 +4106,10 @@
               }
             ],
             "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -4114,7 +4134,8 @@
           "receipts",
           "payment_url",
           "payment_details",
-          "wallet"
+          "wallet",
+          "description"
         ],
         "properties": {
           "id": {
@@ -4197,6 +4218,10 @@
                 "$ref": "#/components/schemas/Wallet"
               }
             ],
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
             "nullable": true
           }
         }

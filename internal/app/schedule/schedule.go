@@ -42,7 +42,18 @@ func MonthlyDate(first time.Time, index, anchor int) time.Time {
 // frequencyMonths is the step between periods; the anchor day keeps every step on the same day.
 var frequencyMonths = map[string]int{"monthly": 1, "quarterly": 3, "yearly": 12}
 
-var Frequencies = []string{"monthly", "quarterly", "yearly"}
+// Once is a one-time payment: a single period on its first due date, never repeated.
+const Once = "once"
+
+// periods is how many periods a plan has at most: one for a one-time payment.
+func periods(frequency string) int {
+	if frequency == Once {
+		return 1
+	}
+	return 2400
+}
+
+var Frequencies = []string{"monthly", "quarterly", "yearly", "once"}
 
 // PeriodDate is the due date of period index: 29 Feb yearly → 28 Feb in a common year.
 func PeriodDate(first time.Time, index, anchor int, frequency string) time.Time {
@@ -153,7 +164,7 @@ func Materialize(q store.Querier, today time.Time) error {
 		if index > 0 {
 			prev = PeriodDate(p.First, int(index-1), int(p.Anchor), p.Frequency)
 		}
-		for ; index < 2400; index++ {
+		for ; index < int64(periods(p.Frequency)); index++ {
 			due := PeriodDate(p.First, int(index), int(p.Anchor), p.Frequency)
 			if index > 0 && due.After(horizon) && prev.After(today) {
 				break
@@ -179,7 +190,7 @@ func Materialize(q store.Querier, today time.Time) error {
 // ProjectedDates lists the due dates of a Plan within [from, to], skipping pauses.
 func ProjectedDates(p Plan, pauses []Pause, from, to time.Time) []time.Time {
 	var dates []time.Time
-	for index := 0; index < 2400; index++ {
+	for index := 0; index < periods(p.Frequency); index++ {
 		due := PeriodDate(p.First, index, int(p.Anchor), p.Frequency)
 		if due.After(to) {
 			break

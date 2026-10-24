@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS personal_reminders (
 
 // columns added to existing tables after v1; ALTER TABLE runs only where a column is missing.
 var addedColumns = []struct{ table, column, definition string }{
-	{"recurring_payments", "frequency", "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly'))"},
+	{"recurring_payments", "frequency", frequencyColumn},
 	{"recurring_payments", "category", "TEXT"},
 	{"recurring_payments", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
 	{"recurring_payments", "payment_url", "TEXT"},
@@ -117,9 +117,37 @@ var addedColumns = []struct{ table, column, definition string }{
 	// Tamper-evident journal (package audit).
 	{"audit_log", "hash", "TEXT"},
 	{"audit_log", "chain", "TEXT"},
+	// v5: one-time payments (frequency 'once', see allowOneTime) and «За что платим».
+	{"recurring_payments", "description", "TEXT"},
 }
 
-const schemaVersion = 4
+const frequencyColumn = "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly','once'))"
+
+// allowOneTime widens the frequency CHECK of databases created before v5. SQLite cannot change
+// a column constraint in place, so the column is replaced: add, copy, drop, rename — in the
+// caller's transaction, so a failure leaves the database as it was.
+func allowOneTime(tx *sql.Tx) error {
+	var table string
+	if err := tx.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='recurring_payments'").Scan(&table); err != nil {
+		return err
+	}
+	if strings.Contains(table, "'once'") {
+		return nil
+	}
+	for _, statement := range []string{
+		"ALTER TABLE recurring_payments ADD COLUMN frequency_v5 " + strings.ReplaceAll(frequencyColumn, "frequency IN", "frequency_v5 IN"),
+		"UPDATE recurring_payments SET frequency_v5=frequency",
+		"ALTER TABLE recurring_payments DROP COLUMN frequency",
+		"ALTER TABLE recurring_payments RENAME COLUMN frequency_v5 TO frequency",
+	} {
+		if _, err := tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const schemaVersion = 5
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
@@ -174,6 +202,9 @@ func (db *DB) initialize() error {
 					return err
 				}
 			}
+		}
+		if err := allowOneTime(tx); err != nil {
+			return err
 		}
 		_, err := tx.Exec("PRAGMA user_version=" + strconv.Itoa(schemaVersion))
 		return err

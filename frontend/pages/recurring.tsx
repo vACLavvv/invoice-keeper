@@ -42,16 +42,28 @@ export default function RecurringPage() {
           {data.map((r) => (
             <Tile key={r.id}>
               <TileTitle>{r.title}<Chevron aria-hidden="true">›</Chevron></TileTitle>
-              <Muted>
+              <Muted title={r.description ?? undefined}>
                 {symbols[r.currency]} {money(r.amount)} {perPeriod(r.frequency)} · {frequencyName(r.frequency)}
                 {r.category ? ` · ${r.category}` : ''}
               </Muted>
               <Wire height={17 + (payLine(r) ? 4.3 : 0) + (r.wallet ? 4.3 : 0)}>
-                <Line>{r.next_due_date ? t('ближайший срок {date}', { date: longDate(r.next_due_date) }) : t('с {date}', { date: longDate(r.first_due_date) })}</Line>
-                <Line>
-                  {r.unpaid_count} {tp(r.unpaid_count, ['неоплаченный период', 'неоплаченных периода', 'неоплаченных периодов'], ['unpaid period', 'unpaid periods'])}
-                  {r.assignee && <Muted>@{r.assignee.username}</Muted>}
-                </Line>
+                {r.frequency === 'once' ? (
+                  <>
+                    <Line>{t('срок {date}', { date: longDate(r.first_due_date) })}</Line>
+                    <Line>
+                      <Details title={r.description ?? undefined}>{r.unpaid_count ? (r.description ?? t('ожидает оплаты')) : t('оплачен')}</Details>
+                      {r.assignee && <Muted>@{r.assignee.username}</Muted>}
+                    </Line>
+                  </>
+                ) : (
+                  <>
+                    <Line>{r.next_due_date ? t('ближайший срок {date}', { date: longDate(r.next_due_date) }) : t('с {date}', { date: longDate(r.first_due_date) })}</Line>
+                    <Line>
+                      {r.unpaid_count} {tp(r.unpaid_count, ['неоплаченный период', 'неоплаченных периода', 'неоплаченных периодов'], ['unpaid period', 'unpaid periods'])}
+                      {r.assignee && <Muted>@{r.assignee.username}</Muted>}
+                    </Line>
+                  </>
+                )}
                 {payLine(r) && (
                   <Line>
                     <Details title={r.payment_details ?? undefined}>{r.payment_details ?? ''}</Details>
@@ -73,9 +85,9 @@ export default function RecurringPage() {
                   <Line>
                     <Row $gap={0.4} $wrap>
                       <Button type="button" $small $variant="secondary" onClick={() => setModal({ kind: 'edit', payment: r })}>{t('изменить')}</Button>
-                      {r.paused
+                      {r.frequency !== 'once' && (r.paused
                         ? <Button type="button" $small $variant="secondary" onClick={() => resume(r)}>{t('возобновить')}</Button>
-                        : <Button type="button" $small $variant="secondary" onClick={() => setModal({ kind: 'pause', payment: r })}>{t('пауза')}</Button>}
+                        : <Button type="button" $small $variant="secondary" onClick={() => setModal({ kind: 'pause', payment: r })}>{t('пауза')}</Button>)}
                       <Button type="button" $small $variant="ghost" onClick={() => setModal({ kind: 'archive', payment: r })}>{t('прекратить')}</Button>
                     </Row>
                   </Line>
@@ -83,6 +95,7 @@ export default function RecurringPage() {
               </Wire>
               {!r.active && <Corner><Sticker $tilt={-6}>{t('архив')}</Sticker></Corner>}
               {r.active && r.paused && <Corner><Sticker $tilt={-6}>{t('пауза')}</Sticker></Corner>}
+              {r.active && r.frequency === 'once' && <Corner><Sticker $tilt={-6}>{t('разовый')}</Sticker></Corner>}
             </Tile>
           ))}
         </Grid>

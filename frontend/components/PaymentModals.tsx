@@ -7,7 +7,7 @@ import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 import { FormRow, InfoBox, Modal, ModalForm } from './Modal';
 import { SanctionsWarning, WalletFields, walletBody, shortAddress } from './Wallet';
-import { Button, Empty, Field, Input, Muted, Notice, Pill, Row, Select, TableWrap } from './ui';
+import { Button, Empty, Field, Input, Muted, Notice, Pill, Row, Select, TableWrap, Textarea } from './ui';
 
 type Close = { onClose: () => void };
 
@@ -62,23 +62,40 @@ function PaymentLinkFields({ payment }: { payment?: Recurring }) {
 
 type Method = 'fiat' | 'crypto';
 
-/** «Как платим»: a bank transfer or card (link and requisites) or a crypto wallet — never both. */
-function MethodToggle({ method, onChange }: { method: Method; onChange: (m: Method) => void }) {
-  const options: [Method, string, string][] = [
-    ['fiat', t('💳 Банк или карта'), t('Ссылка на счёт и реквизиты')],
-    ['crypto', t('₿ Криптовалюта'), t('Кошелёк получателя, проверка по санкциям OFAC')],
-  ];
+/** Two big options side by side: «Как часто» (once / regular) and «Как платим» (bank / crypto). */
+function Choice<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string, string][]; onChange: (v: T) => void }) {
   return (
     <Field as="div">
-      {t('Как платим')}
-      <Segmented role="radiogroup" aria-label={t('Как платим')}>
-        {options.map(([value, label, hint]) => (
-          <Segment key={value} type="button" role="radio" aria-checked={method === value} $selected={method === value} onClick={() => onChange(value)}>
-            <b>{label}</b>
+      {label}
+      <Segmented role="radiogroup" aria-label={label}>
+        {options.map(([option, title, hint]) => (
+          <Segment key={option} type="button" role="radio" aria-checked={value === option} $selected={value === option} onClick={() => onChange(option)}>
+            <b>{title}</b>
             <small>{hint}</small>
           </Segment>
         ))}
       </Segmented>
+    </Field>
+  );
+}
+
+/** «Как платим»: a bank transfer or card (link and requisites) or a crypto wallet — never both. */
+function MethodToggle({ method, onChange }: { method: Method; onChange: (m: Method) => void }) {
+  return (
+    <Choice label={t('Как платим')} value={method} onChange={onChange} options={[
+      ['fiat', t('💳 Банк или карта'), t('Ссылка на счёт и реквизиты')],
+      ['crypto', t('₿ Криптовалюта'), t('Кошелёк получателя, проверка по санкциям OFAC')],
+    ]} />
+  );
+}
+
+type Kind = 'regular' | 'once';
+
+function DescriptionField({ value }: { value?: string | null }) {
+  return (
+    <Field>
+      {t('За что платим')} <Muted>{t('необязательно')}</Muted>
+      <Textarea name="description" defaultValue={value ?? ''} maxLength={500} rows={2} placeholder={t('Например: за принятую разработку новой функции')} />
     </Field>
   );
 }
@@ -105,13 +122,14 @@ const optional = (value: FormDataEntryValue | null) => {
   return text === '' ? null : text;
 };
 
-export function CreatePaymentModal({ onClose }: Close) {
+export function CreatePaymentModal({ onClose, kind: initialKind = 'regular' }: Close & { kind?: Kind }) {
   const { settings, setMonth, refresh } = useSession();
   const toast = useToast();
   const { users, categories } = usePaymentChoices();
   const [method, setMethod] = useState<Method>('fiat');
+  const [kind, setKind] = useState<Kind>(initialKind);
   return (
-    <Modal title={t('Новый регулярный платёж')} onClose={onClose}>
+    <Modal title={t('Новый платёж')} onClose={onClose}>
       <ModalForm
         onSubmit={async (data) => {
           const assignee = optional(data.get('assignee_id'));
@@ -119,7 +137,8 @@ export function CreatePaymentModal({ onClose }: Close) {
             method: 'POST',
             body: {
               title: data.get('title'), amount: data.get('amount'), currency: data.get('currency'), first_due_date: data.get('first_due_date'),
-              frequency: data.get('frequency'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
+              frequency: kind === 'once' ? 'once' : data.get('frequency'), description: optional(data.get('description')),
+              category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
               ...methodBody(method, data),
             },
           });
@@ -127,14 +146,23 @@ export function CreatePaymentModal({ onClose }: Close) {
           setMonth(created.first_due_date.slice(0, 7));
           refresh();
           if (created.wallet?.sanctioned) toast(t('Платёж добавлен, но кошелёк получателя в санкционном списке OFAC'), true);
-          else toast(t('Регулярный платёж добавлен'));
+          else toast(kind === 'once' ? t('Разовый платёж добавлен') : t('Регулярный платёж добавлен'));
         }}
         actions={<>
           <Button type="button" $variant="secondary" onClick={onClose}>{t('Отмена')}</Button>
           <Button type="submit">{t('Добавить платёж')}</Button>
         </>}
       >
-        <Field>{t('Название платежа')}<Input name="title" maxLength={120} required placeholder={t('Например, аренда офиса')} autoFocus /></Field>
+        <Choice label={t('Как часто')} value={kind} onChange={setKind} options={[
+          ['once', t('Один раз'), t('За работу, услугу или покупку')],
+          ['regular', t('Регулярно'), t('Аренда, подписки, серверы')],
+        ]} />
+        <Field>
+          {t('Название платежа')}
+          <Input name="title" maxLength={120} required autoFocus
+            placeholder={kind === 'once' ? t('Например, макеты страницы продукта') : t('Например, аренда офиса')} />
+        </Field>
+        {kind === 'once' && <DescriptionField />}
         <MethodToggle method={method} onChange={setMethod} />
         <FormRow>
           <Field>{t('Сумма')}<Input name="amount" type="number" step="0.01" min="0.01" max="9999999999.99" required placeholder="0,00" inputMode="decimal" /></Field>
@@ -144,22 +172,31 @@ export function CreatePaymentModal({ onClose }: Close) {
           </Field>
         </FormRow>
         {method === 'crypto' && <Muted>{t('Итоги и бюджет считаются в RUB, USD или EUR: стейблкоины USDT и USDC обычно учитывают как USD.')}</Muted>}
-        <FormRow>
+        {kind === 'once' ? (
           <Field>
-            {t('Первая дата оплаты')}
+            {t('Срок оплаты')}
             <Input name="first_due_date" type="date" min="2000-01-01" max="2100-12-31" defaultValue={settings.today} required />
           </Field>
-          <Field>
-            {t('Повтор')}
-            <Select name="frequency" defaultValue="monthly">{frequencies.map((f) => <option key={f} value={f}>{frequencyName(f)}</option>)}</Select>
-          </Field>
-        </FormRow>
+        ) : (
+          <FormRow>
+            <Field>
+              {t('Первая дата оплаты')}
+              <Input name="first_due_date" type="date" min="2000-01-01" max="2100-12-31" defaultValue={settings.today} required />
+            </Field>
+            <Field>
+              {t('Повтор')}
+              <Select name="frequency" defaultValue="monthly">{frequencies.map((f) => <option key={f} value={f}>{frequencyName(f)}</option>)}</Select>
+            </Field>
+          </FormRow>
+        )}
         <MethodFields method={method} />
         <Group>{t('дополнительно')}</Group>
         <CategoryField categories={categories} />
         {users.length > 0 && <AssigneeField users={users} />}
         <InfoBox>
-          {t('Каждый период — своя отметка оплаты. Если в месяце нет нужного числа, срок — последний день месяца. Если до срока меньше 3 дней, напоминание уйдёт сразу.')}
+          {kind === 'once'
+            ? t('Разовый платёж — одна запись с одним сроком, в следующем месяце он не повторится. Напоминание придёт за 3 дня, оплата, чеки и журнал — как у обычного периода.')
+            : t('Каждый период — своя отметка оплаты. Если в месяце нет нужного числа, срок — последний день месяца. Если до срока меньше 3 дней, напоминание уйдёт сразу.')}
           <br /><Muted>{t('Часовой пояс: {tz}', { tz: settings.timezone })}</Muted>
         </InfoBox>
       </ModalForm>
@@ -181,7 +218,7 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
             method: 'PATCH',
             body: {
               title: data.get('title'), amount: data.get('amount'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
-              ...methodBody(method, data),
+              description: optional(data.get('description')), ...methodBody(method, data),
             },
           });
           onClose();
@@ -198,8 +235,9 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
         <Field>
           {t('Сумма, {currency}', { currency: payment.currency })}
           <Input name="amount" type="number" step="0.01" min="0.01" defaultValue={payment.amount} required />
-          <small>{t('Новая сумма применится к неоплаченным периодам с сегодняшнего дня; оплаченные останутся как были.')}</small>
+          <small>{payment.frequency === 'once' ? t('Если срок ещё не наступил, новая сумма применится к платежу.') : t('Новая сумма применится к неоплаченным периодам с сегодняшнего дня; оплаченные останутся как были.')}</small>
         </Field>
+        <DescriptionField value={payment.description} />
         <MethodToggle method={method} onChange={setMethod} />
         <MethodFields method={method} payment={payment} />
         {method === 'fiat' && payment.wallet && <Muted>{t('При сохранении кошелёк будет удалён.')}</Muted>}
@@ -268,6 +306,7 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
         <InfoBox>
           <b>{o.title}</b><br />
           {moneyWith(o.amount, o.currency)} · {t('срок {date}', { date: longDate(o.due_date) })}<br />
+          {o.description && <>{o.description}<br /></>}
           {o.payment_details && <>{t('Реквизиты: {details}', { details: o.payment_details })}<br /></>}
           {o.wallet && <>{t('Кошелёк ({network}): {address}', { network: o.wallet.network, address: shortAddress(o.wallet.address) })}<br /></>}
           {o.payment_url && !o.wallet?.sanctioned && <><a href={o.payment_url} target="_blank" rel="noopener noreferrer">{t('Открыть ссылку на оплату ↗')}</a><br /></>}
@@ -419,7 +458,7 @@ export function ImportModal({ onClose }: Close) {
   return (
     <Modal title={t('Импорт из CSV')} wide onClose={onClose}>
       <InfoBox>
-        {t('Столбцы: название, сумма, валюта, первая оплата, периодичность, категория. Разделитель «;», «,» или табуляция; UTF-8 или Windows-1251; даты ДД.ММ.ГГГГ.')}
+        {t('Столбцы: название, сумма, валюта, первая оплата, периодичность (в том числе «разово»), категория. Разделитель «;», «,» или табуляция; UTF-8 или Windows-1251; даты ДД.ММ.ГГГГ.')}
         {' '}<a href="/api/v1/recurring-payments/import/template">{t('Скачать шаблон ↓')}</a>
       </InfoBox>
       <Row $gap={1} $wrap>

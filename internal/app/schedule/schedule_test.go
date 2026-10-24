@@ -63,3 +63,10 @@ func TestFormatting(t *testing.T) {
 		}
 	}
 }
+
+func TestOneTimeHasASinglePeriod(t *testing.T) {
+	plan := Plan{Anchor: 10, First: Civil(2026, 2, 10), Frequency: Once}
+	if got := dates(ProjectedDates(plan, nil, Civil(2026, 1, 1), Civil(2030, 1, 1))); got != "2026-02-10" {
+		t.Fatalf("one-time projected: %s", got)
+	}
+}

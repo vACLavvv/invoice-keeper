@@ -635,4 +635,26 @@ export const en: Record<string, string> = {
     'It will send found payments to “Suggestions” on behalf of @{login}. The key has no other rights.',
   'Подтверждайте, только если вы сами только что нажали «Подключить» в расширении. Если ссылку прислал кто-то другой — нажмите «Отмена».':
     'Confirm only if you have just pressed “Connect” in the extension yourself. If someone else sent you this link, press “Cancel”.',
+  // one-time payments
+  'разовый': 'one-time',
+  'разово': 'one-time',
+  'ожидает оплаты': 'awaiting payment',
+  'оплачен': 'paid',
+  'За что платим': 'What it is for',
+  'необязательно': 'optional',
+  'Например: за принятую разработку новой функции': 'E.g. for the delivered development of a new feature',
+  'Новый платёж': 'New payment',
+  'Разовый платёж добавлен': 'One-time payment added',
+  'Как часто': 'How often',
+  'Один раз': 'Once',
+  'За работу, услугу или покупку': 'For work, a service or a purchase',
+  'Регулярно': 'Regularly',
+  'Аренда, подписки, серверы': 'Rent, subscriptions, servers',
+  'Например, макеты страницы продукта': 'E.g. product page mock-ups',
+  'Срок оплаты': 'Due date',
+  'Разовый платёж — одна запись с одним сроком, в следующем месяце он не повторится. Напоминание придёт за 3 дня, оплата, чеки и журнал — как у обычного периода.':
+    'A one-time payment is a single entry with one due date; it does not repeat next month. The reminder comes 3 days ahead; payment, receipts and the journal work as for a regular period.',
+  'Если срок ещё не наступил, новая сумма применится к платежу.': 'If the due date has not come yet, the new amount applies to the payment.',
+  'Столбцы: название, сумма, валюта, первая оплата, периодичность (в том числе «разово»), категория. Разделитель «;», «,» или табуляция; UTF-8 или Windows-1251; даты ДД.ММ.ГГГГ.':
+    'Columns: title, amount, currency, first payment, frequency (including “one-time”), category. Separator “;”, “,” or tab; UTF-8 or Windows-1251; dates DD.MM.YYYY.',
 };

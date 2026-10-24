@@ -22,7 +22,7 @@ import (
 )
 
 var statusLabels = map[string]string{"paid": "Оплачено", "unpaid": "К оплате", "overdue": "Просрочено"}
-var frequencyLabels = map[string]string{"monthly": "Ежемесячно", "quarterly": "Ежеквартально", "yearly": "Ежегодно"}
+var frequencyLabels = map[string]string{"monthly": "Ежемесячно", "quarterly": "Ежеквартально", "yearly": "Ежегодно", "once": "Разово"}
 
 // cell neutralises spreadsheet formulas: a value starting with = + - @ is read as text.
 func cell(value string) string {
@@ -131,6 +131,8 @@ func importFrequency(value string) string {
 		return "quarterly"
 	case "yearly", "annually", "ежегодно", "год", "каждый год":
 		return "yearly"
+	case "once", "one-time", "разово", "разовый", "один раз", "однократно":
+		return "once"
 	}
 	return ""
 }

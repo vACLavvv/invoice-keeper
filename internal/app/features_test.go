@@ -385,3 +385,74 @@ func TestCSVImport(t *testing.T) {
 	template := c.get("/api/v1/recurring-payments/import/template")
 	expect(t, "template", strings.Contains(string(template.body), "Первая оплата"), true)
 }
+
+func TestOneTimePayment(t *testing.T) {
+	e := setup(t)
+	admin := e.client()
+	admin.signIn()
+	once := admin.createPayment(map[string]any{"title": "Макеты страницы", "amount": "18000", "first_due_date": "2026-02-10",
+		"frequency": "once", "description": "Дизайн лендинга, этап 1"})
+	expect(t, "stored as one-time", once["frequency"], any("once"))
+	expect(t, "description", once["description"], any("Дизайн лендинга, этап 1"))
+
+	// Months later there is still exactly one period: nothing repeats.
+	for _, today := range []time.Time{schedule.Civil(2026, 2, 1), schedule.Civil(2026, 5, 20), schedule.Civil(2027, 3, 1)} {
+		e.clock.Set(today)
+		items := admin.get("/api/v1/payment-occurrences").list(t)
+		expect(t, "one period on "+today.Format("2006-01-02"), dates(items, once["id"]), "2026-02-10")
+	}
+	period := admin.get("/api/v1/payment-occurrences").list(t)[0]
+	expect(t, "description on the period", period["description"], any("Дизайн лендинга, этап 1"))
+	expect(t, "pay it", admin.patch("/api/v1/payment-occurrences/"+id(period), map[string]any{"paid": true, "paid_at": "2026-02-09"}).status, 200)
+	done := admin.get("/api/v1/recurring-payments").list(t)[0]
+	expect(t, "nothing left to pay", done["next_due_date"], nil)
+	expect(t, "no unpaid periods", done["unpaid_count"], any(0.0))
+
+	expect(t, "a one-time payment cannot be paused", admin.post("/api/v1/recurring-payments/"+id(once)+"/pause", nil).status, 409)
+
+	budget := admin.get("/api/v1/budget?year=2026").object(t)
+	rub := budget["currencies"].(map[string]any)["RUB"].(map[string]any)
+	expect(t, "counted once in the budget", rub["planned"], any("18000.00"))
+}
+
+func TestOneTimeFromCSV(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	csv := "Название;Сумма;Валюта;Первая оплата;Периодичность\nАудит безопасности;50000;RUB;15.03.2026;разово\n"
+	r := c.upload("/api/v1/recurring-payments/import?dry_run=false", "import.csv", []byte(csv))
+	expect(t, "imported", r.status, 201)
+	expect(t, "as one-time", c.get("/api/v1/recurring-payments").list(t)[0]["frequency"], any("once"))
+}
+
+// A database made before v5 has a frequency CHECK without 'once'; opening it widens the check
+// and keeps every row.
+func TestMigrationAllowsOneTime(t *testing.T) {
+	e := setup(t)
+	admin := e.client()
+	admin.signIn()
+	admin.createPayment(map[string]any{"title": "Старый", "frequency": "quarterly"})
+	for _, statement := range []string{ // put the v4 column back
+		"ALTER TABLE recurring_payments ADD COLUMN frequency_old TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency_old IN ('monthly','quarterly','yearly'))",
+		"UPDATE recurring_payments SET frequency_old=frequency",
+		"ALTER TABLE recurring_payments DROP COLUMN frequency",
+		"ALTER TABLE recurring_payments RENAME COLUMN frequency_old TO frequency",
+		"PRAGMA user_version=4",
+	} {
+		if _, err := e.db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.db.Exec("UPDATE recurring_payments SET frequency='once'"); err == nil {
+		t.Fatal("the v4 check must refuse 'once'")
+	}
+	e.start()
+	admin = e.client()
+	admin.signIn()
+	expect(t, "old rows kept", admin.get("/api/v1/recurring-payments").list(t)[0]["frequency"], any("quarterly"))
+	expect(t, "one-time accepted after the upgrade", admin.post("/api/v1/recurring-payments", map[string]any{
+		"title": "Новый", "amount": "1", "currency": "RUB", "first_due_date": "2026-02-01", "frequency": "once"}).status, 201)
+	var version int
+	e.db.QueryRow("PRAGMA user_version").Scan(&version)
+	expect(t, "schema version", version, 5)
+}

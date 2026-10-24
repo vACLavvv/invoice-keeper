@@ -204,6 +204,12 @@ const control = css`
 
 export const Input = styled.input`${control}`;
 export const Select = styled.select`${control}`;
+export const Textarea = styled.textarea`
+  ${control}
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+`;
 
 export const Row = styled.div<{ $gap?: number; $wrap?: boolean; $between?: boolean }>`
   display: flex;

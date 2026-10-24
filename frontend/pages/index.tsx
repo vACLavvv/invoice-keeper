@@ -158,7 +158,7 @@ export default function Payments() {
                         <CurrencyBadge aria-hidden="true">{symbols[o.currency]}</CurrencyBadge>
                         <b>{o.title}</b>
                         <small>
-                          {[o.wallet?.sanctioned && t('⛔ санкции OFAC'), o.category, o.assignee && (o.assignee.id === user.id && !isAdmin ? t('вы') : '@' + o.assignee.username), !o.active && t('архив')]
+                          {[o.wallet?.sanctioned && t('⛔ санкции OFAC'), o.frequency === 'once' && (o.description ?? t('разовый')), o.category, o.assignee && (o.assignee.id === user.id && !isAdmin ? t('вы') : '@' + o.assignee.username), !o.active && t('архив')]
                             .filter(Boolean).join(' · ')}
                         </small>
                       </PaymentName>

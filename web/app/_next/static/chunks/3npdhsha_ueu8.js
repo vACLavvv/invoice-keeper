@@ -151,20 +151,25 @@
   transition: border-color 0.15s;
   &::placeholder { color: ${({theme:e})=>e.color.faint}; }
   &:focus { border-color: ${({theme:e})=>e.color.accent}; }
-`,b=r.U.input.withConfig({displayName:"ui__Input",componentId:"sc-46979e46-14"})`${y}`,v=r.U.select.withConfig({displayName:"ui__Select",componentId:"sc-46979e46-15"})`${y}`,w=r.U.div.withConfig({displayName:"ui__Row",componentId:"sc-46979e46-16"})`
+`,b=r.U.input.withConfig({displayName:"ui__Input",componentId:"sc-46979e46-14"})`${y}`,v=r.U.select.withConfig({displayName:"ui__Select",componentId:"sc-46979e46-15"})`${y}`,w=r.U.textarea.withConfig({displayName:"ui__Textarea",componentId:"sc-46979e46-16"})`
+  ${y}
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+`,_=r.U.div.withConfig({displayName:"ui__Row",componentId:"sc-46979e46-17"})`
   display: flex;
   align-items: center;
   gap: ${({$gap:e=1.2})=>e}rem;
   flex-wrap: ${({$wrap:e})=>e?"wrap":"nowrap"};
   justify-content: ${({$between:e})=>e?"space-between":"flex-start"};
-`,_=r.U.div.withConfig({displayName:"ui__PaymentName",componentId:"sc-46979e46-17"})`
+`,$=r.U.div.withConfig({displayName:"ui__PaymentName",componentId:"sc-46979e46-18"})`
   display: flex;
   align-items: baseline;
   gap: 0.8rem;
   flex-wrap: wrap;
   b { color: ${({theme:e})=>e.color.strong}; font-weight: 400; }
   small { color: ${({theme:e})=>e.color.muted}; font-size: inherit; }
-`,$=r.U.span.withConfig({displayName:"ui__CurrencyBadge",componentId:"sc-46979e46-18"})`
+`,x=r.U.span.withConfig({displayName:"ui__CurrencyBadge",componentId:"sc-46979e46-19"})`
   align-self: center;
   flex-shrink: 0;
   width: 2.2rem;
@@ -176,12 +181,12 @@
   color: ${({theme:e})=>e.color.accent};
   font-size: 1.1rem;
   font-weight: 600;
-`,x=r.U.h2.withConfig({displayName:"ui__SectionTitle",componentId:"sc-46979e46-19"})`
+`,k=r.U.h2.withConfig({displayName:"ui__SectionTitle",componentId:"sc-46979e46-20"})`
   font-size: 2.2rem;
   font-weight: 600;
   color: ${({theme:e})=>e.color.strong};
   text-transform: lowercase;
-`,k=r.U.div.withConfig({displayName:"ui__WireBox",componentId:"sc-46979e46-20"})`
+`,S=r.U.div.withConfig({displayName:"ui__WireBox",componentId:"sc-46979e46-21"})`
   position: relative;
   margin-top: 1.6rem;
   border: 1px solid ${({theme:e})=>e.color.faint};
@@ -189,7 +194,7 @@
   border-radius: ${({theme:e})=>e.radius.sm} ${({theme:e})=>e.radius.sm} 0 0;
   color: ${({theme:e})=>e.color.muted};
   overflow: hidden;
-`;e.s(["Z",0,g,"K",0,n,"N",0,a,"T",0,o,"c",0,$,"e",0,d,"O",0,h,"_",0,i,"f",0,b,"k",0,m,"m",0,f,"S",0,_,"a",0,u,"z",0,w,"n",0,x,"d",0,v,"g",0,c,"F",0,p,"B",0,l,"h",0,s,"i",0,function({children:e,height:r=14}){return(0,t.jsx)(k,{style:{height:`${r}rem`},children:e})}])},7289,e=>{var t=e.i(6224);let r="";class n extends Error{status;code;constructor(e,t,r){super(e),this.status=t,this.code=r}}async function o(e,i={}){let a,l={};r&&(l["X-CSRF-Token"]=r);let s="u">typeof FormData&&i.body instanceof FormData;s||(l["Content-Type"]="application/json");try{a=await fetch("/api/v1"+e,{method:i.method??"GET",headers:l,credentials:"same-origin",body:void 0===i.body?void 0:s?i.body:JSON.stringify(i.body)})}catch{throw new n((0,t.t)("Нет связи с сервером. Проверьте соединение и повторите действие."),0)}if(401===a.status&&"/auth/login"!==e)throw window.location.assign("/login"),new n((0,t.t)("Сессия завершена"),401);if(204===a.status)return null;let c=await a.json().catch(()=>({}));if(!a.ok){let e=c?.detail;throw new n(("string"==typeof e?e:Array.isArray(e)?e.map(e=>{let r=e.loc?.length&&e.loc.length>1?String(e.loc[e.loc.length-1]):"";return r?`${({title:(0,t.t)("Название"),amount:(0,t.t)("Сумма"),currency:(0,t.t)("Валюта"),first_due_date:(0,t.t)("Дата первого платежа"),username:(0,t.t)("Логин"),display_name:(0,t.t)("Имя"),password:(0,t.t)("Пароль"),paid_at:(0,t.t)("Дата оплаты"),current_password:(0,t.t)("Текущий пароль"),new_password:(0,t.t)("Новый пароль"),code:(0,t.t)("Код"),url:(0,t.t)("Ссылка"),file:(0,t.t)("Файл"),category:(0,t.t)("Категория"),assignee_id:(0,t.t)("Ответственный"),until:(0,t.t)("Дата окончания"),frequency:(0,t.t)("Периодичность"),payment_url:(0,t.t)("Ссылка на оплату"),payment_details:(0,t.t)("Реквизиты"),access:(0,t.t)("Доступ"),expires_in_days:(0,t.t)("Срок действия"),name:(0,t.t)("Название"),wallet_network:(0,t.t)("Сеть кошелька"),wallet_address:(0,t.t)("Адрес кошелька"),network:(0,t.t)("Сеть"),address:(0,t.t)("Адрес")})[r]??r}: ${e.msg}`:e.msg}).join(". "):"")||(0,t.t)("Не удалось выполнить действие"),a.status,c?.code)}return c}e.s(["k",0,o,"z",0,function(e){let t=new URLSearchParams;for(let[r,n]of Object.entries(e))n&&t.set(r,n);let r=t.toString();return r?"?"+r:""},"l",0,e=>{r=e}])},813,4410,e=>{var t=e.i(1398),r=e.i(1788),n=e.i(814);let o={accent:"#22b6ca",accentDeep:"#1595a8",accentSoft:"rgba(34, 182, 202, 0.14)"},i={light:{page:"#f4f5f6",panel:"#ffffff",tile:"#f2f3f4",ink:"#111214",muted:"#7b7f86",line:"#e7e9ec"},radius:{sm:"0.8rem",md:"1.2rem",lg:"1.6rem",xl:"2.4rem",sheet:"4.8rem",pill:"99rem"},font:"'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif",mobile:"@media (max-width: 960px)"},a={...i,name:"dark",color:{...o,page:"#000000",surface:"#161616",tile:"#232323",tileHover:"#2b2b2b",inset:"#000000",hover:"rgba(255, 255, 255, 0.025)",line:"#2c2c2c",text:"#ececec",strong:"#ffffff",muted:"#8b8b8b",faint:"#5c5c5c",ghost:"#343434",chevron:"#000000",chevronText:"#ffffff",shadow:"rgba(0, 0, 0, 0.6)",paid:"#4ed36b",unpaid:"#f2c94c",overdue:"#ff6150",overdueSoft:"rgba(255, 97, 80, 0.12)",unpaidSoft:"rgba(242, 201, 76, 0.12)"}},l={...i,name:"light",color:{...o,page:"#eef0f2",surface:"#ffffff",tile:"#f2f3f4",tileHover:"#e8eaed",inset:"#ffffff",hover:"rgba(17, 18, 20, 0.025)",line:"#e5e7ea",text:"#26282c",strong:"#111214",muted:"#70757d",faint:"#a5aab2",ghost:"#e2e4e8",chevron:"#111214",chevronText:"#ffffff",shadow:"rgba(17, 18, 20, 0.18)",paid:"#1f9d55",unpaid:"#b7791f",overdue:"#d9412b",overdueSoft:"rgba(217, 65, 43, 0.1)",unpaidSoft:"rgba(183, 121, 31, 0.12)"}},s=n.m`
+`;e.s(["Z",0,g,"K",0,n,"N",0,a,"T",0,o,"c",0,x,"e",0,d,"O",0,h,"_",0,i,"f",0,b,"k",0,m,"m",0,f,"S",0,$,"a",0,u,"z",0,_,"n",0,k,"d",0,v,"g",0,c,"F",0,p,"o",0,w,"B",0,l,"h",0,s,"i",0,function({children:e,height:r=14}){return(0,t.jsx)(S,{style:{height:`${r}rem`},children:e})}])},7289,e=>{var t=e.i(6224);let r="";class n extends Error{status;code;constructor(e,t,r){super(e),this.status=t,this.code=r}}async function o(e,i={}){let a,l={};r&&(l["X-CSRF-Token"]=r);let s="u">typeof FormData&&i.body instanceof FormData;s||(l["Content-Type"]="application/json");try{a=await fetch("/api/v1"+e,{method:i.method??"GET",headers:l,credentials:"same-origin",body:void 0===i.body?void 0:s?i.body:JSON.stringify(i.body)})}catch{throw new n((0,t.t)("Нет связи с сервером. Проверьте соединение и повторите действие."),0)}if(401===a.status&&"/auth/login"!==e)throw window.location.assign("/login"),new n((0,t.t)("Сессия завершена"),401);if(204===a.status)return null;let c=await a.json().catch(()=>({}));if(!a.ok){let e=c?.detail;throw new n(("string"==typeof e?e:Array.isArray(e)?e.map(e=>{let r=e.loc?.length&&e.loc.length>1?String(e.loc[e.loc.length-1]):"";return r?`${({title:(0,t.t)("Название"),amount:(0,t.t)("Сумма"),currency:(0,t.t)("Валюта"),first_due_date:(0,t.t)("Дата первого платежа"),username:(0,t.t)("Логин"),display_name:(0,t.t)("Имя"),password:(0,t.t)("Пароль"),paid_at:(0,t.t)("Дата оплаты"),current_password:(0,t.t)("Текущий пароль"),new_password:(0,t.t)("Новый пароль"),code:(0,t.t)("Код"),url:(0,t.t)("Ссылка"),file:(0,t.t)("Файл"),category:(0,t.t)("Категория"),assignee_id:(0,t.t)("Ответственный"),until:(0,t.t)("Дата окончания"),frequency:(0,t.t)("Периодичность"),payment_url:(0,t.t)("Ссылка на оплату"),payment_details:(0,t.t)("Реквизиты"),access:(0,t.t)("Доступ"),expires_in_days:(0,t.t)("Срок действия"),name:(0,t.t)("Название"),description:(0,t.t)("За что платим"),wallet_network:(0,t.t)("Сеть кошелька"),wallet_address:(0,t.t)("Адрес кошелька"),network:(0,t.t)("Сеть"),address:(0,t.t)("Адрес")})[r]??r}: ${e.msg}`:e.msg}).join(". "):"")||(0,t.t)("Не удалось выполнить действие"),a.status,c?.code)}return c}e.s(["k",0,o,"z",0,function(e){let t=new URLSearchParams;for(let[r,n]of Object.entries(e))n&&t.set(r,n);let r=t.toString();return r?"?"+r:""},"l",0,e=>{r=e}])},813,4410,e=>{var t=e.i(1398),r=e.i(1788),n=e.i(814);let o={accent:"#22b6ca",accentDeep:"#1595a8",accentSoft:"rgba(34, 182, 202, 0.14)"},i={light:{page:"#f4f5f6",panel:"#ffffff",tile:"#f2f3f4",ink:"#111214",muted:"#7b7f86",line:"#e7e9ec"},radius:{sm:"0.8rem",md:"1.2rem",lg:"1.6rem",xl:"2.4rem",sheet:"4.8rem",pill:"99rem"},font:"'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif",mobile:"@media (max-width: 960px)"},a={...i,name:"dark",color:{...o,page:"#000000",surface:"#161616",tile:"#232323",tileHover:"#2b2b2b",inset:"#000000",hover:"rgba(255, 255, 255, 0.025)",line:"#2c2c2c",text:"#ececec",strong:"#ffffff",muted:"#8b8b8b",faint:"#5c5c5c",ghost:"#343434",chevron:"#000000",chevronText:"#ffffff",shadow:"rgba(0, 0, 0, 0.6)",paid:"#4ed36b",unpaid:"#f2c94c",overdue:"#ff6150",overdueSoft:"rgba(255, 97, 80, 0.12)",unpaidSoft:"rgba(242, 201, 76, 0.12)"}},l={...i,name:"light",color:{...o,page:"#eef0f2",surface:"#ffffff",tile:"#f2f3f4",tileHover:"#e8eaed",inset:"#ffffff",hover:"rgba(17, 18, 20, 0.025)",line:"#e5e7ea",text:"#26282c",strong:"#111214",muted:"#70757d",faint:"#a5aab2",ghost:"#e2e4e8",chevron:"#111214",chevronText:"#ffffff",shadow:"rgba(17, 18, 20, 0.18)",paid:"#1f9d55",unpaid:"#b7791f",overdue:"#d9412b",overdueSoft:"rgba(217, 65, 43, 0.1)",unpaidSoft:"rgba(183, 121, 31, 0.12)"}},s=n.m`
   background:
     radial-gradient(circle at 42% 34%, rgba(255, 255, 255, 0.95) 0 5%, transparent 20%),
     radial-gradient(ellipse 34% 22% at 50% 52%, rgba(255, 255, 255, 0.55), transparent 70%),

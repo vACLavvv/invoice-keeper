@@ -28,6 +28,7 @@ type Occurrence struct {
 	Receipts           int         `json:"receipts"`
 	PaymentURL         *string     `json:"payment_url"`
 	PaymentDetails     *string     `json:"payment_details"`
+	Description        *string     `json:"description"`
 	Wallet             *walletInfo `json:"wallet"`
 
 	amountCents int64
@@ -42,7 +43,7 @@ type Person struct {
 
 const occurrenceSelect = `SELECT o.id,o.recurring_payment_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,r.active,o.updated_by,
 r.frequency,r.category,u.id,u.display_name,u.username,(SELECT COUNT(*) FROM receipts x WHERE x.occurrence_id=o.id),
-r.payment_url,r.payment_details,r.wallet_network,r.wallet_address,x.sdn_name,x.currency,x.sdn_uid,EXISTS(SELECT 1 FROM sanctioned_addresses)
+r.payment_url,r.payment_details,r.description,r.wallet_network,r.wallet_address,x.sdn_name,x.currency,x.sdn_uid,EXISTS(SELECT 1 FROM sanctioned_addresses)
 FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id LEFT JOIN users u ON u.id=r.assignee_id
 LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
 
@@ -56,7 +57,7 @@ func scanOccurrence(row scanner, today time.Time) (Occurrence, error) {
 	var assigneeID, sdnUID sql.NullInt64
 	var listLoaded bool
 	if err := row.Scan(&o.ID, &o.RecurringPaymentID, &o.Title, &o.amountCents, &o.Currency, &o.DueDate, &paid, &o.Active, &updatedBy,
-		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts, &o.PaymentURL, &o.PaymentDetails,
+		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts, &o.PaymentURL, &o.PaymentDetails, &o.Description,
 		&walletNetwork, &walletAddress, &sdnName, &sdnCurrency, &sdnUID, &listLoaded); err != nil {
 		return o, err
 	}

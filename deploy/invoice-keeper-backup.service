@@ -1,0 +1,20 @@
+# /etc/systemd/system/invoice-keeper-backup.service — online SQLite copy with integrity check.
+[Unit]
+Description=Invoice Keeper database backup
+
+[Service]
+Type=oneshot
+User=invoice-keeper
+Group=invoice-keeper
+WorkingDirectory=/opt/invoice-keeper/app
+ExecStart=/bin/sh -c 'exec /opt/invoice-keeper/app/invoice-keeper backup --destination /opt/invoice-keeper/backups/invoice-keeper-$(date -u +%%Y%%m%%dT%%H%%M%%SZ).sqlite3'
+# Keep the 14 newest copies.
+ExecStartPost=/bin/sh -c 'ls -1t /opt/invoice-keeper/backups/invoice-keeper-*.sqlite3 | tail -n +15 | xargs -r rm --'
+UMask=0077
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/invoice-keeper/data /opt/invoice-keeper/backups

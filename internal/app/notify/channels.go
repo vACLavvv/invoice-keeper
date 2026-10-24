@@ -21,10 +21,12 @@ import (
 	"net"
 	"net/http"
 	"net/mail"
+	"net/netip"
 	"net/smtp"
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"invoice-keeper/internal/app/config"
@@ -282,13 +284,50 @@ func WebhookSignature(secret string, body []byte) string {
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
+// ErrPrivateAddress: WEBHOOK_URL resolved to loopback, a private network or cloud metadata.
+var ErrPrivateAddress = errors.New("адрес во внутренней сети")
+
+// publicOnly refuses connections to non-public addresses. It runs after DNS resolution, for the
+// address actually dialled, so a name that later resolves to 127.0.0.1 or 169.254.169.254 is caught too.
+func publicOnly(_, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return err
+	}
+	ip = ip.Unmap()
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() ||
+		ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() || carrierNAT.Contains(ip) {
+		return ErrPrivateAddress
+	}
+	return nil
+}
+
+var carrierNAT = netip.MustParsePrefix("100.64.0.0/10")
+
+// WebhookClient connects only to public addresses unless WEBHOOK_ALLOW_PRIVATE is set; it ignores
+// HTTP(S)_PROXY, which would otherwise make the dialled address the proxy's.
+func WebhookClient(s *config.Settings) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	if !s.WebhookAllowPrivate {
+		dialer.Control = publicOnly
+	}
+	transport.DialContext = dialer.DialContext
+	return &http.Client{Timeout: 10 * time.Second, Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
 // WebhookSender posts reminders as JSON. X-Invoice-Keeper-Delivery is stable per period and kind,
 // so a receiver can drop duplicates; X-Invoice-Keeper-Signature proves the sender when a secret is set.
 func WebhookSender(s *config.Settings, baseClient *http.Client) Sender {
 	client := baseClient
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		client = WebhookClient(s)
 	}
 	return func(row ReminderRow) SendResult {
 		payload := WebhookPayload(row, time.Now())
@@ -306,6 +345,9 @@ func WebhookSender(s *config.Settings, baseClient *http.Client) Sender {
 		}
 		response, err := client.Do(request)
 		if err != nil {
+			if errors.Is(err, ErrPrivateAddress) {
+				return SendResult{State: "failed", Error: "WEBHOOK_URL ведёт во внутреннюю сеть; разрешите это через WEBHOOK_ALLOW_PRIVATE=true"}
+			}
 			if IsConnectError(err) {
 				return SendResult{State: "pending", Error: "Адрес webhook недоступен", RetryDelay: 60}
 			}

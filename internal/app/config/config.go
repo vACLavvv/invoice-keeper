@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,6 +26,10 @@ type Settings struct {
 	Timezone         string
 	SessionHours     int
 	CookieSecure     bool
+	PublicBaseURL    string         // PUBLIC_BASE_URL: the address users open, e.g. https://keeper.example.ru; Origin must match it
+	TrustedProxies   []netip.Prefix // TRUSTED_PROXIES: reverse proxies whose X-Forwarded-For is believed
+	LogRequests      bool           // one log line per request (LOG_REQUESTS); secrets are never logged
+	LogFormat        string         // text | json
 	TelegramEnabled  bool
 	TelegramBotToken string
 	TelegramChatID   string
@@ -48,6 +53,8 @@ type Settings struct {
 
 	WebhookURL    string // reminders as JSON POST, signed with HMAC-SHA256 when WebhookSecret is set
 	WebhookSecret string
+	// WebhookAllowPrivate lets WEBHOOK_URL point to loopback or private networks (a receiver on the same server).
+	WebhookAllowPrivate bool
 
 	EncryptionKey  []byte // DATA_ENCRYPTION_KEY: encrypts secrets, receipts and payment details in the database
 	LoginAlerts    bool   // Telegram message to the owner on every sign-in and on a sign-in lockout
@@ -119,6 +126,19 @@ func (s *Settings) Validate() error {
 	}
 	if s.WebhookURL != "" && !webURL(s.WebhookURL) {
 		return errors.New("WEBHOOK_URL должен начинаться с http:// или https://")
+	}
+	if s.PublicBaseURL != "" {
+		parsed, err := url.Parse(s.PublicBaseURL)
+		if err != nil || !webURL(s.PublicBaseURL) || strings.Trim(parsed.Path, "/") != "" || parsed.RawQuery != "" || parsed.User != nil {
+			return errors.New("PUBLIC_BASE_URL — только схема и адрес сайта, например https://keeper.example.ru")
+		}
+		s.PublicBaseURL = parsed.Scheme + "://" + parsed.Host
+	}
+	if s.LogFormat == "" {
+		s.LogFormat = "text"
+	}
+	if s.LogFormat != "text" && s.LogFormat != "json" {
+		return errors.New("LOG_FORMAT: допустимы text или json")
 	}
 	if s.KeyIdleDays < 0 || s.KeyIdleDays > 3650 {
 		return errors.New("KEY_IDLE_DAYS: от 0 (не отключать) до 3650")
@@ -259,6 +279,13 @@ func FromEnv(root string) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
+	proxies, err := ParseProxies(Env("TRUSTED_PROXIES", ""))
+	if err != nil {
+		return nil, err
+	}
+	publicURL := strings.TrimSpace(Env("PUBLIC_BASE_URL", ""))
+	// Behind HTTPS cookies are Secure unless COOKIE_SECURE says otherwise.
+	cookieDefault := strconv.FormatBool(strings.HasPrefix(strings.ToLower(publicURL), "https://"))
 	var smtpTo []string
 	for _, address := range strings.Split(Env("SMTP_TO", ""), ",") {
 		if address = strings.TrimSpace(address); address != "" {
@@ -266,41 +293,46 @@ func FromEnv(root string) (*Settings, error) {
 		}
 	}
 	s := &Settings{
-		DatabasePath:       dbPath,
-		AdminUsername:      Env("ADMIN_USERNAME", "admin"),
-		AdminPassword:      Env("ADMIN_PASSWORD", ""),
-		Timezone:           Env("APP_TIMEZONE", "Europe/Moscow"),
-		SessionHours:       sessionHours,
-		CookieSecure:       strings.EqualFold(Env("COOKIE_SECURE", "false"), "true"),
-		TelegramEnabled:    strings.EqualFold(Env("TELEGRAM_ENABLED", "false"), "true"),
-		TelegramBotToken:   Env("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:     Env("TELEGRAM_CHAT_ID", ""),
-		ReminderInterval:   interval,
-		SupportTelegram:    strings.TrimSpace(Env("SUPPORT_TELEGRAM", "")),
-		SupportEmail:       strings.TrimSpace(Env("SUPPORT_EMAIL", "")),
-		OverdueReminders:   !strings.EqualFold(Env("OVERDUE_REMINDERS", "true"), "false"),
-		MaxBotToken:        strings.TrimSpace(Env("MAX_BOT_TOKEN", "")),
-		MaxChatID:          strings.TrimSpace(Env("MAX_CHAT_ID", "")),
-		MaxAPIURL:          strings.TrimRight(strings.TrimSpace(Env("MAX_API_URL", "")), "/"),
-		MaxCAFile:          strings.TrimSpace(Env("MAX_CA_FILE", "")),
-		SMTPHost:           strings.TrimSpace(Env("SMTP_HOST", "")),
-		SMTPPort:           smtpPort,
-		SMTPUsername:       Env("SMTP_USERNAME", ""),
-		SMTPPassword:       Env("SMTP_PASSWORD", ""),
-		SMTPFrom:           strings.TrimSpace(Env("SMTP_FROM", "")),
-		SMTPTo:             smtpTo,
-		SMTPSecurity:       strings.ToLower(strings.TrimSpace(Env("SMTP_SECURITY", ""))),
-		WebhookURL:         strings.TrimSpace(Env("WEBHOOK_URL", "")),
-		WebhookSecret:      Env("WEBHOOK_SECRET", ""),
-		OFACEnabled:        !strings.EqualFold(Env("OFAC_ENABLED", "true"), "false"),
-		OFACListURL:        strings.TrimSpace(Env("OFAC_LIST_URL", "")),
-		OFACRefreshHours:   ofacHours,
-		EncryptionKey:      encryptionKey,
-		LoginAlerts:        !strings.EqualFold(Env("LOGIN_ALERTS", "true"), "false"),
-		PaidLinkedOnly:     !strings.EqualFold(Env("TELEGRAM_PAID_LINKED_ONLY", "true"), "false"),
-		KeyIdleDays:        keyIdleDays,
-		RateLimitPerSecond: ratePerSecond,
-		RateLimitBurst:     rateBurst,
+		DatabasePath:        dbPath,
+		AdminUsername:       Env("ADMIN_USERNAME", "admin"),
+		AdminPassword:       Env("ADMIN_PASSWORD", ""),
+		Timezone:            Env("APP_TIMEZONE", "Europe/Moscow"),
+		SessionHours:        sessionHours,
+		CookieSecure:        strings.EqualFold(Env("COOKIE_SECURE", cookieDefault), "true"),
+		PublicBaseURL:       publicURL,
+		TrustedProxies:      proxies,
+		LogRequests:         !strings.EqualFold(Env("LOG_REQUESTS", "true"), "false"),
+		LogFormat:           strings.ToLower(strings.TrimSpace(Env("LOG_FORMAT", ""))),
+		TelegramEnabled:     strings.EqualFold(Env("TELEGRAM_ENABLED", "false"), "true"),
+		TelegramBotToken:    Env("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:      Env("TELEGRAM_CHAT_ID", ""),
+		ReminderInterval:    interval,
+		SupportTelegram:     strings.TrimSpace(Env("SUPPORT_TELEGRAM", "")),
+		SupportEmail:        strings.TrimSpace(Env("SUPPORT_EMAIL", "")),
+		OverdueReminders:    !strings.EqualFold(Env("OVERDUE_REMINDERS", "true"), "false"),
+		MaxBotToken:         strings.TrimSpace(Env("MAX_BOT_TOKEN", "")),
+		MaxChatID:           strings.TrimSpace(Env("MAX_CHAT_ID", "")),
+		MaxAPIURL:           strings.TrimRight(strings.TrimSpace(Env("MAX_API_URL", "")), "/"),
+		MaxCAFile:           strings.TrimSpace(Env("MAX_CA_FILE", "")),
+		SMTPHost:            strings.TrimSpace(Env("SMTP_HOST", "")),
+		SMTPPort:            smtpPort,
+		SMTPUsername:        Env("SMTP_USERNAME", ""),
+		SMTPPassword:        Env("SMTP_PASSWORD", ""),
+		SMTPFrom:            strings.TrimSpace(Env("SMTP_FROM", "")),
+		SMTPTo:              smtpTo,
+		SMTPSecurity:        strings.ToLower(strings.TrimSpace(Env("SMTP_SECURITY", ""))),
+		WebhookURL:          strings.TrimSpace(Env("WEBHOOK_URL", "")),
+		WebhookSecret:       Env("WEBHOOK_SECRET", ""),
+		WebhookAllowPrivate: strings.EqualFold(Env("WEBHOOK_ALLOW_PRIVATE", "false"), "true"),
+		OFACEnabled:         !strings.EqualFold(Env("OFAC_ENABLED", "true"), "false"),
+		OFACListURL:         strings.TrimSpace(Env("OFAC_LIST_URL", "")),
+		OFACRefreshHours:    ofacHours,
+		EncryptionKey:       encryptionKey,
+		LoginAlerts:         !strings.EqualFold(Env("LOGIN_ALERTS", "true"), "false"),
+		PaidLinkedOnly:      !strings.EqualFold(Env("TELEGRAM_PAID_LINKED_ONLY", "true"), "false"),
+		KeyIdleDays:         keyIdleDays,
+		RateLimitPerSecond:  ratePerSecond,
+		RateLimitBurst:      rateBurst,
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -310,6 +342,26 @@ func FromEnv(root string) (*Settings, error) {
 
 // DefaultOFACURL is the official SDN list of the U.S. Treasury (XML, redirects to cloud storage).
 const DefaultOFACURL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML"
+
+// ParseProxies reads a comma-separated list of IP addresses and CIDR ranges.
+func ParseProxies(list string) ([]netip.Prefix, error) {
+	var prefixes []netip.Prefix
+	for _, item := range strings.Split(list, ",") {
+		if item = strings.TrimSpace(item); item == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(item); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(item)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES: %q — не IP-адрес и не сеть CIDR", item)
+		}
+		prefixes = append(prefixes, netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen()))
+	}
+	return prefixes, nil
+}
 
 func webURL(link string) bool {
 	parsed, err := url.Parse(link)

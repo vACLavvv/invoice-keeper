@@ -1,0 +1,39 @@
+# /etc/systemd/system/invoice-keeper.service
+# The binary and .env live in /opt/invoice-keeper/app (WorkingDirectory); the database in DATABASE_PATH.
+[Unit]
+Description=Invoice Keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=invoice-keeper
+Group=invoice-keeper
+WorkingDirectory=/opt/invoice-keeper/app
+ExecStart=/opt/invoice-keeper/app/invoice-keeper serve --host 127.0.0.1 --port 18081
+# SIGTERM: in-flight requests finish (10 s), background work stops (15 s), then the database closes.
+KillSignal=SIGTERM
+TimeoutStopSec=40
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+ReadWritePaths=/opt/invoice-keeper/data
+
+[Install]
+WantedBy=multi-user.target

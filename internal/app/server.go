@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -94,7 +93,7 @@ func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Optio
 		return nil, err
 	}
 	s.limiter = newRateLimiter(float64(settings.RateLimitPerSecond), float64(settings.RateLimitBurst))
-	s.handler = s.securityHeaders(s.rateLimit(s.routes()))
+	s.handler = s.realIP(s.accessLog(s.securityHeaders(s.rateLimit(s.routes()))))
 	return s, nil
 }
 
@@ -275,12 +274,12 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 
 // originCheck requires the Origin of this site on state-changing cookie requests. Browsers send it
 // with every POST, PATCH and DELETE, so a request without it is not from the panel; scripts use API tokens.
-func originCheck(r *http.Request) error {
+func (s *Server) originCheck(r *http.Request) error {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return &apiError{Status: 403, Detail: "Нет заголовка Origin. Для скриптов используйте токен API", Code: "origin_required"}
 	}
-	if parsed, err := url.Parse(origin); err != nil || parsed.Host != r.Host {
+	if !s.sameSite(r, origin) {
 		return fail(403, "Запрос с другого сайта запрещён")
 	}
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
@@ -299,7 +298,7 @@ func (s *Server) writeUser(r *http.Request) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := originCheck(r); err != nil {
+	if err := s.originCheck(r); err != nil {
 		return nil, err
 	}
 	token := r.Header.Get("X-CSRF-Token")
@@ -384,7 +383,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if err := f.err(); err != nil {
 		return err
 	}
-	if err := originCheck(r); err != nil {
+	if err := s.originCheck(r); err != nil {
 		return err
 	}
 	now := time.Now().Unix()

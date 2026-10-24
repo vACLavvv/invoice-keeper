@@ -81,7 +81,7 @@ func TestWebhookPayloadSignatureAndOutcomes(t *testing.T) {
 		w.WriteHeader(status)
 	}))
 	defer receiver.Close()
-	settings := &config.Settings{WebhookURL: receiver.URL, WebhookSecret: "s3cret"}
+	settings := &config.Settings{WebhookURL: receiver.URL, WebhookSecret: "s3cret", WebhookAllowPrivate: true}
 	send := WebhookSender(settings, nil)
 	row := ReminderRow{Kind: "overdue", OccurrenceID: 7, Title: "Сервер", AmountCents: 2400, Currency: "USD", DueDate: "2026-01-31", PaymentURL: "https://pay.me"}
 	expect(t, "sent", send(row).State, "sent")
@@ -276,4 +276,19 @@ func must[T any](value T, err error) T {
 		panic(err)
 	}
 	return value
+}
+
+func TestWebhookRefusesInternalAddresses(t *testing.T) {
+	hits := 0
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	defer receiver.Close()
+	row := ReminderRow{Kind: "due", OccurrenceID: 1, Title: "Сервер", AmountCents: 100, Currency: "RUB", DueDate: "2026-01-31"}
+	for _, link := range []string{receiver.URL, "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/hook", "http://[::1]:9/hook"} {
+		result := WebhookSender(&config.Settings{WebhookURL: link}, nil)(row)
+		expect(t, link+" refused", result.State, "failed")
+	}
+	expect(t, "nothing reached the receiver", hits, 0)
+	for ip, private := range map[string]bool{"8.8.8.8:443": false, "100.100.1.1:80": true, "192.168.1.5:80": true, "[fd00::1]:80": true, "[2a00:1450::1]:443": false} {
+		expect(t, ip, publicOnly("tcp", ip, nil) != nil, private)
+	}
 }

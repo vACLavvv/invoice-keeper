@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -87,6 +88,12 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	// log.Printf from the rest of the code goes through the same handler.
+	var handler slog.Handler = slog.NewTextHandler(os.Stderr, nil)
+	if settings.LogFormat == "json" {
+		handler = slog.NewJSONHandler(os.Stderr, nil)
+	}
+	slog.SetDefault(slog.New(handler))
 	if warning := config.EnvFileWarning(root()); warning != "" {
 		log.Print(warning)
 	}

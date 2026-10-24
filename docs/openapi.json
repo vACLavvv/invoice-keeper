@@ -2,9 +2,33 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Invoice Keeper API",
-    "description": "Учёт регулярных платежей. Cookie-сессия; изменения требуют X-CSRF-Token из auth/me или auth/login. Суммы передаются десятичными строками. Даты — YYYY-MM-DD в часовом поясе приложения.",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "description": "Учёт регулярных платежей команды: периоды оплаты, просрочки, итоги по валютам и напоминания в Telegram.\n\n**Авторизация.** `POST /auth/login` ставит HttpOnly-cookie `invoice_session` и возвращает `csrf_token`.\nВсе изменяющие запросы (кроме входа) требуют заголовок `X-CSRF-Token` с этим значением; токен также отдаёт `GET /auth/me`.\nВ Swagger браузер использует открытую cookie-сессию — укажите токен в Authorize → csrfToken.\n\n**Форматы.** Суммы — десятичные строки с двумя знаками (`\"45000.00\"`), без конвертации между валютами.\nДаты — `YYYY-MM-DD` в часовом поясе приложения (`GET /settings`). Ошибки: `{\"detail\": \"текст\"}` или список ошибок полей.\n\n**Роли.** `admin` задаётся в `.env`; `user` создаёт администратор. Ограничения ролей проверяются на сервере."
   },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Этот сервер"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Авторизация"
+    },
+    {
+      "name": "Регулярные платежи"
+    },
+    {
+      "name": "Оплаты"
+    },
+    {
+      "name": "Пользователи",
+      "description": "Только администратор"
+    },
+    {
+      "name": "Система"
+    }
+  ],
   "paths": {
     "/api/v1/auth/login": {
       "post": {
@@ -12,35 +36,49 @@
           "Авторизация"
         ],
         "summary": "Войти по логину и паролю",
-        "operationId": "login_api_v1_auth_login_post",
+        "operationId": "login",
+        "security": [],
+        "description": "Ставит cookie `invoice_session`. 10 неудачных попыток за 5 минут с одного адреса или для одного логина → 429.",
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/Login"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Вход выполнен",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "invoice_session=…; HttpOnly; SameSite=Strict",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -51,22 +89,27 @@
           "Авторизация"
         ],
         "summary": "Текущая учётная запись и CSRF-токен",
-        "operationId": "me_api_v1_auth_me_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
+        "operationId": "me",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Текущий пользователь",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
       }
     },
     "/api/v1/auth/logout": {
@@ -75,69 +118,24 @@
           "Авторизация"
         ],
         "summary": "Завершить текущую сессию",
-        "operationId": "logout_api_v1_auth_logout_post",
+        "operationId": "logout",
         "security": [
           {
-            "APIKeyCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
-            }
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
         "responses": {
           "204": {
-            "description": "Successful Response"
+            "description": "Сессия удалена, cookie очищена"
           },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
-      }
-    },
-    "/api/v1/settings": {
-      "get": {
-        "tags": [
-          "Система"
-        ],
-        "summary": "Часовой пояс, текущая дата и состояние Telegram",
-        "operationId": "app_settings_api_v1_settings_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          }
-        ]
       }
     },
     "/api/v1/recurring-payments": {
@@ -146,20 +144,28 @@
           "Регулярные платежи"
         ],
         "summary": "Список регулярных платежей, включая архив",
-        "operationId": "recurring_list_api_v1_recurring_payments_get",
+        "operationId": "listRecurringPayments",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Активные сначала, затем архив",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecurringPayment"
+                  }
+                }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       },
@@ -168,30 +174,14 @@
           "Регулярные платежи"
         ],
         "summary": "Добавить ежемесячный платёж",
-        "operationId": "recurring_create_api_v1_recurring_payments_post",
+        "operationId": "createRecurringPayment",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
-        "parameters": [
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
-            }
-          }
-        ],
+        "description": "Только администратор. Создаёт периоды до конца следующего месяца. Если до срока не больше 3 дней, напоминание проверяется сразу.",
         "requestBody": {
           "required": true,
           "content": {
@@ -204,22 +194,23 @@
         },
         "responses": {
           "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Платёж создан",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/RecurringCreated"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -229,53 +220,42 @@
         "tags": [
           "Регулярные платежи"
         ],
-        "summary": "Прекратить повторение, сохранив все периоды и оплаты",
-        "operationId": "recurring_delete_api_v1_recurring_payments__payment_id__delete",
+        "summary": "Прекратить повторение, сохранив историю",
+        "operationId": "archiveRecurringPayment",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
+        "description": "Только администратор. Новые периоды и напоминания больше не создаются; созданные периоды и оплаты остаются. Повторный вызов тоже возвращает 204.",
         "parameters": [
           {
             "name": "payment_id",
             "in": "path",
             "required": true,
+            "description": "ID регулярного платежа",
             "schema": {
               "type": "integer",
-              "title": "Payment Id"
-            }
-          },
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
+              "minimum": 0
             }
           }
         ],
         "responses": {
           "204": {
-            "description": "Successful Response"
+            "description": "Платёж в архиве"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -285,136 +265,84 @@
         "tags": [
           "Оплаты"
         ],
-        "summary": "Периоды оплат и просрочки",
-        "operationId": "occurrence_list_api_v1_payment_occurrences_get",
+        "summary": "Периоды оплаты: к оплате, оплаченные и просроченные",
+        "operationId": "listOccurrences",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
           {
             "name": "from_date",
             "in": "query",
-            "required": false,
+            "description": "Срок оплаты не раньше этой даты",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "From Date"
+              "type": "string",
+              "format": "date"
             }
           },
           {
             "name": "to_date",
             "in": "query",
-            "required": false,
+            "description": "Срок оплаты не позже этой даты",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "To Date"
+              "type": "string",
+              "format": "date"
             }
           },
           {
             "name": "status",
             "in": "query",
-            "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "paid",
-                    "unpaid",
-                    "overdue"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
+              "$ref": "#/components/schemas/Status"
             }
           },
           {
             "name": "currency",
             "in": "query",
-            "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "RUB",
-                    "USD",
-                    "EUR"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Currency"
+              "$ref": "#/components/schemas/Currency"
             }
           },
           {
             "name": "search",
             "in": "query",
-            "required": false,
+            "description": "Подстрока названия без учёта регистра",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 120
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Search"
+              "type": "string",
+              "maxLength": 120
             }
           },
           {
             "name": "include_archived",
             "in": "query",
-            "required": false,
+            "description": "Учитывать периоды прекращённых платежей",
             "schema": {
               "type": "boolean",
-              "default": true,
-              "title": "Include Archived"
+              "default": true
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Отсортировано по сроку",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Occurrence"
+                  }
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -425,10 +353,10 @@
           "Оплаты"
         ],
         "summary": "Один период оплаты",
-        "operationId": "occurrence_get_api_v1_payment_occurrences__occurrence_id__get",
+        "operationId": "getOccurrence",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
         ],
         "parameters": [
@@ -436,30 +364,32 @@
             "name": "occurrence_id",
             "in": "path",
             "required": true,
+            "description": "ID периода",
             "schema": {
               "type": "integer",
-              "title": "Occurrence Id"
+              "minimum": 0
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Период",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Occurrence"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -467,37 +397,24 @@
         "tags": [
           "Оплаты"
         ],
-        "summary": "Отметить / отменить оплату или исправить фактическую дату",
-        "operationId": "occurrence_update_api_v1_payment_occurrences__occurrence_id__patch",
+        "summary": "Отметить или отменить оплату, исправить фактическую дату",
+        "operationId": "updateOccurrence",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
+        "description": "Доступно и пользователю, и администратору. Меняет только этот период; срок не меняется, просрочка пересчитывается.",
         "parameters": [
           {
             "name": "occurrence_id",
             "in": "path",
             "required": true,
+            "description": "ID периода",
             "schema": {
               "type": "integer",
-              "title": "Occurrence Id"
-            }
-          },
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
+              "minimum": 0
             }
           }
         ],
@@ -513,22 +430,26 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Период после изменения",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Occurrence"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -538,77 +459,59 @@
         "tags": [
           "Оплаты"
         ],
-        "summary": "Итоги по RUB / USD / EUR без конвертации, по сроку оплаты",
-        "operationId": "summary_api_v1_payments_summary_get",
+        "summary": "Итоги по RUB, USD и EUR без конвертации",
+        "operationId": "paymentsSummary",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
         ],
+        "description": "Периоды отбираются по сроку оплаты. `unpaid` включает `overdue`; `total = paid + unpaid`.",
         "parameters": [
           {
             "name": "from_date",
             "in": "query",
-            "required": false,
+            "description": "Начало периода (по сроку)",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "From Date"
+              "type": "string",
+              "format": "date"
             }
           },
           {
             "name": "to_date",
             "in": "query",
-            "required": false,
+            "description": "Конец периода (по сроку)",
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "To Date"
+              "type": "string",
+              "format": "date"
             }
           },
           {
             "name": "include_archived",
             "in": "query",
-            "required": false,
+            "description": "Учитывать периоды прекращённых платежей",
             "schema": {
               "type": "boolean",
-              "default": true,
-              "title": "Include Archived"
+              "default": true
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Итоги",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Summary"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -618,21 +521,32 @@
         "tags": [
           "Пользователи"
         ],
-        "summary": "Обычные пользователи, только для администратора",
-        "operationId": "users_list_api_v1_users_get",
+        "summary": "Обычные пользователи",
+        "operationId": "listUsers",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Без администратора",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeamUser"
+                  }
+                }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           }
         }
       },
@@ -641,28 +555,11 @@
           "Пользователи"
         ],
         "summary": "Создать обычного пользователя",
-        "operationId": "users_create_api_v1_users_post",
+        "operationId": "createUser",
         "security": [
           {
-            "APIKeyCookie": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
-            }
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
         "requestBody": {
@@ -677,22 +574,26 @@
         },
         "responses": {
           "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Пользователь создан",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/TeamUser"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -702,37 +603,24 @@
         "tags": [
           "Пользователи"
         ],
-        "summary": "Изменить пользователя; пароль отзывает его сессии",
-        "operationId": "users_update_api_v1_users__user_id__patch",
+        "summary": "Изменить пользователя",
+        "operationId": "updateUser",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
+        "description": "Новый пароль завершает все сессии пользователя. `user_id = 0` — администратор, он управляется только через `.env` (403).",
         "parameters": [
           {
             "name": "user_id",
             "in": "path",
             "required": true,
+            "description": "ID пользователя",
             "schema": {
               "type": "integer",
-              "title": "User Id"
-            }
-          },
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
+              "minimum": 0
             }
           }
         ],
@@ -748,22 +636,29 @@
         },
         "responses": {
           "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
+            "description": "Пользователь после изменения",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/TeamUser"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       },
@@ -771,53 +666,71 @@
         "tags": [
           "Пользователи"
         ],
-        "summary": "Удалить обычного пользователя и его сессии",
-        "operationId": "users_delete_api_v1_users__user_id__delete",
+        "summary": "Удалить пользователя и его сессии",
+        "operationId": "deleteUser",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": [],
+            "csrfToken": []
           }
         ],
+        "description": "История его действий и оплат сохраняется.",
         "parameters": [
           {
             "name": "user_id",
             "in": "path",
             "required": true,
+            "description": "ID пользователя",
             "schema": {
               "type": "integer",
-              "title": "User Id"
-            }
-          },
-          {
-            "name": "x-csrf-token",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Csrf-Token"
+              "minimum": 0
             }
           }
         ],
         "responses": {
           "204": {
-            "description": "Successful Response"
+            "description": "Удалён"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "422": {
-            "description": "Validation Error",
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Часовой пояс, текущая дата и состояние Telegram",
+        "operationId": "settings",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Настройки",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/Settings"
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
@@ -827,23 +740,34 @@
         "tags": [
           "Система"
         ],
-        "summary": "Журнал отправки Telegram, только для администратора",
-        "operationId": "reminders_api_v1_reminders_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
+        "summary": "Журнал отправки напоминаний (последние 100)",
+        "operationId": "listReminders",
         "security": [
           {
-            "APIKeyCookie": []
+            "cookieAuth": []
           }
-        ]
+        ],
+        "responses": {
+          "200": {
+            "description": "Только администратор",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Reminder"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
       }
     },
     "/api/v1/audit-log": {
@@ -851,275 +775,815 @@
         "tags": [
           "Система"
         ],
-        "summary": "Последние 100 действий, только для администратора",
-        "operationId": "audit_list_api_v1_audit_log_get",
+        "summary": "Последние 100 действий",
+        "operationId": "auditLog",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Только администратор",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Доступность приложения и базы",
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Работает",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    }
+                  }
+                }
               }
             }
           }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          }
-        ]
+        }
       }
     }
   },
   "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "invoice_session",
+        "description": "Ставится при входе"
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "description": "`csrf_token` из /auth/login или /auth/me"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Нет сессии или она завершена",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Нет прав, нет CSRF-токена или запрос с другого сайта",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Запись не найдена",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Логин занят или принадлежит администратору",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Validation": {
+        "description": "Неверные данные; введённые значения в ответ не возвращаются",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationError"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Слишком много попыток входа",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "description": "Через сколько секунд повторить",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
     "schemas": {
-      "HTTPValidationError": {
+      "Currency": {
+        "type": "string",
+        "enum": [
+          "RUB",
+          "USD",
+          "EUR"
+        ]
+      },
+      "Status": {
+        "type": "string",
+        "enum": [
+          "paid",
+          "unpaid",
+          "overdue"
+        ],
+        "description": "`overdue` — не оплачено и срок прошёл (со следующего дня после срока)"
+      },
+      "Money": {
+        "type": "string",
+        "pattern": "^\\d{1,10}\\.\\d{2}$",
+        "example": "45000.00"
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "detail"
+        ],
         "properties": {
           "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
+            "type": "string",
+            "example": "Действие доступно только администратору"
           }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
+        }
       },
-      "Login": {
-        "properties": {
-          "username": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Username"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Password"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "username",
-          "password"
-        ],
-        "title": "Login"
-      },
-      "OccurrencePatch": {
-        "properties": {
-          "paid": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Paid"
-          },
-          "paid_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Paid At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "OccurrencePatch"
-      },
-      "RecurringCreate": {
-        "properties": {
-          "title": {
-            "type": "string",
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Title",
-            "examples": [
-              "Аренда офиса"
-            ]
-          },
-          "amount": {
-            "anyOf": [
-              {
-                "type": "number",
-                "exclusiveMinimum": 0.0
-              },
-              {
-                "type": "string"
-              }
-            ],
-            "title": "Amount",
-            "examples": [
-              "45000.00"
-            ]
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "RUB",
-              "USD",
-              "EUR"
-            ],
-            "title": "Currency"
-          },
-          "first_due_date": {
-            "type": "string",
-            "format": "date",
-            "title": "First Due Date"
-          },
-          "frequency": {
-            "type": "string",
-            "const": "monthly",
-            "title": "Frequency",
-            "default": "monthly"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "title",
-          "amount",
-          "currency",
-          "first_due_date"
-        ],
-        "title": "RecurringCreate"
-      },
-      "UserCreate": {
-        "properties": {
-          "username": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 3,
-            "pattern": "^[A-Za-z0-9_.-]+$",
-            "title": "Username"
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Display Name"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 12,
-            "title": "Password"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "username",
-          "display_name",
-          "password"
-        ],
-        "title": "UserCreate"
-      },
-      "UserPatch": {
-        "properties": {
-          "username": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 64,
-                "minLength": 3,
-                "pattern": "^[A-Za-z0-9_.-]+$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          },
-          "display_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "password": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128,
-                "minLength": 12
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Password"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "UserPatch"
-      },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
-          },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
-          }
-        },
+      "FieldError": {
         "type": "object",
         "required": [
           "loc",
           "msg",
           "type"
         ],
-        "title": "ValidationError"
-      }
-    },
-    "securitySchemes": {
-      "APIKeyCookie": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "invoice_session"
+        "properties": {
+          "loc": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "integer"
+              ]
+            },
+            "example": [
+              "body",
+              "amount"
+            ]
+          },
+          "msg": {
+            "type": "string",
+            "example": "Сумма должна быть больше нуля"
+          },
+          "type": {
+            "type": "string",
+            "example": "greater_than"
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FieldError"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "Login": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "admin"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "CurrentUser": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role",
+          "csrf_token"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "0 — администратор из .env"
+          },
+          "username": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "user"
+            ]
+          },
+          "csrf_token": {
+            "type": "string",
+            "description": "Передавайте в X-CSRF-Token"
+          }
+        }
+      },
+      "Settings": {
+        "type": "object",
+        "required": [
+          "timezone",
+          "today",
+          "telegram_enabled",
+          "reminder_days",
+          "reminder_interval_seconds"
+        ],
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "example": "Europe/Moscow"
+          },
+          "today": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-25"
+          },
+          "telegram_enabled": {
+            "type": "boolean"
+          },
+          "reminder_days": {
+            "type": "integer",
+            "example": 3
+          },
+          "reminder_interval_seconds": {
+            "type": "integer",
+            "example": 60
+          }
+        }
+      },
+      "RecurringCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "amount",
+          "currency",
+          "first_due_date"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "example": "Облачный сервер"
+          },
+          "amount": {
+            "description": "Больше нуля, не более 10 цифр до точки и 2 после",
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{1,10}(\\.\\d{1,2})?$"
+              },
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            ],
+            "example": "24.00"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "first_due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-25",
+            "description": "Первый срок; его число — якорь повторения (31 → последний день короткого месяца). 2000–2100."
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "monthly"
+            ],
+            "default": "monthly"
+          }
+        }
+      },
+      "RecurringCreated": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "amount",
+          "currency",
+          "first_due_date",
+          "frequency",
+          "active"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "first_due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-25"
+          },
+          "frequency": {
+            "const": "monthly"
+          },
+          "active": {
+            "const": true
+          }
+        }
+      },
+      "RecurringPayment": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "amount",
+          "currency",
+          "first_due_date",
+          "anchor_day",
+          "frequency",
+          "active",
+          "unpaid_count",
+          "created_at",
+          "deleted_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "first_due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-25"
+          },
+          "anchor_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "frequency": {
+            "const": "monthly"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "false — в архиве"
+          },
+          "unpaid_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "Occurrence": {
+        "type": "object",
+        "required": [
+          "id",
+          "recurring_payment_id",
+          "title",
+          "amount",
+          "currency",
+          "due_date",
+          "paid_at",
+          "status",
+          "days_overdue",
+          "is_late",
+          "active",
+          "updated_by"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "recurring_payment_id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-25"
+          },
+          "paid_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "example": null,
+            "description": "Фактическая дата оплаты; null — не оплачено"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "days_overdue": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "По фактической дате для оплаченного, по сегодняшней — для неоплаченного"
+          },
+          "is_late": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Регулярный платёж не в архиве"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OccurrencePatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "description": "Оплатить: `{\"paid\": true}` (сегодня) или `{\"paid\": true, \"paid_at\": \"2026-10-23\"}`. Исправить дату: `{\"paid_at\": \"2026-10-22\"}`. Отменить: `{\"paid\": false}` или `{\"paid_at\": null}` — дата очищается. Дата не может быть в будущем.",
+        "properties": {
+          "paid": {
+            "type": "boolean"
+          },
+          "paid_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "example": null
+          }
+        }
+      },
+      "CurrencyTotals": {
+        "type": "object",
+        "required": [
+          "total",
+          "paid",
+          "unpaid",
+          "overdue",
+          "count"
+        ],
+        "properties": {
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "paid": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "unpaid": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "overdue": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "required": [
+          "from_date",
+          "to_date",
+          "currencies"
+        ],
+        "properties": {
+          "from_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "example": null
+          },
+          "to_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "example": null
+          },
+          "currencies": {
+            "type": "object",
+            "required": [
+              "RUB",
+              "USD",
+              "EUR"
+            ],
+            "properties": {
+              "RUB": {
+                "$ref": "#/components/schemas/CurrencyTotals"
+              },
+              "USD": {
+                "$ref": "#/components/schemas/CurrencyTotals"
+              },
+              "EUR": {
+                "$ref": "#/components/schemas/CurrencyTotals"
+              }
+            }
+          }
+        }
+      },
+      "TeamUser": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "role": {
+            "const": "user"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UserCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "display_name",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "example": "alexey"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "example": "Алексей Иванов"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12,
+            "maxLength": 128
+          }
+        }
+      },
+      "UserPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "minLength": 12,
+            "maxLength": 128
+          }
+        }
+      },
+      "Reminder": {
+        "type": "object",
+        "required": [
+          "occurrence_id",
+          "state",
+          "attempts",
+          "attempted_at",
+          "retry_after",
+          "sent_at",
+          "message_id",
+          "error",
+          "title",
+          "due_date"
+        ],
+        "properties": {
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "uncertain",
+              "cancelled"
+            ],
+            "description": "`uncertain` — результат неизвестен, автоматического повтора нет (без дублей)"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "attempted_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix-время"
+          },
+          "retry_after": {
+            "type": "integer",
+            "description": "Unix-время"
+          },
+          "sent_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "message_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-25"
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "entity",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "example": "occurrence.paid",
+            "description": "login, recurring.create, recurring.archive, occurrence.paid, occurrence.unpaid, user.create, user.update, user.delete"
+          },
+          "entity": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   }

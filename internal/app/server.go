@@ -120,32 +120,46 @@ func (s *Server) routes() http.Handler {
 	handle("/", s.notFound)
 	handle("GET /", s.panelPage)
 	handle("GET /login", s.loginPage)
-	handle("GET /healthz", s.health)
 	handle("GET /api/v1/docs", s.docs)
 	handle("GET /api/v1/openapi.json", s.openapi)
-
-	handle("POST /api/v1/auth/login", s.login)
-	handle("GET /api/v1/auth/me", s.me)
-	handle("POST /api/v1/auth/logout", s.logout)
-	handle("GET /api/v1/settings", s.appSettings)
-
-	handle("GET /api/v1/recurring-payments", s.recurringList)
-	handle("POST /api/v1/recurring-payments", s.recurringCreate)
-	handle("DELETE /api/v1/recurring-payments/{payment_id}", s.recurringDelete)
-
-	handle("GET /api/v1/payment-occurrences", s.occurrenceList)
-	handle("GET /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceGet)
-	handle("PATCH /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceUpdate)
-	handle("GET /api/v1/payments/summary", s.summary)
-
-	handle("GET /api/v1/users", s.usersList)
-	handle("POST /api/v1/users", s.usersCreate)
-	handle("PATCH /api/v1/users/{user_id}", s.usersUpdate)
-	handle("DELETE /api/v1/users/{user_id}", s.usersDelete)
-
-	handle("GET /api/v1/reminders", s.remindersList)
-	handle("GET /api/v1/audit-log", s.auditList)
+	for _, route := range s.apiRoutes() {
+		handle(route.pattern, route.handler)
+	}
 	return mux
+}
+
+type route struct {
+	pattern string
+	handler handlerFunc
+}
+
+// apiRoutes are the documented operations; a test checks them against docs/openapi.json.
+func (s *Server) apiRoutes() []route {
+	return []route{
+		{"GET /healthz", s.health},
+
+		{"POST /api/v1/auth/login", s.login},
+		{"GET /api/v1/auth/me", s.me},
+		{"POST /api/v1/auth/logout", s.logout},
+		{"GET /api/v1/settings", s.appSettings},
+
+		{"GET /api/v1/recurring-payments", s.recurringList},
+		{"POST /api/v1/recurring-payments", s.recurringCreate},
+		{"DELETE /api/v1/recurring-payments/{payment_id}", s.recurringDelete},
+
+		{"GET /api/v1/payment-occurrences", s.occurrenceList},
+		{"GET /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceGet},
+		{"PATCH /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceUpdate},
+		{"GET /api/v1/payments/summary", s.summary},
+
+		{"GET /api/v1/users", s.usersList},
+		{"POST /api/v1/users", s.usersCreate},
+		{"PATCH /api/v1/users/{user_id}", s.usersUpdate},
+		{"DELETE /api/v1/users/{user_id}", s.usersDelete},
+
+		{"GET /api/v1/reminders", s.remindersList},
+		{"GET /api/v1/audit-log", s.auditList},
+	}
 }
 
 // files serves embedded files only; directory listings are hidden.

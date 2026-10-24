@@ -1,12 +1,16 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
+
+	invoicekeeper "invoice-keeper"
 )
 
 func TestDataRequiresAuthorization(t *testing.T) {
@@ -367,10 +371,10 @@ func TestConcurrentReadsCreateNoDuplicatePeriods(t *testing.T) {
 	expect(t, "count", len(rows), 6) // Jan..Jun: through the end of next month
 }
 
-func TestPasswordHashesFromPythonVersionVerify(t *testing.T) {
-	// Produced by hashlib.scrypt in the former Python implementation.
-	legacy := "scrypt$00112233445566778899aabbccddeeff$10dedc998f93e692572b35a6d154e46cc45159043e7f8636da266e64d03104d6e52d80d84e05c7ad2ef3c23b8d31a8316dd91303c8146d5f37628aeda5b02461"
-	expect(t, "legacy hash", verifyPassword("Python-made-pass1!", legacy), true)
+func TestPasswordHashFormatIsStable(t *testing.T) {
+	// A hash stored by an earlier release must keep verifying after upgrades.
+	legacy := "scrypt$00112233445566778899aabbccddeeff$deeacfbd6fcad6b2e04266a871985b33ad33f3912581d90869f86daf8ae5c4ddc6af25827122b9bc3e2c08c64f29165400b9a4842b621d86e66f738ae51bc787"
+	expect(t, "legacy hash", verifyPassword("Stored-earlier-1!", legacy), true)
 	expect(t, "wrong password", verifyPassword("other", legacy), false)
 	expect(t, "round trip", verifyPassword("Fresh-pass-123!", hashPassword("Fresh-pass-123!")), true)
 }
@@ -390,4 +394,33 @@ func TestPanelPagesAndAssets(t *testing.T) {
 	expect(t, "chunk", asset.status, 200)
 	expect(t, "immutable cache", asset.header.Get("Cache-Control"), "public, max-age=31536000, immutable")
 	expect(t, "pages are not cached", page.header.Get("Cache-Control"), "no-store")
+}
+
+func TestOpenAPIDocumentsEveryRoute(t *testing.T) {
+	e := setup(t)
+	raw, err := fs.ReadFile(invoicekeeper.Assets, "docs/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Paths map[string]map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	documented := map[string]bool{}
+	for path, operations := range spec.Paths {
+		for method := range operations {
+			documented[strings.ToUpper(method)+" "+path] = true
+		}
+	}
+	for _, r := range e.server.apiRoutes() {
+		if !documented[r.pattern] {
+			t.Errorf("route %s is missing from docs/openapi.json", r.pattern)
+		}
+		delete(documented, r.pattern)
+	}
+	for operation := range documented {
+		t.Errorf("docs/openapi.json documents %s, but the server has no such route", operation)
+	}
 }

@@ -12,7 +12,7 @@ Browser (Next.js export) → net/http (auth + role + CSRF) → SQLite
                        └→ background worker → reminders → Telegram
 ```
 
-`internal/app/config.go`: настройки из корневого `.env` и окружения (окружение приоритетнее). `internal/app/db.go`: схема v1, `foreign_keys`, WAL, busy_timeout; все записи — в транзакциях `BEGIN IMMEDIATE`. Неизвестная версия базы останавливает запуск без изменения таблиц. Схема совместима с базой Python-версии: существующий `data/invoice-keeper.sqlite3` и хеши паролей (scrypt) читаются без миграции.
+`internal/app/config.go`: настройки из корневого `.env` и окружения (окружение приоритетнее). `internal/app/db.go`: схема v1, `foreign_keys`, WAL, busy_timeout; все записи — в транзакциях `BEGIN IMMEDIATE`. Неизвестная версия базы останавливает запуск без изменения таблиц.
 
 `internal/app/domain.go`: календарные правила, материализация периодов, вычисление статуса и просрочки, суммы в целых копейках. Уникальность `(recurring_payment_id, due_date)` не позволяет дублировать период при одновременных чтениях.
 
@@ -21,6 +21,8 @@ Browser (Next.js export) → net/http (auth + role + CSRF) → SQLite
 `internal/app/reminders.go`: горутина с тикером и транзакционное занятие записи. Если проверку запросили, пока идёт предыдущая, выполняется ещё один проход — запрос не теряется. После фиксации `sending` открывается вторая write-транзакция, повторно проверяется активность и оплата; отправка и сохранение результата происходят под ней. Это сериализует сетевой запрос относительно архивирования/оплаты. Цена простоты: во время запроса Telegram до 8 секунд изменения могут ждать SQLite write-lock. Пакет обрабатывается по одному сообщению, без удержания блокировки на всю очередь.
 
 `internal/app/pages.go`: отдача страниц панели из `web/app` (статический экспорт `frontend/`, Next.js Pages Router + styled-components) с проверкой сессии и CSP по SHA-256 встроенных скриптов; `/_next/static` кешируется как immutable.
+
+`docs/openapi.json`: спецификация API, она же отдаётся на `/api/v1/openapi.json` и в Swagger. Тест сверяет её с таблицей маршрутов `apiRoutes()` в обе стороны — при изменении API правьте оба места.
 
 `cmd/invoice-keeper`: команды `serve`, `bootstrap`, `backup`, `healthcheck`. `assets.go` встраивает `web/app` (через `all:`, иначе `go:embed` пропустит каталог `_next`), `web/swagger` и `docs/openapi.json`.
 

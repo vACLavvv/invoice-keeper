@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// Format scrypt$<hex salt>$<hex key>; compatible with hashes written by the Python version.
+// Format scrypt$<hex salt>$<hex key>; N=16384, r=8, p=1, 64-byte key.
 func hashPassword(password string) string {
 	salt := randomHex(16)
 	key, _ := scrypt.Key([]byte(password), []byte(salt), 16384, 8, 1, 64)

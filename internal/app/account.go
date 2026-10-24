@@ -19,7 +19,7 @@ import (
 )
 
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.writeUser(r)
+	user, err := panelOnly(s.writeUser(r))
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (s *Server) checkSecondFactor(code *string) error {
 }
 
 func (s *Server) twoFactorStatus(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.adminUser(r); err != nil {
+	if _, err := panelOnly(s.adminUser(r)); err != nil {
 		return err
 	}
 	secret, err := s.state("admin_totp_secret")
@@ -171,7 +171,7 @@ func (s *Server) twoFactorStatus(w http.ResponseWriter, r *http.Request) error {
 
 // twoFactorSetup creates a new secret; it becomes active only after a correct code (enable).
 func (s *Server) twoFactorSetup(w http.ResponseWriter, r *http.Request) error {
-	admin, err := s.adminWrite(r)
+	admin, err := panelOnly(s.adminWrite(r))
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (s *Server) twoFactorSetup(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) twoFactorEnable(w http.ResponseWriter, r *http.Request) error {
-	admin, err := s.adminWrite(r)
+	admin, err := panelOnly(s.adminWrite(r))
 	if err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func (s *Server) twoFactorEnable(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) twoFactorDisable(w http.ResponseWriter, r *http.Request) error {
-	admin, err := s.adminWrite(r)
+	admin, err := panelOnly(s.adminWrite(r))
 	if err != nil {
 		return err
 	}

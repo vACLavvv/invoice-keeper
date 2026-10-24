@@ -117,4 +117,5 @@ export const InfoBox = styled.div`
   color: ${({ theme }) => theme.color.muted};
   line-height: 1.6;
   b { color: ${({ theme }) => theme.color.strong}; font-weight: 500; }
+  a { color: ${({ theme }) => theme.color.accent}; word-break: break-all; }
 `;

@@ -13,6 +13,18 @@ import { t, tp } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 
 type Tab = 'all' | 'unpaid' | 'overdue' | 'paid';
+type SortKey = 'title' | 'amount' | 'due_date' | 'status' | 'paid_at';
+
+const statusOrder: Record<Occurrence['status'], number> = { overdue: 0, unpaid: 1, paid: 2 };
+
+/** Comparators for the column headers; ties keep the due date order. */
+const compare: Record<SortKey, (a: Occurrence, b: Occurrence) => number> = {
+  title: (a, b) => a.title.localeCompare(b.title),
+  amount: (a, b) => Number(a.amount) - Number(b.amount),
+  due_date: (a, b) => a.due_date.localeCompare(b.due_date),
+  status: (a, b) => statusOrder[a.status] - statusOrder[b.status],
+  paid_at: (a, b) => (a.paid_at ?? '9999').localeCompare(b.paid_at ?? '9999'),
+};
 
 export default function Payments() {
   const { month, setMonth, isAdmin, user } = useSession();
@@ -24,6 +36,7 @@ export default function Payments() {
   const [onDate, setOnDate] = useState('');
   const [paying, setPaying] = useState<Occurrence | null>(null);
   const [receipts, setReceipts] = useState<Occurrence | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'due_date', dir: 1 });
   const tabs: [Tab, string][] = [['all', t('все')], ['unpaid', t('к оплате')], ['overdue', t('просрочено')], ['paid', t('оплачено')]];
 
   // «Итоги на дату»: everything due up to the chosen day; otherwise the selected month.
@@ -42,7 +55,15 @@ export default function Payments() {
       && (!q || o.title.toLocaleLowerCase().includes(q)));
   }, [all, month, currency, search]);
   const matches = (o: Occurrence, k: Tab) => k === 'all' || (k === 'unpaid' ? o.status !== 'paid' : o.status === k);
-  const items = inMonth.filter((o) => matches(o, tab));
+  const items = inMonth.filter((o) => matches(o, tab))
+    .sort((a, b) => sort.dir * compare[sort.key](a, b) || a.due_date.localeCompare(b.due_date) || a.id - b.id);
+  const header = (key: SortKey, label: string) => (
+    <th aria-sort={sort.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}>
+      <SortButton type="button" onClick={() => setSort((s) => ({ key, dir: s.key === key ? (-s.dir as 1 | -1) : 1 }))}>
+        {label}<span aria-hidden="true">{sort.key === key ? (sort.dir === 1 ? '↑' : '↓') : '↕'}</span>
+      </SortButton>
+    </th>
+  );
   const filtered = !!search || !!currency || !!category || !!assignee || tab !== 'all';
   const exportUrl = '/api/v1/payment-occurrences/export' + query({
     ...monthRange(month), currency, category, assignee, search: search.trim(), status: tab === 'all' || tab === 'unpaid' ? '' : tab,
@@ -123,7 +144,12 @@ export default function Payments() {
         ) : (
           <TableWrap>
             <table>
-              <thead><tr><th>{t('Имя')}</th><th>{t('Сумма')}</th><th>{t('Срок')}</th><th>{t('Состояние')}</th><th>{t('Оплачено')}</th><th /></tr></thead>
+              <thead>
+                <tr>
+                  {header('title', t('Имя'))}{header('amount', t('Сумма'))}{header('due_date', t('Срок'))}
+                  {header('status', t('Состояние'))}{header('paid_at', t('Оплачено'))}<th />
+                </tr>
+              </thead>
               <tbody>
                 {items.map((o) => (
                   <tr key={o.id}>
@@ -146,6 +172,11 @@ export default function Payments() {
                     <td><Muted>{o.paid_at ? numericDate(o.paid_at) : '—'}</Muted></td>
                     <td>
                       <Row $gap={0.6}>
+                        {o.payment_url && o.status !== 'paid' && (
+                          <Button as="a" href={o.payment_url} target="_blank" rel="noopener noreferrer" $small $variant="secondary"
+                            title={o.payment_details ? t('Оплатить · {details}', { details: o.payment_details }) : t('Открыть ссылку на оплату')}
+                            aria-label={t('Открыть ссылку на оплату')}>💳</Button>
+                        )}
                         <Button type="button" $small $variant="secondary" onClick={() => setReceipts(o)} title={t('Чеки и ссылки')} aria-label={t('Чеки и ссылки')}>
                           🧾{o.receipts > 0 ? ` ${o.receipts}` : ''}
                         </Button>
@@ -261,6 +292,18 @@ const TabButton = styled.button<{ $selected: boolean }>`
   span { margin-left: 0.4rem; color: ${({ theme }) => theme.color.faint}; }
   &:hover { color: ${({ theme }) => theme.color.strong}; }
   ${({ $selected, theme }) => $selected && css`background: ${theme.color.tile}; color: ${theme.color.strong}; span { color: ${theme.color.accent}; }`}
+`;
+
+const SortButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  span { color: ${({ theme }) => theme.color.faint}; font-size: 0.9em; }
+  &:hover, &:hover span { color: ${({ theme }) => theme.color.strong}; }
 `;
 
 const Due = styled.span<{ $late: boolean }>`

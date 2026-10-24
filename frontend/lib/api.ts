@@ -5,16 +5,20 @@ export type User = { id: number; username: string; display_name: string; role: '
 export type Settings = {
   timezone: string; today: string; telegram_enabled: boolean; team_chat: boolean; bot_username: string;
   reminder_days: number; reminder_interval_seconds: number; support_telegram: string; support_email: string;
+  channels: Record<Channel, boolean>; overdue_reminders: boolean;
 };
+export type Channel = 'telegram' | 'max' | 'email' | 'webhook';
 export type Person = { id: number; display_name: string; username: string };
 export type Occurrence = {
   id: number; recurring_payment_id: number; title: string; amount: string; currency: Currency; due_date: string;
   paid_at: string | null; status: Status; days_overdue: number; is_late: boolean; active: boolean; updated_by: string | null;
   frequency: Frequency; category: string | null; assignee: Person | null; receipts: number;
+  payment_url: string | null; payment_details: string | null;
 };
 export type Recurring = {
   id: number; title: string; amount: string; currency: Currency; first_due_date: string; anchor_day: number;
   frequency: Frequency; category: string | null; assignee: Person | null; active: boolean;
+  payment_url: string | null; payment_details: string | null;
   paused: { from: string; until: string | null } | null; next_due_date: string | null;
   unpaid_count: number; created_at: string; deleted_at: string | null;
 };
@@ -26,7 +30,19 @@ export type Reminder = {
   attempted_at: number | null; sent_at: string | null; message_id: string | null; error: string | null; title: string; due_date: string;
 };
 export type AuditEntry = { id: number; actor: string; action: string; entity: string; created_at: string };
-export type ApiKey = { id: number; name: string; prefix: string; created_at: string; last_used_at: string | null };
+export type ApiKey = {
+  id: number; name: string; prefix: string; access: 'extension' | 'read' | 'write'; expires_at: string | null;
+  created_at: string; last_used_at: string | null;
+};
+export type Session = {
+  id: string; current: boolean; created_at: string | null; last_seen_at: string | null; expires_at: string;
+  user_agent: string | null; ip: string | null;
+};
+export type Delivery = {
+  occurrence_id: number; kind: 'due' | 'overdue'; channel: Channel | 'telegram_personal';
+  state: 'pending' | 'sending' | 'sent' | 'uncertain' | 'failed' | 'cancelled'; attempts: number;
+  attempted_at: number | null; sent_at: string | null; error: string | null; title: string; due_date: string;
+};
 export type Suggestion = {
   id: number; source_key: string; source_url: string | null; title: string; amount: string; currency: Currency; next_due_date: string;
   status: 'pending' | 'accepted' | 'rejected'; submitted_by: string; recurring_payment_id: number | null; created_at: string; updated_at: string;
@@ -55,6 +71,7 @@ const fieldName = (field: string) => ({
   username: t('Логин'), display_name: t('Имя'), password: t('Пароль'), paid_at: t('Дата оплаты'),
   current_password: t('Текущий пароль'), new_password: t('Новый пароль'), code: t('Код'), url: t('Ссылка'),
   file: t('Файл'), category: t('Категория'), assignee_id: t('Ответственный'), until: t('Дата окончания'), frequency: t('Периодичность'),
+  payment_url: t('Ссылка на оплату'), payment_details: t('Реквизиты'), access: t('Доступ'), expires_in_days: t('Срок действия'), name: t('Название'),
 } as Record<string, string>)[field] ?? field;
 
 let csrfToken = '';

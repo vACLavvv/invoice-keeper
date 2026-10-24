@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"time"
 )
@@ -16,25 +17,27 @@ type pauseInfo struct {
 }
 
 type recurringItem struct {
-	ID           int64      `json:"id"`
-	Title        string     `json:"title"`
-	Amount       string     `json:"amount"`
-	Currency     string     `json:"currency"`
-	FirstDueDate string     `json:"first_due_date"`
-	AnchorDay    int        `json:"anchor_day"`
-	Frequency    string     `json:"frequency"`
-	Category     *string    `json:"category"`
-	Assignee     *Person    `json:"assignee"`
-	Active       bool       `json:"active"`
-	Paused       *pauseInfo `json:"paused"`
-	NextDueDate  *string    `json:"next_due_date"`
-	UnpaidCount  int        `json:"unpaid_count"`
-	CreatedAt    string     `json:"created_at"`
-	DeletedAt    *string    `json:"deleted_at"`
+	ID             int64      `json:"id"`
+	Title          string     `json:"title"`
+	Amount         string     `json:"amount"`
+	Currency       string     `json:"currency"`
+	FirstDueDate   string     `json:"first_due_date"`
+	AnchorDay      int        `json:"anchor_day"`
+	Frequency      string     `json:"frequency"`
+	Category       *string    `json:"category"`
+	Assignee       *Person    `json:"assignee"`
+	PaymentURL     *string    `json:"payment_url"`
+	PaymentDetails *string    `json:"payment_details"`
+	Active         bool       `json:"active"`
+	Paused         *pauseInfo `json:"paused"`
+	NextDueDate    *string    `json:"next_due_date"`
+	UnpaidCount    int        `json:"unpaid_count"`
+	CreatedAt      string     `json:"created_at"`
+	DeletedAt      *string    `json:"deleted_at"`
 }
 
 const recurringSelect = `SELECT r.id,r.title,r.amount_cents,r.currency,r.first_due_date,r.anchor_day,r.frequency,r.category,
-u.id,u.display_name,u.username,r.active,r.created_at,r.deleted_at,
+u.id,u.display_name,u.username,r.payment_url,r.payment_details,r.active,r.created_at,r.deleted_at,
 (SELECT COUNT(*) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.paid_at IS NULL),
 (SELECT MIN(o.due_date) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.paid_at IS NULL AND o.due_date>=?)
 FROM recurring_payments r LEFT JOIN users u ON u.id=r.assignee_id`
@@ -67,7 +70,7 @@ func (s *Server) loadRecurring(q querier, where string, args ...any) ([]recurrin
 		var category, deleted, assigneeName, assigneeLogin, next sql.NullString
 		var assigneeID sql.NullInt64
 		if err := rows.Scan(&item.ID, &item.Title, &cents, &item.Currency, &item.FirstDueDate, &item.AnchorDay, &item.Frequency, &category,
-			&assigneeID, &assigneeName, &assigneeLogin, &item.Active, &item.CreatedAt, &deleted, &item.UnpaidCount, &next); err != nil {
+			&assigneeID, &assigneeName, &assigneeLogin, &item.PaymentURL, &item.PaymentDetails, &item.Active, &item.CreatedAt, &deleted, &item.UnpaidCount, &next); err != nil {
 			return nil, err
 		}
 		item.Amount = money(cents)
@@ -133,6 +136,7 @@ type recurringInput struct {
 	due                        time.Time
 	category                   *string
 	assigneeID                 *int64
+	paymentURL, paymentDetails *string
 }
 
 // extraFields validates frequency, category and assignee shared by create, edit and CSV import.
@@ -144,6 +148,22 @@ func extraFields(f *form) (frequency *string, category *string, assignee *int64)
 	category = f.text("category", textRule{trim: true, max: 40})
 	assignee = f.integer("assignee_id")
 	return
+}
+
+// paymentLinkFields validates where to pay: a http(s) link to the bill or cabinet and free-form details.
+func paymentLinkFields(f *form) (link *string, details *string) {
+	link = f.text("payment_url", textRule{trim: true, max: 500})
+	if link != nil && *link != "" && !isWebURL(*link) {
+		f.add("payment_url", "Ссылка должна начинаться с http:// или https://", "url_scheme")
+		link = nil
+	}
+	details = f.text("payment_details", textRule{trim: true, max: 500})
+	return
+}
+
+func isWebURL(link string) bool {
+	parsed, err := url.Parse(link)
+	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
 }
 
 func checkAssignee(q querier, id *int64) error {
@@ -179,17 +199,19 @@ func (s *Server) recurringCreate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	f, err := readForm(r, "title", "amount", "currency", "first_due_date", "frequency", "category", "assignee_id")
+	f, err := readForm(r, "title", "amount", "currency", "first_due_date", "frequency", "category", "assignee_id", "payment_url", "payment_details")
 	if err != nil {
 		return err
 	}
 	f.require("title", "amount", "currency", "first_due_date")
 	title, cents, currency, due := paymentFields(f, "first_due_date")
 	frequency, category, assignee := extraFields(f)
+	link, details := paymentLinkFields(f)
 	if err := f.err(); err != nil {
 		return err
 	}
-	input := recurringInput{title: *title, cents: cents, currency: *currency, due: *due, frequency: "monthly", category: category, assigneeID: assignee}
+	input := recurringInput{title: *title, cents: cents, currency: *currency, due: *due, frequency: "monthly", category: category, assigneeID: assignee,
+		paymentURL: link, paymentDetails: details}
 	if frequency != nil {
 		input.frequency = *frequency
 	}
@@ -218,9 +240,9 @@ func (s *Server) createRecurring(tx *sql.Tx, actor string, in recurringInput) (i
 	if in.frequency == "" {
 		in.frequency = "monthly"
 	}
-	result, err := tx.Exec(`INSERT INTO recurring_payments(title,amount_cents,currency,first_due_date,anchor_day,frequency,category,assignee_id,created_at)
-		VALUES(?,?,?,?,?,?,?,?,?)`, in.title, in.cents, in.currency, formatDate(in.due), in.due.Day(), in.frequency,
-		nullableString(in.category), nullableInt(in.assigneeID), timestamp())
+	result, err := tx.Exec(`INSERT INTO recurring_payments(title,amount_cents,currency,first_due_date,anchor_day,frequency,category,assignee_id,
+		payment_url,payment_details,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, in.title, in.cents, in.currency, formatDate(in.due), in.due.Day(), in.frequency,
+		nullableString(in.category), nullableInt(in.assigneeID), nullableString(in.paymentURL), nullableString(in.paymentDetails), timestamp())
 	if err != nil {
 		return 0, err
 	}
@@ -234,7 +256,7 @@ func (s *Server) createRecurring(tx *sql.Tx, actor string, in recurringInput) (i
 	return id, audit(tx, actor, "recurring.create", id)
 }
 
-// recurringUpdate edits the title, category, assignee or amount. A new amount applies to unpaid
+// recurringUpdate edits the title, category, assignee, payment link and details, or amount. A new amount applies to unpaid
 // periods from today on; paid and past periods keep the amount they were due with.
 func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 	user, err := s.adminWrite(r)
@@ -245,13 +267,14 @@ func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	f, err := readForm(r, "title", "amount", "category", "assignee_id")
+	f, err := readForm(r, "title", "amount", "category", "assignee_id", "payment_url", "payment_details")
 	if err != nil {
 		return err
 	}
 	title := f.text("title", textRule{trim: true, min: 1, max: 120})
 	cents := f.amount("amount")
 	_, category, assignee := extraFields(f)
+	link, details := paymentLinkFields(f)
 	if len(f.values) == 0 {
 		f.add("", "Укажите, что изменить", "value_error")
 	}
@@ -285,6 +308,16 @@ func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 		}
 		if f.has("assignee_id") {
 			if err := set("UPDATE recurring_payments SET assignee_id=? WHERE id=?", nullableInt(assignee)); err != nil {
+				return err
+			}
+		}
+		if f.has("payment_url") {
+			if err := set("UPDATE recurring_payments SET payment_url=? WHERE id=?", nullableString(link)); err != nil {
+				return err
+			}
+		}
+		if f.has("payment_details") {
+			if err := set("UPDATE recurring_payments SET payment_details=? WHERE id=?", nullableString(details)); err != nil {
 				return err
 			}
 		}

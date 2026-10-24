@@ -14,7 +14,9 @@ export default function Extension() {
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
-  const { data: keys, error } = useLoad(() => api<ApiKey[]>('/api-keys'), []);
+  // Script tokens live in «Аккаунт»; this page manages only the extension keys.
+  const { data: all, error } = useLoad(() => api<ApiKey[]>('/api-keys'), []);
+  const keys = all?.filter((k) => k.access === 'extension');
   const server = typeof window === 'undefined' ? '' : window.location.origin;
 
   async function remove(key: ApiKey) {

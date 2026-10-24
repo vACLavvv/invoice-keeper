@@ -45,12 +45,18 @@ export default function RecurringPage() {
                 {symbols[r.currency]} {money(r.amount)} {perPeriod(r.frequency)} · {frequencyName(r.frequency)}
                 {r.category ? ` · ${r.category}` : ''}
               </Muted>
-              <Wire height={17}>
+              <Wire height={r.payment_url || r.payment_details ? 21.3 : 17}>
                 <Line>{r.next_due_date ? t('ближайший срок {date}', { date: longDate(r.next_due_date) }) : t('с {date}', { date: longDate(r.first_due_date) })}</Line>
                 <Line>
                   {r.unpaid_count} {tp(r.unpaid_count, ['неоплаченный период', 'неоплаченных периода', 'неоплаченных периодов'], ['unpaid period', 'unpaid periods'])}
                   {r.assignee && <Muted>@{r.assignee.username}</Muted>}
                 </Line>
+                {(r.payment_url || r.payment_details) && (
+                  <Line>
+                    <Details title={r.payment_details ?? undefined}>{r.payment_details ?? ''}</Details>
+                    {r.payment_url && <PayLink href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('💳 оплатить ↗')}</PayLink>}
+                  </Line>
+                )}
                 <Line>
                   <Pill $status={!r.active ? 'archived' : r.paused ? 'unpaid' : 'active'}>
                     {!r.active ? t('в архиве') : r.paused ? (r.paused.until ? t('на паузе до {date}', { date: longDate(r.paused.until) }) : t('на паузе')) : t('активен')}
@@ -96,6 +102,18 @@ const Line = styled.div`
   padding: 0.6rem 1.4rem;
   min-height: 4.2rem;
   & + & { border-top: 1px solid ${({ theme }) => theme.color.faint}; }
+`;
+
+const Details = styled(Muted)`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const PayLink = styled.a`
+  flex-shrink: 0;
+  color: ${({ theme }) => theme.color.accent};
 `;
 
 const Corner = styled.div`

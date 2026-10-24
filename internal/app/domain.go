@@ -213,6 +213,8 @@ type Occurrence struct {
 	Category           *string `json:"category"`
 	Assignee           *Person `json:"assignee"`
 	Receipts           int     `json:"receipts"`
+	PaymentURL         *string `json:"payment_url"`
+	PaymentDetails     *string `json:"payment_details"`
 
 	amountCents int64
 }
@@ -225,7 +227,8 @@ type Person struct {
 }
 
 const occurrenceSelect = `SELECT o.id,o.recurring_payment_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,r.active,o.updated_by,
-r.frequency,r.category,u.id,u.display_name,u.username,(SELECT COUNT(*) FROM receipts x WHERE x.occurrence_id=o.id)
+r.frequency,r.category,u.id,u.display_name,u.username,(SELECT COUNT(*) FROM receipts x WHERE x.occurrence_id=o.id),
+r.payment_url,r.payment_details
 FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id LEFT JOIN users u ON u.id=r.assignee_id`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -236,7 +239,7 @@ func scanOccurrence(row scanner, today time.Time) (Occurrence, error) {
 	var paid, updatedBy, category, assigneeName, assigneeLogin sql.NullString
 	var assigneeID sql.NullInt64
 	if err := row.Scan(&o.ID, &o.RecurringPaymentID, &o.Title, &o.amountCents, &o.Currency, &o.DueDate, &paid, &o.Active, &updatedBy,
-		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts); err != nil {
+		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts, &o.PaymentURL, &o.PaymentDetails); err != nil {
 		return o, err
 	}
 	if category.Valid {

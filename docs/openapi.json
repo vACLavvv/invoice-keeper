@@ -97,6 +97,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -493,6 +496,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -524,6 +530,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Создаёт периоды до конца следующего месяца. Если до срока не больше 3 дней, напоминание проверяется сразу.",
@@ -571,6 +580,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор.",
@@ -631,6 +643,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Новые периоды и напоминания больше не создаются; созданные периоды и оплаты остаются. Повторный вызов тоже возвращает 204.",
@@ -676,6 +691,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. С сегодняшнего дня до даты или до возобновления новых периодов и напоминаний нет; неоплаченные периоды внутри паузы удаляются, история остаётся. Пропущенные месяцы потом не становятся просрочкой.",
@@ -741,6 +759,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Периоды снова создаются с сегодняшнего дня.",
@@ -796,6 +817,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Сначала `dry_run=true`: каждая строка с ошибками и предупреждениями, ничего не записывается. С `dry_run=false` все строки создаются одной транзакцией, только если ошибок нет. Разделители «;», «,», табуляция; UTF-8 и Windows-1251; суммы с запятой и пробелами; даты ДД.ММ.ГГГГ и ГГГГ-ММ-ДД. До 500 строк, 1 МБ.",
@@ -876,6 +900,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -908,6 +935,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Те же фильтры, что у списка. Открывается в Excel без настройки: «;», запятая в суммах, UTF-8 с BOM. Ячейки, похожие на формулы, экранируются.",
@@ -1009,6 +1039,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "parameters": [
@@ -1058,6 +1091,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Ссылка: JSON `{\"url\": \"https://…\"}`. Файл: multipart, поле `file`, PDF, PNG, JPEG или WebP до 5 МБ; тип определяется по содержимому. До 20 на период.",
@@ -1154,6 +1190,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "parameters": [
@@ -1203,6 +1242,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Автор или администратор.",
@@ -1247,6 +1289,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Будущие месяцы считаются по правилу повторения (паузы пропускаются); оплачено — по отмеченным периодам.",
@@ -1292,6 +1337,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "parameters": [
@@ -1396,6 +1444,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "parameters": [
@@ -1442,6 +1493,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Доступно и пользователю, и администратору. Меняет только этот период; срок не меняется, просрочка пересчитывается.",
@@ -1503,6 +1557,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Периоды отбираются по сроку оплаты. `unpaid` включает `overdue`; `total = paid + unpaid`.",
@@ -1565,6 +1622,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -1599,6 +1659,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "requestBody": {
@@ -1648,6 +1711,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Новый пароль завершает все сессии пользователя. `user_id = 0` — администратор, он управляется только через `.env` (403).",
@@ -1711,6 +1777,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "История его действий и оплат сохраняется.",
@@ -1755,6 +1824,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -1784,6 +1856,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -1819,6 +1894,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "responses": {
@@ -1879,7 +1957,7 @@
         "tags": [
           "Расширение"
         ],
-        "summary": "Создать ключ API для расширения",
+        "summary": "Создать ключ расширения или токен API",
         "operationId": "createApiKey",
         "security": [
           {
@@ -1887,7 +1965,7 @@
             "csrfToken": []
           }
         ],
-        "description": "Ключ показывается один раз; хранится только его SHA-256. Ключ работает только на `/extension/whoami` и `POST /payment-suggestions`. Не больше 20 ключей на учётную запись.",
+        "description": "Ключ показывается один раз; хранится только его SHA-256. `access: extension` (по умолчанию) — только `/extension/whoami` и `POST /payment-suggestions`; `read` — любые GET-запросы к данным с правами владельца; `write` — ещё и изменения (без X-CSRF-Token). Настройки аккаунта (пароль, 2FA, токены, сессии, Telegram) по токену недоступны. Не больше 20 ключей на учётную запись.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2062,6 +2140,9 @@
         "security": [
           {
             "cookieAuth": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Сначала неразобранные, последние 200.",
@@ -2116,6 +2197,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Любое поле можно поправить; пустое тело — принять как есть. Сразу проверяется напоминание.",
@@ -2181,6 +2265,9 @@
           {
             "cookieAuth": [],
             "csrfToken": []
+          },
+          {
+            "apiKey": []
           }
         ],
         "description": "Только администратор. Повторная отправка того же платежа расширением его не вернёт.",
@@ -2254,6 +2341,163 @@
           }
         }
       }
+    },
+    "/api/v1/me/sessions": {
+      "get": {
+        "tags": [
+          "Авторизация"
+        ],
+        "summary": "Мои активные сессии",
+        "operationId": "listSessions",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "description": "Устройство, адрес и последняя активность. Только из панели (не по токену API).",
+        "responses": {
+          "200": {
+            "description": "Сессии текущей учётной записи",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Авторизация"
+        ],
+        "summary": "Завершить все сессии, кроме текущей",
+        "operationId": "revokeOtherSessions",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Сколько сессий завершено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "closed"
+                  ],
+                  "properties": {
+                    "closed": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/me/sessions/{session_id}": {
+      "delete": {
+        "tags": [
+          "Авторизация"
+        ],
+        "summary": "Завершить одну сессию",
+        "operationId": "revokeSession",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 16
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Сессия завершена"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/deliveries": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Журнал отправки по каналам: просрочка, MAX, email, webhook (последние 200)",
+        "operationId": "listDeliveries",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Только администратор",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Delivery"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2274,7 +2518,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "ik_…",
-        "description": "Ключ API из панели (раздел «Расширение»)"
+        "description": "Ключ API из панели («Аккаунт» → «Токены API» или «Расширение»): Authorization: Bearer ik_…"
       }
     },
     "responses": {
@@ -2443,6 +2687,25 @@
               "integer",
               "null"
             ]
+          },
+          "payment_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "format": "uri",
+            "description": "Ссылка на счёт или кабинет оплаты (http/https). В напоминаниях — кнопка «💳 Оплатить»",
+            "example": "https://my.aeza.ru/billing"
+          },
+          "payment_details": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "description": "Реквизиты или комментарий для оплаты; показываются в напоминании",
+            "example": "ИНН 7700000000, договор №15"
           }
         }
       },
@@ -2967,6 +3230,28 @@
           },
           "support_email": {
             "type": "string"
+          },
+          "channels": {
+            "type": "object",
+            "description": "Какие каналы напоминаний настроены на сервере",
+            "properties": {
+              "telegram": {
+                "type": "boolean"
+              },
+              "max": {
+                "type": "boolean"
+              },
+              "email": {
+                "type": "boolean"
+              },
+              "webhook": {
+                "type": "boolean"
+              }
+            }
+          },
+          "overdue_reminders": {
+            "type": "boolean",
+            "description": "Повторное напоминание на следующий день после неоплаченного срока"
           }
         }
       },
@@ -3026,6 +3311,25 @@
               "null"
             ],
             "description": "Ответственный — обычный пользователь"
+          },
+          "payment_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "format": "uri",
+            "description": "Ссылка на счёт или кабинет оплаты (http/https). В напоминаниях — кнопка «💳 Оплатить»",
+            "example": "https://my.aeza.ru/billing"
+          },
+          "payment_details": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "description": "Реквизиты или комментарий для оплаты; показываются в напоминании",
+            "example": "ИНН 7700000000, договор №15"
           }
         }
       },
@@ -3046,7 +3350,9 @@
           "next_due_date",
           "unpaid_count",
           "created_at",
-          "deleted_at"
+          "deleted_at",
+          "payment_url",
+          "payment_details"
         ],
         "properties": {
           "id": {
@@ -3127,6 +3433,18 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "payment_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payment_details": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -3148,7 +3466,9 @@
           "frequency",
           "category",
           "assignee",
-          "receipts"
+          "receipts",
+          "payment_url",
+          "payment_details"
         ],
         "properties": {
           "id": {
@@ -3224,6 +3544,18 @@
           "receipts": {
             "type": "integer",
             "description": "Сколько чеков и ссылок прикреплено"
+          },
+          "payment_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "payment_details": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -3479,7 +3811,9 @@
           "name",
           "prefix",
           "created_at",
-          "last_used_at"
+          "last_used_at",
+          "access",
+          "expires_at"
         ],
         "properties": {
           "id": {
@@ -3502,6 +3836,23 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "extension",
+              "read",
+              "write"
+            ],
+            "description": "`extension` — только расширение; `read` — чтение (GET); `write` — чтение и изменения"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "null — бессрочный"
           }
         }
       },
@@ -3517,6 +3868,28 @@
             "minLength": 1,
             "maxLength": 60,
             "example": "Chrome на рабочем ноутбуке"
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "extension",
+              "read",
+              "write"
+            ],
+            "default": "extension"
+          },
+          "expires_in_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              30,
+              90,
+              365,
+              null
+            ],
+            "description": "Срок действия; null или отсутствие — бессрочно"
           }
         }
       },
@@ -3774,6 +4147,140 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "required": [
+          "id",
+          "current",
+          "created_at",
+          "last_seen_at",
+          "expires_at",
+          "user_agent",
+          "ip"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Публичный идентификатор (начало хеша токена; сам токен не раскрывается)",
+            "example": "3f9a0c1d2e4b5a69"
+          },
+          "current": {
+            "type": "boolean",
+            "description": "Сессия этого браузера"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Обновляется не чаще раза в минуту"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user_agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Delivery": {
+        "type": "object",
+        "required": [
+          "occurrence_id",
+          "kind",
+          "channel",
+          "state",
+          "attempts",
+          "attempted_at",
+          "sent_at",
+          "error",
+          "title",
+          "due_date"
+        ],
+        "properties": {
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "due",
+              "overdue"
+            ],
+            "description": "`due` — за 3 дня до срока, `overdue` — на следующий день после неоплаченного срока"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "telegram",
+              "telegram_personal",
+              "max",
+              "email",
+              "webhook"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "uncertain",
+              "failed",
+              "cancelled"
+            ],
+            "description": "`uncertain` — результат неизвестен, повтора нет; `failed` — не доставлено после 5 попыток"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "attempted_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Unix-время"
+          },
+          "sent_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
           }
         }
       }

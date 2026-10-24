@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import styled from 'styled-components';
+import { CategoryChart, Legend, MonthChart } from '@/components/BudgetCharts';
 import { Shell } from '@/components/Shell';
 import { Amount, Empty, Muted, Notice, Row, SectionTitle, TableWrap, Tile, TileTitle } from '@/components/ui';
 import { api, type Budget, type BudgetLine } from '@/lib/api';
@@ -13,6 +14,8 @@ export default function BudgetPage() {
   const { data, error } = useLoad(() => api<Budget>(`/budget?year=${year}`), [year]);
   const used = currencies.filter((c) => data && Number(data.currencies[c].planned) > 0);
   const shown = used.length ? used : currencies;
+  const [picked, setPicked] = useState<Currency | null>(null);
+  const chartCurrency = picked && shown.includes(picked) ? picked : shown[0];
 
   return (
     <Shell title={t('Бюджет')} heading={t('бюджет на год')} subtitle={t('Плановые расходы по месяцам и категориям, отдельно по каждой валюте.')}>
@@ -29,6 +32,22 @@ export default function BudgetPage() {
           </Tiles>
           <Notice><span>{t('Будущие месяцы посчитаны по правилу повторения каждого платежа, паузы учтены. «Оплачено» — по отмеченным периодам.')}</span></Notice>
           <SectionTitle>{t('по месяцам')}</SectionTitle>
+          {used.length > 0 && (
+            <>
+              <Row $between $wrap>
+                <Row $gap={0.4} role="group" aria-label={t('Валюта графиков')}>
+                  {used.map((c) => (
+                    <CurrencyButton key={c} type="button" $selected={c === chartCurrency} aria-pressed={c === chartCurrency} onClick={() => setPicked(c)}>
+                      {symbols[c]} {c}
+                    </CurrencyButton>
+                  ))}
+                </Row>
+                <Legend />
+              </Row>
+              <MonthChart budget={data} currency={chartCurrency} />
+              <Muted>{t('Нажмите на месяц, чтобы открыть его в календаре. Валюты не складываются: графики — по одной выбранной.')}</Muted>
+            </>
+          )}
           <TableWrap>
             <table>
               <thead>
@@ -50,7 +69,8 @@ export default function BudgetPage() {
             </table>
           </TableWrap>
           <SectionTitle>{t('по категориям')}</SectionTitle>
-          {data.categories.length === 0 ? <Empty>{t('В этом году платежей нет')}</Empty> : (
+          {data.categories.length === 0 ? <Empty>{t('В этом году платежей нет')}</Empty> : (<>
+            {used.length > 0 && <CategoryChart budget={data} currency={chartCurrency} />}
             <TableWrap>
               <table>
                 <thead><tr><th>{t('Категория')}</th>{shown.map((c) => <th key={c}>{t('План, {c}', { c })}</th>)}{shown.map((c) => <th key={c + 'r'}>{t('Осталось, {c}', { c })}</th>)}</tr></thead>
@@ -65,7 +85,7 @@ export default function BudgetPage() {
                 </tbody>
               </table>
             </TableWrap>
-          )}
+          </>)}
         </>
       )}
     </Shell>
@@ -95,6 +115,14 @@ function Total({ currency, line }: { currency: Currency; line: BudgetLine }) {
     </Tile>
   );
 }
+
+const CurrencyButton = styled.button<{ $selected: boolean }>`
+  padding: 0.6rem 1.2rem;
+  border-radius: ${({ theme }) => theme.radius.md};
+  color: ${({ theme, $selected }) => ($selected ? theme.color.strong : theme.color.muted)};
+  background: ${({ theme, $selected }) => ($selected ? theme.color.tile : 'transparent')};
+  &:hover { color: ${({ theme }) => theme.color.strong}; }
+`;
 
 const Tiles = styled.div`
   display: grid;

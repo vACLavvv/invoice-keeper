@@ -28,7 +28,7 @@ func ownerArgs(user *User) (any, bool) {
 }
 
 func (s *Server) myTelegram(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.currentUser(r)
+	user, err := panelOnly(s.currentUser(r))
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func (s *Server) myTelegram(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) myTelegramLinkCode(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.writeUser(r)
+	user, err := panelOnly(s.writeUser(r))
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (s *Server) myTelegramLinkCode(w http.ResponseWriter, r *http.Request) erro
 }
 
 func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.writeUser(r)
+	user, err := panelOnly(s.writeUser(r))
 	if err != nil {
 		return err
 	}

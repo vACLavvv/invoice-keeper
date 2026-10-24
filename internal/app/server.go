@@ -18,8 +18,9 @@ import (
 const cookieName = "invoice_session"
 
 type Options struct {
-	Today  func() time.Time
-	Sender Sender
+	Today    func() time.Time
+	Sender   Sender
+	Channels map[string]Sender // replaces the channels from .env (tests)
 }
 
 type Server struct {
@@ -53,6 +54,9 @@ func NewServer(settings *Settings, db *DB, assets fs.FS, opts Options) (*Server,
 		DB: db, Settings: settings, Today: today, Now: time.Now, assets: assets,
 		Worker:    NewReminderWorker(db, settings, opts.Sender, today),
 		adminHash: hashPassword(settings.AdminPassword),
+	}
+	if opts.Channels != nil {
+		s.Worker.Channels = opts.Channels
 	}
 	if err := db.Write(func(tx *sql.Tx) error { return materialize(tx, today()) }); err != nil {
 		return nil, err
@@ -168,6 +172,9 @@ func (s *Server) apiRoutes() []route {
 		{"GET /api/v1/me/telegram", s.myTelegram},
 		{"POST /api/v1/me/telegram/link", s.myTelegramLinkCode},
 		{"DELETE /api/v1/me/telegram", s.myTelegramUnlink},
+		{"GET /api/v1/me/sessions", s.sessionsList},
+		{"DELETE /api/v1/me/sessions", s.sessionsDeleteOthers},
+		{"DELETE /api/v1/me/sessions/{session_id}", s.sessionsDelete},
 
 		{"GET /api/v1/recurring-payments", s.recurringList},
 		{"POST /api/v1/recurring-payments", s.recurringCreate},
@@ -195,6 +202,7 @@ func (s *Server) apiRoutes() []route {
 		{"DELETE /api/v1/users/{user_id}", s.usersDelete},
 
 		{"GET /api/v1/reminders", s.remindersList},
+		{"GET /api/v1/deliveries", s.deliveriesList},
 		{"GET /api/v1/audit-log", s.auditList},
 
 		{"GET /api/v1/api-keys", s.apiKeysList},
@@ -229,28 +237,42 @@ type User struct {
 	DisplayName string `json:"display_name"`
 	Role        string `json:"role"`
 	CSRFToken   string `json:"csrf_token"`
+
+	viaToken bool // authenticated by an API token, not by the panel session
 }
 
 func (s *Server) adminFingerprint() string {
 	return digest(s.Settings.AdminUsername + "\x00" + s.Settings.AdminPassword)
 }
 
+// currentUser authenticates a reading request: the panel session cookie or an API token (read or write).
 func (s *Server) currentUser(r *http.Request) (*User, error) {
+	if hasBearer(r) {
+		return s.tokenUser(r, "read", "write")
+	}
 	cookie, err := r.Cookie(cookieName)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 128 {
 		return nil, fail(401, "Войдите в систему")
 	}
-	var userID sql.NullInt64
+	var userID, lastSeen sql.NullInt64
 	var isAdmin bool
 	var fingerprint sql.NullString
 	var csrf string
-	err = s.DB.QueryRow("SELECT user_id,is_admin,admin_fingerprint,csrf_token FROM sessions WHERE token_hash=? AND expires_at>?",
-		digest(cookie.Value), time.Now().Unix()).Scan(&userID, &isAdmin, &fingerprint, &csrf)
+	hash := digest(cookie.Value)
+	now := time.Now().Unix()
+	err = s.DB.QueryRow("SELECT user_id,is_admin,admin_fingerprint,csrf_token,last_seen_at FROM sessions WHERE token_hash=? AND expires_at>?",
+		hash, now).Scan(&userID, &isAdmin, &fingerprint, &csrf, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Сессия завершена. Войдите снова")
 	}
 	if err != nil {
 		return nil, err
+	}
+	// «Последняя активность» in the sessions list; written at most once a minute.
+	if !lastSeen.Valid || now-lastSeen.Int64 >= 60 {
+		if _, err := s.DB.Exec("UPDATE sessions SET last_seen_at=?,ip=? WHERE token_hash=?", now, clientIP(r), hash); err != nil {
+			return nil, err
+		}
 	}
 	if isAdmin {
 		if !constantEqual(fingerprint.String, s.adminFingerprint()) {
@@ -278,8 +300,12 @@ func originCheck(r *http.Request) error {
 	return nil
 }
 
-// writeUser authorizes a state-changing request: session, same origin and CSRF token.
+// writeUser authorizes a state-changing request: session, same origin and CSRF token —
+// or a write API token, which is not an ambient credential and needs no CSRF token.
 func (s *Server) writeUser(r *http.Request) (*User, error) {
+	if hasBearer(r) {
+		return s.tokenUser(r, "write")
+	}
 	user, err := s.currentUser(r)
 	if err != nil {
 		return nil, err
@@ -423,8 +449,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec("UPDATE auth_attempts SET count=MAX(0,count-1) WHERE key=?", keys[0]); err != nil {
 			return err
 		}
-		if _, err := tx.Exec("INSERT INTO sessions(token_hash,user_id,is_admin,admin_fingerprint,csrf_token,expires_at) VALUES(?,?,?,?,?,?)",
-			digest(token), sessionUser, isAdmin, fingerprint, csrf, now+int64(maxAge)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO sessions(token_hash,user_id,is_admin,admin_fingerprint,csrf_token,expires_at,created_at,last_seen_at,user_agent,ip)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`, digest(token), sessionUser, isAdmin, fingerprint, csrf, now+int64(maxAge), now, now,
+			nullable(userAgent(r)), clientIP(r)); err != nil {
 			return err
 		}
 		return audit(tx, *username, "login", "session")
@@ -470,7 +497,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.writeUser(r); err != nil {
+	if _, err := panelOnly(s.writeUser(r)); err != nil {
 		return err
 	}
 	cookie, _ := r.Cookie(cookieName)
@@ -491,5 +518,6 @@ func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) error {
 		"team_chat": s.Settings.TelegramEnabled && s.Settings.TelegramChatID != "", "bot_username": s.BotUsername(),
 		"reminder_days": 3, "reminder_interval_seconds": s.Settings.ReminderInterval,
 		"support_telegram": s.Settings.SupportTelegram, "support_email": s.Settings.SupportEmail,
+		"channels": s.channelNames(), "overdue_reminders": s.Settings.OverdueReminders,
 	})
 }

@@ -98,9 +98,18 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"recurring_payments", "frequency", "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly'))"},
 	{"recurring_payments", "category", "TEXT"},
 	{"recurring_payments", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
+	{"recurring_payments", "payment_url", "TEXT"},
+	{"recurring_payments", "payment_details", "TEXT"},
+	// v4: session devices for «Аккаунт», API tokens for scripts (see sessions.go).
+	{"sessions", "created_at", "INTEGER"},
+	{"sessions", "last_seen_at", "INTEGER"},
+	{"sessions", "user_agent", "TEXT"},
+	{"sessions", "ip", "TEXT"},
+	{"api_keys", "access", "TEXT NOT NULL DEFAULT 'extension' CHECK(access IN ('extension','read','write'))"},
+	{"api_keys", "expires_at", "INTEGER"},
 }
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
@@ -142,7 +151,7 @@ func (db *DB) initialize() error {
 		return errors.New("Неизвестная версия базы. Запуск остановлен без изменения данных.")
 	}
 	return db.Write(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(schema); err != nil {
+		if _, err := tx.Exec(schema + deliverySchema); err != nil {
 			return err
 		}
 		for _, c := range addedColumns {

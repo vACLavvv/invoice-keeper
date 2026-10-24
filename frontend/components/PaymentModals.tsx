@@ -42,6 +42,23 @@ function AssigneeField({ value, users }: { value?: number | null; users: TeamUse
   );
 }
 
+/** Where to pay: a link to the bill or the service cabinet and free-form details. */
+function PaymentLinkFields({ payment }: { payment?: Recurring }) {
+  return (
+    <>
+      <Field>
+        {t('Ссылка на оплату')}
+        <Input name="payment_url" type="url" defaultValue={payment?.payment_url ?? ''} maxLength={500} placeholder="https://" />
+        <small>{t('Кабинет или счёт: в напоминаниях появится кнопка «💳 Оплатить»')}</small>
+      </Field>
+      <Field>
+        {t('Реквизиты')}
+        <Input name="payment_details" defaultValue={payment?.payment_details ?? ''} maxLength={500} placeholder={t('Например, ИНН, номер договора или счёта')} />
+      </Field>
+    </>
+  );
+}
+
 const optional = (value: FormDataEntryValue | null) => {
   const text = String(value ?? '').trim();
   return text === '' ? null : text;
@@ -61,6 +78,7 @@ export function CreatePaymentModal({ onClose }: Close) {
             body: {
               title: data.get('title'), amount: data.get('amount'), currency: data.get('currency'), first_due_date: data.get('first_due_date'),
               frequency: data.get('frequency'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
+              payment_url: optional(data.get('payment_url')), payment_details: optional(data.get('payment_details')),
             },
           });
           onClose();
@@ -90,6 +108,7 @@ export function CreatePaymentModal({ onClose }: Close) {
         </FormRow>
         <CategoryField categories={categories} />
         {users.length > 0 && <AssigneeField users={users} />}
+        <PaymentLinkFields />
         <InfoBox>
           {t('Каждый период — своя отметка оплаты. Если в месяце нет нужного числа, срок — последний день месяца. Если до срока меньше 3 дней, напоминание уйдёт сразу.')}
           <br /><Muted>{t('Часовой пояс: {tz}', { tz: settings.timezone })}</Muted>
@@ -110,7 +129,10 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
           const assignee = optional(data.get('assignee_id'));
           await api(`/recurring-payments/${payment.id}`, {
             method: 'PATCH',
-            body: { title: data.get('title'), amount: data.get('amount'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null },
+            body: {
+              title: data.get('title'), amount: data.get('amount'), category: optional(data.get('category')), assignee_id: assignee ? Number(assignee) : null,
+              payment_url: optional(data.get('payment_url')), payment_details: optional(data.get('payment_details')),
+            },
           });
           onClose();
           refresh();
@@ -129,6 +151,7 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
         </Field>
         <CategoryField value={payment.category} categories={categories} />
         <AssigneeField value={payment.assignee?.id} users={users} />
+        <PaymentLinkFields payment={payment} />
       </ModalForm>
     </Modal>
   );
@@ -190,6 +213,8 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
         <InfoBox>
           <b>{o.title}</b><br />
           {moneyWith(o.amount, o.currency)} · {t('срок {date}', { date: longDate(o.due_date) })}<br />
+          {o.payment_details && <>{t('Реквизиты: {details}', { details: o.payment_details })}<br /></>}
+          {o.payment_url && <><a href={o.payment_url} target="_blank" rel="noopener noreferrer">{t('Открыть ссылку на оплату ↗')}</a><br /></>}
           {t('Изменение затронет только этот период.')}
         </InfoBox>
         <Field>

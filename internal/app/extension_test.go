@@ -70,11 +70,11 @@ func TestAPIKeyGrantsOnlyExtensionEndpoints(t *testing.T) {
 	me := ext.get("/api/v1/extension/whoami")
 	expect(t, "whoami", me.status, 200)
 	expect(t, "owner", me.object(t)["role"], any("admin"))
-	// The same key must not open anything else, even for the admin.
+	// The same key must not open anything else, even for the admin: it is recognized, but not allowed.
 	for _, path := range []string{"/api/v1/auth/me", "/api/v1/payment-occurrences", "/api/v1/users", "/api/v1/payment-suggestions", "/api/v1/api-keys"} {
-		expect(t, path, ext.get(path).status, 401)
+		expect(t, path, ext.get(path).status, 403)
 	}
-	expect(t, "create payment", ext.post("/api/v1/recurring-payments", map[string]any{"title": "x", "amount": "1", "currency": "RUB", "first_due_date": "2026-01-31"}).status, 401)
+	expect(t, "create payment", ext.post("/api/v1/recurring-payments", map[string]any{"title": "x", "amount": "1", "currency": "RUB", "first_due_date": "2026-01-31"}).status, 403)
 	expect(t, "bad key", e.keyClient("ik_nope").get("/api/v1/extension/whoami").status, 401)
 	expect(t, "cookie is not a key", admin.get("/api/v1/extension/whoami").status, 401)
 

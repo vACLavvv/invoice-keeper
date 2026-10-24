@@ -30,6 +30,8 @@ type apiKey struct {
 	ID         int64   `json:"id"`
 	Name       string  `json:"name"`
 	Prefix     string  `json:"prefix"`
+	Access     string  `json:"access"` // extension | read | write
+	ExpiresAt  *string `json:"expires_at"`
 	CreatedAt  string  `json:"created_at"`
 	LastUsedAt *string `json:"last_used_at"`
 }
@@ -43,12 +45,12 @@ func ownerClause(user *User) (string, []any) {
 }
 
 func (s *Server) apiKeysList(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.currentUser(r)
+	user, err := panelOnly(s.currentUser(r))
 	if err != nil {
 		return err
 	}
 	where, args := ownerClause(user)
-	rows, err := s.DB.Query("SELECT id,name,prefix,created_at,last_used_at FROM api_keys WHERE "+where+" ORDER BY id DESC", args...)
+	rows, err := s.DB.Query("SELECT id,name,prefix,access,expires_at,created_at,last_used_at FROM api_keys WHERE "+where+" ORDER BY id DESC", args...)
 	if err != nil {
 		return err
 	}
@@ -56,9 +58,11 @@ func (s *Server) apiKeysList(w http.ResponseWriter, r *http.Request) error {
 	keys := []apiKey{}
 	for rows.Next() {
 		var k apiKey
-		if err := rows.Scan(&k.ID, &k.Name, &k.Prefix, &k.CreatedAt, &k.LastUsedAt); err != nil {
+		var expires sql.NullInt64
+		if err := rows.Scan(&k.ID, &k.Name, &k.Prefix, &k.Access, &expires, &k.CreatedAt, &k.LastUsedAt); err != nil {
 			return err
 		}
+		k.ExpiresAt = unixTime(expires)
 		keys = append(keys, k)
 	}
 	if err := rows.Err(); err != nil {
@@ -67,12 +71,14 @@ func (s *Server) apiKeysList(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, keys)
 }
 
+// apiKeysCreate issues a key for the browser extension (default) or a token for scripts:
+// "read" — GET requests only, "write" — any data request; optionally for 30, 90 or 365 days.
 func (s *Server) apiKeysCreate(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.writeUser(r)
+	user, err := panelOnly(s.writeUser(r))
 	if err != nil {
 		return err
 	}
-	f, err := readForm(r, "name")
+	f, err := readForm(r, "name", "access", "expires_in_days")
 	if err != nil {
 		return err
 	}
@@ -81,11 +87,27 @@ func (s *Server) apiKeysCreate(w http.ResponseWriter, r *http.Request) error {
 	if f.isNull("name") {
 		f.add("name", "Укажите название ключа", "missing")
 	}
+	access := f.text("access", textRule{max: 16})
+	if f.has("access") && (access == nil || !slices.Contains(tokenAccess, *access)) {
+		f.add("access", "Допустимые значения: extension, read, write", "literal_error")
+	}
+	days := f.integer("expires_in_days")
+	if days != nil && !slices.Contains([]int64{30, 90, 365}, *days) {
+		f.add("expires_in_days", "Допустимые значения: 30, 90, 365 или null — бессрочно", "literal_error")
+	}
 	if err := f.err(); err != nil {
 		return err
 	}
 	token := keyPrefix + randomToken(24)
-	created := apiKey{Name: *name, Prefix: token[:len(keyPrefix)+6], CreatedAt: timestamp()}
+	created := apiKey{Name: *name, Prefix: token[:len(keyPrefix)+6], Access: "extension", CreatedAt: timestamp()}
+	if access != nil {
+		created.Access = *access
+	}
+	var expires any
+	if days != nil {
+		at := time.Now().Add(time.Duration(*days) * 24 * time.Hour).Unix()
+		expires, created.ExpiresAt = at, unixTime(sql.NullInt64{Int64: at, Valid: true})
+	}
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		where, args := ownerClause(user)
 		var count int
@@ -101,8 +123,8 @@ func (s *Server) apiKeysCreate(w http.ResponseWriter, r *http.Request) error {
 		} else {
 			userID = user.ID
 		}
-		result, err := tx.Exec("INSERT INTO api_keys(token_hash,prefix,name,user_id,is_admin,admin_fingerprint,created_at) VALUES(?,?,?,?,?,?,?)",
-			digest(token), created.Prefix, created.Name, userID, user.Role == "admin", fingerprint, created.CreatedAt)
+		result, err := tx.Exec("INSERT INTO api_keys(token_hash,prefix,name,user_id,is_admin,admin_fingerprint,access,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+			digest(token), created.Prefix, created.Name, userID, user.Role == "admin", fingerprint, created.Access, expires, created.CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -122,7 +144,7 @@ func (s *Server) apiKeysCreate(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) apiKeysDelete(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.writeUser(r)
+	user, err := panelOnly(s.writeUser(r))
 	if err != nil {
 		return err
 	}
@@ -147,39 +169,9 @@ func (s *Server) apiKeysDelete(w http.ResponseWriter, r *http.Request) error {
 	return noContent(w)
 }
 
-// keyUser authenticates a request by its API key only; cookies are ignored on these endpoints.
-func (s *Server) keyUser(r *http.Request) (*User, error) {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || !strings.HasPrefix(token, keyPrefix) || len(token) > 128 {
-		return nil, fail(401, "Нужен ключ API: Authorization: Bearer ik_…")
-	}
-	var keyID int64
-	var userID sql.NullInt64
-	var isAdmin bool
-	var fingerprint sql.NullString
-	err := s.DB.QueryRow("SELECT id,user_id,is_admin,admin_fingerprint FROM api_keys WHERE token_hash=?", digest(token)).
-		Scan(&keyID, &userID, &isAdmin, &fingerprint)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fail(401, "Ключ API не найден или удалён")
-	}
-	if err != nil {
-		return nil, err
-	}
-	user := &User{Role: "user"}
-	if isAdmin {
-		if !constantEqual(fingerprint.String, s.adminFingerprint()) {
-			return nil, fail(401, "Настройки администратора изменены. Создайте новый ключ")
-		}
-		user = &User{ID: 0, Username: s.Settings.AdminUsername, DisplayName: "Администратор", Role: "admin"}
-	} else if err := s.DB.QueryRow("SELECT id,username,display_name FROM users WHERE id=?", userID.Int64).
-		Scan(&user.ID, &user.Username, &user.DisplayName); err != nil {
-		return nil, fail(401, "Пользователь ключа удалён")
-	}
-	if _, err := s.DB.Exec("UPDATE api_keys SET last_used_at=? WHERE id=?", timestamp(), keyID); err != nil {
-		return nil, err
-	}
-	return user, nil
-}
+// keyUser authenticates the extension endpoints by an API key only; cookies are ignored there.
+// Both the extension key and a write token may submit suggestions.
+func (s *Server) keyUser(r *http.Request) (*User, error) { return s.tokenUser(r, "extension", "write") }
 
 // cors lets the extension popup call the key endpoints. No credentials: the key is the only proof.
 func cors(next handlerFunc) handlerFunc {

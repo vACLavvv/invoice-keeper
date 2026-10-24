@@ -1,6 +1,6 @@
 import { Shell } from '@/components/Shell';
 import { Card, Empty, Muted, Notice, Pill, SectionTitle as Title, TableWrap } from '@/components/ui';
-import { api, type AuditEntry, type Reminder } from '@/lib/api';
+import { api, type AuditEntry, type Delivery, type Reminder } from '@/lib/api';
 import { date } from '@/lib/format';
 import { locale, t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
@@ -9,6 +9,15 @@ import { useLoad, useSession } from '@/lib/session';
 const reminderStates = (): Record<Reminder['state'], [string, 'paid' | 'unpaid' | 'overdue' | 'archived']> => ({
   pending: [t('Ожидает'), 'unpaid'], sending: [t('Отправляется'), 'unpaid'], sent: [t('Отправлено'), 'paid'],
   uncertain: [t('Нужна проверка'), 'overdue'], cancelled: [t('Отменено'), 'archived'],
+});
+
+const deliveryStates = (): Record<Delivery['state'], [string, 'paid' | 'unpaid' | 'overdue' | 'archived']> => ({
+  pending: [t('Ожидает'), 'unpaid'], sending: [t('Отправляется'), 'unpaid'], sent: [t('Отправлено'), 'paid'],
+  uncertain: [t('Нужна проверка'), 'overdue'], failed: [t('Не доставлено'), 'overdue'], cancelled: [t('Отменено'), 'archived'],
+});
+
+const channelNames = (): Record<Delivery['channel'], string> => ({
+  telegram: t('Telegram, общий чат'), telegram_personal: t('Telegram, личка'), max: 'MAX', email: 'Email', webhook: 'Webhook',
 });
 
 const actions = (): Record<string, string> => ({
@@ -21,6 +30,7 @@ const actions = (): Record<string, string> => ({
   'password.change': t('Сменён пароль'), '2fa.enable': t('Включён двухфакторный вход'), '2fa.disable': t('Выключен двухфакторный вход'),
   'telegram.link': t('Привязан Telegram'), 'telegram.unlink': t('Отвязан Telegram'),
   'api_key.create': t('Создан ключ API'), 'api_key.delete': t('Удалён ключ API'),
+  'session.revoke': t('Завершена сессия'), 'session.revoke_others': t('Завершены остальные сессии'),
   'suggestion.create': t('Расширение предложило платёж'), 'suggestion.accept': t('Предложение принято'), 'suggestion.reject': t('Предложение отклонено'),
 });
 
@@ -28,6 +38,7 @@ export default function Activity() {
   const { isAdmin, settings } = useSession();
   const reminders = useLoad(() => (isAdmin ? api<Reminder[]>('/reminders') : Promise.resolve([])), [isAdmin]);
   const audit = useLoad(() => (isAdmin ? api<AuditEntry[]>('/audit-log') : Promise.resolve([])), [isAdmin]);
+  const deliveries = useLoad(() => (isAdmin ? api<Delivery[]>('/deliveries') : Promise.resolve([])), [isAdmin]);
   const time = new Intl.DateTimeFormat(locale(), { timeZone: settings.timezone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   if (!isAdmin) {
@@ -44,7 +55,7 @@ export default function Activity() {
           ? t('Telegram включён, сроки проверяются автоматически. Если результат отправки неизвестен, запись помечается «Нужна проверка» и автоматически не повторяется — так в чат не придёт дубль.')
           : t('Telegram выключен. Для реальных напоминаний задайте TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env, установите TELEGRAM_ENABLED=true и перезапустите приложение.')}
       </Notice>
-      {(reminders.error || audit.error) && <Notice $tone="error" role="alert">{reminders.error || audit.error}</Notice>}
+      {(reminders.error || audit.error || deliveries.error) && <Notice $tone="error" role="alert">{reminders.error || audit.error || deliveries.error}</Notice>}
       <Title>{t('напоминания в telegram')}</Title>
       <Card>
         {!reminders.data ? <Empty>{t('Загружаем…')}</Empty> : reminders.data.length === 0 ? (
@@ -62,6 +73,32 @@ export default function Activity() {
                       <td><Muted>{date(r.due_date)}</Muted></td>
                       <td><Pill $status={tone}>{label.toLowerCase()}</Pill></td>
                       <td><Muted>{r.error || (r.sent_at ? t('Отправлено') + ' ' + time.format(new Date(r.sent_at)) : '—')}</Muted></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </TableWrap>
+        )}
+      </Card>
+      <Title>{t('другие каналы и просрочка')}</Title>
+      <Card>
+        {!deliveries.data ? <Empty>{t('Загружаем…')}</Empty> : deliveries.data.length === 0 ? (
+          <Empty>{t('Здесь появятся повторные напоминания о просрочке и отправки в MAX, на почту и в webhook.')}</Empty>
+        ) : (
+          <TableWrap>
+            <table>
+              <thead><tr><th>{t('Платёж')}</th><th>{t('Срок')}</th><th>{t('Канал')}</th><th>{t('Состояние')}</th><th>{t('Примечание')}</th></tr></thead>
+              <tbody>
+                {deliveries.data.map((d, i) => {
+                  const [label, tone] = deliveryStates()[d.state];
+                  return (
+                    <tr key={i}>
+                      <td><b>{d.title}</b>{d.kind === 'overdue' && <Muted> · {t('просрочка')}</Muted>}</td>
+                      <td><Muted>{date(d.due_date)}</Muted></td>
+                      <td>{channelNames()[d.channel]}</td>
+                      <td><Pill $status={tone}>{label.toLowerCase()}</Pill></td>
+                      <td><Muted>{d.error || (d.sent_at ? t('Отправлено') + ' ' + time.format(new Date(d.sent_at)) : '—')}</Muted></td>
                     </tr>
                   );
                 })}

@@ -16,13 +16,18 @@ import (
 )
 
 type ReminderRow struct {
-	ChatID       string // empty: the team chat (TELEGRAM_CHAT_ID)
-	OccurrenceID int64
-	Title        string
-	AmountCents  int64
-	Currency     string
-	DueDate      string
+	ChatID         string // empty: the team chat (TELEGRAM_CHAT_ID / MAX_CHAT_ID)
+	Kind           string // "due" (empty) — a few days before the date, "overdue" — the day after it
+	OccurrenceID   int64
+	Title          string
+	AmountCents    int64
+	Currency       string
+	DueDate        string
+	PaymentURL     string
+	PaymentDetails string
 }
+
+func (row ReminderRow) overdue() bool { return row.Kind == "overdue" }
 
 type SendResult struct {
 	State      string // sent | pending (safe to retry) | uncertain (never retried)
@@ -34,13 +39,25 @@ type SendResult struct {
 type Sender func(ReminderRow) SendResult
 
 func reminderText(row ReminderRow) string {
-	return fmt.Sprintf("🔔 Пора запланировать оплату\n\n%s\nСумма: %s %s\nСрок: %s\n\nОплатили — нажмите «Оплачено» или отметьте в панели",
-		row.Title, money(row.AmountCents), row.Currency, row.DueDate)
+	heading := "🔔 Пора запланировать оплату"
+	if row.overdue() {
+		heading = "⚠️ Платёж просрочен"
+	}
+	text := fmt.Sprintf("%s\n\n%s\nСумма: %s %s\nСрок: %s", heading, row.Title, money(row.AmountCents), row.Currency, row.DueDate)
+	if row.PaymentDetails != "" {
+		text += "\nРеквизиты: " + row.PaymentDetails
+	}
+	return text + "\n\nОплатили — нажмите «Оплачено» или отметьте в панели"
 }
 
-// paidKeyboard is the inline button under a reminder; the bot handles its callback (see bot.go).
-func paidKeyboard(occurrenceID int64) map[string]any {
-	return map[string]any{"inline_keyboard": [][]map[string]string{{{"text": "✅ Оплачено", "callback_data": "paid:" + itoa(occurrenceID)}}}}
+// paidKeyboard is the inline button under a reminder (the bot handles its callback, see bot.go)
+// and, when the payment has a link, a «💳 Оплатить» button that opens it.
+func paidKeyboard(row ReminderRow) map[string]any {
+	buttons := [][]map[string]string{{{"text": "✅ Оплачено", "callback_data": "paid:" + itoa(row.OccurrenceID)}}}
+	if row.PaymentURL != "" {
+		buttons = append(buttons, []map[string]string{{"text": "💳 Оплатить", "url": row.PaymentURL}})
+	}
+	return map[string]any{"inline_keyboard": buttons}
 }
 
 // TelegramSender posts plain text (no parse_mode, so titles cannot inject markup).
@@ -57,7 +74,7 @@ func TelegramSender(s *Settings, baseURL string) Sender {
 		if row.ChatID != "" {
 			chat = row.ChatID
 		}
-		body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": reminderText(row), "reply_markup": paidKeyboard(row.OccurrenceID)})
+		body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": reminderText(row), "reply_markup": paidKeyboard(row)})
 		response, err := client.Post(baseURL+"/bot"+s.TelegramBotToken+"/sendMessage", "application/json", bytes.NewReader(body))
 		// Never persist err, the response or the URL: each can expose the bot token.
 		if err != nil {
@@ -106,7 +123,8 @@ func isConnectError(err error) bool {
 type ReminderWorker struct {
 	DB       *DB
 	Settings *Settings
-	Sender   Sender
+	Sender   Sender            // Telegram
+	Channels map[string]Sender // max, email, webhook (see notify.go)
 	Today    func() time.Time
 
 	mu      sync.Mutex
@@ -124,7 +142,7 @@ func NewReminderWorker(db *DB, s *Settings, sender Sender, today func() time.Tim
 	if today == nil {
 		today = func() time.Time { return localToday(s) }
 	}
-	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Today: today}
+	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: defaultChannels(s), Today: today}
 }
 
 // Tick runs one pass. A request that arrives while a pass is running schedules one more pass
@@ -200,25 +218,35 @@ func (w *ReminderWorker) tick() error {
 				return err
 			}
 		}
-		return nil
+		return w.enqueueDeliveries(tx, today)
 	})
-	if err != nil || !w.Settings.TelegramEnabled {
+	if err != nil {
 		return err
 	}
-	if err := w.sendPersonal(today); err != nil {
-		return err
+	if w.Settings.TelegramEnabled {
+		if err := w.sendPersonal(today); err != nil {
+			return err
+		}
+		if w.Settings.TelegramChatID != "" {
+			if err := w.sendTeam(); err != nil {
+				return err
+			}
+		}
 	}
-	if w.Settings.TelegramChatID == "" {
-		return nil
-	}
+	return w.deliver()
+}
+
+// sendTeam sends pending «due» reminders to the team chat.
+func (w *ReminderWorker) sendTeam() error {
 	for range 20 {
 		var row ReminderRow
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date FROM reminders m
-				JOIN payment_occurrences o ON o.id=m.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id
+			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,COALESCE(r.payment_url,''),COALESCE(r.payment_details,'')
+				FROM reminders m JOIN payment_occurrences o ON o.id=m.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id
 				WHERE m.state='pending' AND m.retry_after<=? AND r.active=1 AND o.paid_at IS NULL
-				ORDER BY o.due_date,o.id LIMIT 1`, time.Now().Unix()).Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate)
+				ORDER BY o.due_date,o.id LIMIT 1`, time.Now().Unix()).Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate,
+				&row.PaymentURL, &row.PaymentDetails)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
@@ -279,13 +307,13 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 		var chat int64
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,t.chat_id
+			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,COALESCE(r.payment_url,''),COALESCE(r.payment_details,''),t.chat_id
 				FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
 				JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
 				WHERE r.active=1 AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
 				AND NOT EXISTS (SELECT 1 FROM personal_reminders p WHERE p.occurrence_id=o.id AND p.chat_id=t.chat_id)
 				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, formatDate(today), formatDate(today.AddDate(0, 0, 3))).
-				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &chat)
+				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails, &chat)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}

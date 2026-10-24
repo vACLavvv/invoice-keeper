@@ -89,6 +89,9 @@ func serve(args []string) error {
 	bot := app.NewBot(server, "")
 	bot.Start()
 	defer bot.Stop()
+	maxBot := app.NewMaxBot(server, nil)
+	maxBot.Start()
+	defer maxBot.Stop()
 
 	httpServer := &http.Server{
 		Addr:              net.JoinHostPort(*host, strconv.Itoa(*port)),

@@ -24,6 +24,23 @@ type Settings struct {
 	ReminderInterval int
 	SupportTelegram  string // shown on the help page, e.g. @team_support
 	SupportEmail     string
+	OverdueReminders bool // one more message the day after an unpaid due date
+
+	MaxBotToken string // MAX messenger: reminders to MAX_CHAT_ID with the «Оплачено» button
+	MaxChatID   string
+	MaxAPIURL   string
+	MaxCAFile   string // extra root certificate (PEM) if the system does not trust the MAX API
+
+	SMTPHost     string // email reminders: SMTP_HOST, SMTP_FROM and SMTP_TO are required
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPTo       []string
+	SMTPSecurity string // starttls | ssl | none
+
+	WebhookURL    string // reminders as JSON POST, signed with HMAC-SHA256 when WebhookSecret is set
+	WebhookSecret string
 
 	location *time.Location
 }
@@ -53,6 +70,32 @@ func (s *Settings) Validate() error {
 	// Without TELEGRAM_CHAT_ID reminders go only to users who linked Telegram in the panel.
 	if s.TelegramEnabled && s.TelegramBotToken == "" {
 		return errors.New("Для Telegram необходим TELEGRAM_BOT_TOKEN")
+	}
+	if s.MaxAPIURL == "" {
+		s.MaxAPIURL = "https://platform-api.max.ru"
+	}
+	if (s.MaxBotToken == "") != (s.MaxChatID == "") {
+		return errors.New("Для MAX нужны оба параметра: MAX_BOT_TOKEN и MAX_CHAT_ID")
+	}
+	if s.MaxChatID != "" {
+		if _, err := strconv.ParseInt(s.MaxChatID, 10, 64); err != nil {
+			return errors.New("MAX_CHAT_ID должен быть числом, например -71234567890123")
+		}
+	}
+	if s.SMTPSecurity == "" {
+		s.SMTPSecurity = "starttls"
+	}
+	if s.SMTPSecurity != "starttls" && s.SMTPSecurity != "ssl" && s.SMTPSecurity != "none" {
+		return errors.New("SMTP_SECURITY: допустимы starttls, ssl или none")
+	}
+	if s.SMTPPort == 0 {
+		s.SMTPPort = map[string]int{"starttls": 587, "ssl": 465, "none": 25}[s.SMTPSecurity]
+	}
+	if s.SMTPHost != "" && (s.SMTPFrom == "" || len(s.SMTPTo) == 0) {
+		return errors.New("Для email-напоминаний нужны SMTP_HOST, SMTP_FROM и SMTP_TO")
+	}
+	if s.WebhookURL != "" && !isWebURL(s.WebhookURL) {
+		return errors.New("WEBHOOK_URL должен начинаться с http:// или https://")
 	}
 	if s.SessionHours < 1 || s.SessionHours > 168 || s.ReminderInterval < 10 || s.ReminderInterval > 3600 {
 		return errors.New("Недопустимый срок сессии или интервал напоминаний")
@@ -134,6 +177,16 @@ func SettingsFromEnv(root string) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
+	smtpPort, err := envInt("SMTP_PORT", 0)
+	if err != nil {
+		return nil, err
+	}
+	var smtpTo []string
+	for _, address := range strings.Split(env("SMTP_TO", ""), ",") {
+		if address = strings.TrimSpace(address); address != "" {
+			smtpTo = append(smtpTo, address)
+		}
+	}
 	s := &Settings{
 		DatabasePath:     dbPath,
 		AdminUsername:    env("ADMIN_USERNAME", "admin"),
@@ -147,6 +200,20 @@ func SettingsFromEnv(root string) (*Settings, error) {
 		ReminderInterval: interval,
 		SupportTelegram:  strings.TrimSpace(env("SUPPORT_TELEGRAM", "")),
 		SupportEmail:     strings.TrimSpace(env("SUPPORT_EMAIL", "")),
+		OverdueReminders: !strings.EqualFold(env("OVERDUE_REMINDERS", "true"), "false"),
+		MaxBotToken:      strings.TrimSpace(env("MAX_BOT_TOKEN", "")),
+		MaxChatID:        strings.TrimSpace(env("MAX_CHAT_ID", "")),
+		MaxAPIURL:        strings.TrimRight(strings.TrimSpace(env("MAX_API_URL", "")), "/"),
+		MaxCAFile:        strings.TrimSpace(env("MAX_CA_FILE", "")),
+		SMTPHost:         strings.TrimSpace(env("SMTP_HOST", "")),
+		SMTPPort:         smtpPort,
+		SMTPUsername:     env("SMTP_USERNAME", ""),
+		SMTPPassword:     env("SMTP_PASSWORD", ""),
+		SMTPFrom:         strings.TrimSpace(env("SMTP_FROM", "")),
+		SMTPTo:           smtpTo,
+		SMTPSecurity:     strings.ToLower(strings.TrimSpace(env("SMTP_SECURITY", ""))),
+		WebhookURL:       strings.TrimSpace(env("WEBHOOK_URL", "")),
+		WebhookSecret:    env("WEBHOOK_SECRET", ""),
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err

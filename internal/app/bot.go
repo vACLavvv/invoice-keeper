@@ -248,11 +248,14 @@ func (b *Bot) onMessage(m *tgMessage) error {
 	return nil
 }
 
-// todo lists unpaid periods of active payments: overdue ones and, unless onlyOverdue, the next 7 days.
-func (b *Bot) todo(onlyOverdue bool) (string, error) {
-	today := b.server.Today()
+func (b *Bot) todo(onlyOverdue bool) (string, error) { return b.server.todoText(onlyOverdue) }
+
+// todoText lists unpaid periods of active payments: overdue ones and, unless onlyOverdue, the next 7 days.
+// Both messenger bots answer /todo and /overdue with it.
+func (s *Server) todoText(onlyOverdue bool) (string, error) {
+	today := s.Today()
 	until := today.AddDate(0, 0, 7)
-	items, err := b.server.loadOccurrences(b.server.DB, occurrenceFilter{to: &until, includeArchived: false})
+	items, err := s.loadOccurrences(s.DB, occurrenceFilter{to: &until, includeArchived: false})
 	if err != nil {
 		return "", err
 	}
@@ -305,6 +308,30 @@ func (b *Bot) todo(onlyOverdue bool) (string, error) {
 	return strings.TrimSuffix(text.String(), " ·"), nil
 }
 
+// markPaidFromMessenger records «✅ Оплачено» pressed under a reminder: paid today by actor.
+// already reports a period that was marked before (the button is pressed twice or in two chats).
+func (s *Server) markPaidFromMessenger(id int64, actor string) (already bool, err error) {
+	today := formatDate(s.Today())
+	err = s.DB.Write(func(tx *sql.Tx) error {
+		current, err := s.findOccurrence(tx, id)
+		if err != nil {
+			return err
+		}
+		if current.PaidAt != nil {
+			already = true
+			return nil
+		}
+		if _, err := tx.Exec("UPDATE payment_occurrences SET paid_at=?,updated_by=?,updated_at=? WHERE id=?", today, actor, timestamp(), id); err != nil {
+			return err
+		}
+		return audit(tx, actor, "occurrence.paid", id)
+	})
+	if err == nil && !already {
+		s.Worker.Kick()
+	}
+	return already, err
+}
+
 func shortDate(iso string) string {
 	if d, err := parseDate(iso); err == nil {
 		return d.Format("02.01")
@@ -327,21 +354,7 @@ func (b *Bot) onCallback(c *tgCallback) error {
 	}
 	actor := b.actorName(c.From)
 	today := formatDate(b.server.Today())
-	already := false
-	err = b.server.DB.Write(func(tx *sql.Tx) error {
-		current, err := b.server.findOccurrence(tx, id)
-		if err != nil {
-			return err
-		}
-		if current.PaidAt != nil {
-			already = true
-			return nil
-		}
-		if _, err := tx.Exec("UPDATE payment_occurrences SET paid_at=?,updated_by=?,updated_at=? WHERE id=?", today, actor, timestamp(), id); err != nil {
-			return err
-		}
-		return audit(tx, actor, "occurrence.paid", id)
-	})
+	already, err := b.server.markPaidFromMessenger(id, actor)
 	var apiErr *apiError
 	if errors.As(err, &apiErr) && apiErr.Status == 404 {
 		return answer("Платёж не найден")
@@ -352,7 +365,6 @@ func (b *Bot) onCallback(c *tgCallback) error {
 	if already {
 		return answer("Уже отмечено ранее")
 	}
-	b.server.Worker.Kick()
 	if err := answer("Отмечено: оплачено"); err != nil {
 		return err
 	}

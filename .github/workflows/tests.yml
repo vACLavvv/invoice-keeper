@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: Go — vet и тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - name: Сборка бинарника
+        run: CGO_ENABLED=0 go build -trimpath -o /tmp/invoice-keeper ./cmd/invoice-keeper
+      - name: Запуск по README с демоданными
+        run: |
+          cd "$(mktemp -d)"
+          /tmp/invoice-keeper bootstrap --demo
+          /tmp/invoice-keeper serve --port 18080 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:18080/healthz && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/api/v1/payment-occurrences)" = 401
+
+  frontend:
+    name: Панель — типы, переводы, сборка
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run i18n
+      - run: npm run build

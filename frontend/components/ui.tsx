@@ -45,7 +45,7 @@ export const Tile = styled.div<{ $interactive?: boolean }>`
 
 export const TileTitle = styled.div`
   display: block;
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 550;
   color: var(--ink);
   /* Section names were lowercase in the old design; the workspace capitalizes them. */
@@ -60,7 +60,7 @@ export const Sticker = styled.span<{ $tilt?: number }>`
   border-radius: 7px;
   background: var(--cyan-soft);
   color: var(--apple-blue);
-  font-size: 10px;
+  font-size: var(--text-caption);
   font-weight: 550;
   white-space: nowrap;
 `;
@@ -90,7 +90,7 @@ export const Amount = styled.span.attrs({ className: 'amount' })`
   white-space: nowrap;
   font-weight: 550;
   font-variant-numeric: tabular-nums;
-  small { margin-left: 3px; color: var(--apple-secondary); font-size: 10px; font-weight: 400; }
+  small { margin-left: 3px; color: var(--apple-secondary); font-size: var(--text-caption); font-weight: 400; }
 `;
 
 /** Label with its control inside: «form-field» of the workspace forms. */

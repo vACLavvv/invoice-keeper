@@ -116,5 +116,5 @@ export const GlobalStyle = createGlobalStyle`
   html { font-size: 10px; -webkit-text-size-adjust: 100%; }
   *, *::before, *::after { box-sizing: border-box; }
   /* Base styles come from styles/workspace; rem stays 10px for the styled components. */
-  body { color-scheme: ${({ theme }) => theme.name}; font-feature-settings: 'tnum' 1, 'cv11' 1; }
+  body { color-scheme: ${({ theme }) => theme.name}; }
 `;

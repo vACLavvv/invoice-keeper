@@ -1,0 +1,20 @@
+[Unit]
+Description=Renew only the Invoice Keeper HTTPS certificate
+After=docker.service nginx.service
+[Service]
+Type=oneshot
+ExecStartPre=/usr/sbin/nginx -t
+ExecStart=/usr/bin/python3 /opt/invoice-keeper/bin/renew_certificate.py
+Environment=DOCKER_CONFIG=/opt/invoice-keeper/config/docker-client
+User=root
+UMask=0077
+TimeoutStartSec=360
+Nice=15
+CPUQuota=10%
+MemoryMax=128M
+OOMScoreAdjust=600
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/invoice-keeper/config /opt/invoice-keeper/letsencrypt /opt/invoice-keeper/acme-logs /var/www/invoice-keeper-acme /var/log/nginx /var/log/invoice-keeper /run/nginx.pid

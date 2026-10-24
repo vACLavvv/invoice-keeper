@@ -1,0 +1,18 @@
+[Unit]
+Description=Private online backup of Invoice Keeper
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/invoice-keeper/bin/backup_database.py
+User=invoice-keeper
+Group=invoice-keeper
+UMask=0077
+Nice=15
+IOSchedulingClass=idle
+CPUQuota=10%
+MemoryMax=128M
+OOMScoreAdjust=600
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/invoice-keeper/backups /opt/invoice-keeper/data

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Вход · Invoice Keeper</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><script src="/assets/js/theme.js"></script><link rel="stylesheet" href="/assets/css/styles.css"><link rel="stylesheet" href="/assets/css/themes.css"><link rel="stylesheet" href="/assets/css/workspace.css"><link rel="stylesheet" href="/assets/css/apple.css"><script src="/assets/js/login.js" defer></script></head>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-form-side">
+      <div class="login-topbar"><a class="brand brand-dark" href="/login"><img src="/assets/favicon.svg" alt="" width="37" height="37"><span>invoice<span class="brand-light">keeper</span></span></a><button type="button" class="theme-toggle" data-theme-toggle aria-label="Включить светлую тему" title="Включить светлую тему"><svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4m0-14.2-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg><svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13A8.6 8.6 0 0 1 11 3.5 8.7 8.7 0 1 0 20.5 13Z"/></svg><span class="theme-toggle-label">Включить светлую тему</span></button></div>
+      <div class="login-content">
+        <span class="eyebrow">ВАШ ФИНАНСОВЫЙ ПОРЯДОК</span>
+        <h1>С возвращением.</h1>
+        <p class="muted login-intro">Разовые и регулярные платежи — в одном месте.<br>Войдите, чтобы держать их под контролем.</p>
+        <form id="login-form">
+          <label for="username">Логин</label><input id="username" name="username" autocomplete="username" required maxlength="64" placeholder="Ваш логин" autofocus>
+          <label for="password">Пароль</label><div class="password-wrap"><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="Введите пароль"><button type="button" id="toggle-password" class="text-button" aria-label="Показать пароль">Показать</button></div>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+          <button class="button primary login-submit" type="submit">Войти в панель <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="login-help">Нет доступа? Попросите администратора<br>создать для вас учётную запись.</p>
+      </div>
+      <p class="login-footer">Invoice Keeper <span>Меньше рутины. Больше спокойствия.</span></p>
+    </section>
+    <section class="login-art" aria-label="Invoice Keeper напоминает о сроках и сохраняет историю оплат">
+      <div class="art-top"><span class="small-dot"></span> ОДНИМ ДЕЛОМ МЕНЬШЕ</div>
+      <h2>Помним о платежах.<br><em>Вы — о главном.</em></h2>
+      <div class="art-calendar"><div class="art-card-header"><span>ПЛАТЕЖИ НА МЕСЯЦ</span><span>↗</span></div><div class="art-amount">Всё под контролем<span class="art-check">✓</span></div><div class="art-pay"><span class="art-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 9-8 9 8M5 10v11h14V10M9 21v-7h6v7"/></svg></span><span>Аренда офиса<small>Напомним за 3 дня</small></span><b>45 000 ₽</b></div><div class="art-pay"><span class="art-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 19a5 5 0 0 1-1-9.9A7 7 0 0 1 19 8a5.5 5.5 0 0 1-1 11H7Z"/></svg></span><span>Облачный сервер<small>Каждый месяц, без пропусков</small></span><b>24 $</b></div><div class="art-pay"><span class="art-icon">✓</span><span>Командная подписка<small>История оплаты сохранена</small></span><span class="pill paid">Оплачено</span></div></div>
+      <div class="art-bottom"><span>01 /</span><p>Сроки, статусы и напоминания.<br>Одна понятная система для всей команды.</p></div>
+    </section>
+  </main>
+</body></html>

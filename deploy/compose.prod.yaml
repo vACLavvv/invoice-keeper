@@ -1,0 +1,39 @@
+name: invoice-keeper-prod
+services:
+  keeper:
+    image: ${KEEPER_IMAGE:?Set the release image}
+    pull_policy: never
+    env_file: ${KEEPER_ENV_FILE:?Set the private runtime env path}
+    environment:
+      DATABASE_PATH: /data/invoice-keeper.sqlite3
+    command: ["python", "-m", "backend.app.run", "--host", "0.0.0.0", "--port", "8000", "--demo-webhook", "--webhook-port", "18083"]
+    ports:
+      - "127.0.0.1:18081:8000"
+    volumes:
+      - type: bind
+        source: ${KEEPER_DATA_DIR:?Set the dedicated data directory}
+        target: /data
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.35
+    mem_limit: 384m
+    memswap_limit: 384m
+    mem_reservation: 128m
+    pids_limit: 64
+    oom_score_adj: 500
+    stop_grace_period: 45s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}

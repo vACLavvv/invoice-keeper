@@ -1,0 +1,37 @@
+name: invoice-keeper-hackathon
+services:
+  keeper:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/invoice-keeper.sqlite3
+    ports:
+      - "127.0.0.1:${INVOICE_KEEPER_PORT:-18081}:8000"
+    volumes:
+      - keeper-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 64
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+volumes:
+  keeper-data:

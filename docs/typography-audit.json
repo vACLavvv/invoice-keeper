@@ -1,0 +1,539 @@
+{
+  "date": "2026-10-24",
+  "font": {
+    "font": "app/static/fonts/InterVariable.woff2",
+    "sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+    "revision": 4.001007080078125,
+    "required_glyphs": "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя0123456789₽$€−–—",
+    "missing_glyphs": [],
+    "axes": [
+      {
+        "tag": "opsz",
+        "min": 14.0,
+        "max": 32.0
+      },
+      {
+        "tag": "wght",
+        "min": 100.0,
+        "max": 900.0
+      }
+    ],
+    "checker": "fontTools 4.67.0 (temporary development tool; not a runtime dependency)"
+  },
+  "scope": "Chromium browser viewport emulation; physical devices and Safari are not tested",
+  "results": [
+    {
+      "label": "phone-320",
+      "amount": "35px",
+      "amounts": [
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        }
+      ],
+      "documentWidth": 320,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 286,
+      "headingWidth": 286,
+      "height": 740,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 320
+    },
+    {
+      "label": "phone-390",
+      "amount": "35px",
+      "amounts": [
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        }
+      ],
+      "documentWidth": 390,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 356,
+      "headingWidth": 356,
+      "height": 844,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 390
+    },
+    {
+      "label": "tablet-768",
+      "amount": "29px",
+      "amounts": [
+        {
+          "content": 161,
+          "height": 35,
+          "lineHeight": "34.8px",
+          "width": 161
+        },
+        {
+          "content": 161,
+          "height": 35,
+          "lineHeight": "34.8px",
+          "width": 161
+        },
+        {
+          "content": 161,
+          "height": 35,
+          "lineHeight": "34.8px",
+          "width": 161
+        }
+      ],
+      "documentWidth": 768,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 622,
+      "headingWidth": 622,
+      "height": 1024,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 768
+    },
+    {
+      "label": "tablet-1024",
+      "amount": "29.696px",
+      "amounts": [
+        {
+          "content": 195,
+          "height": 36,
+          "lineHeight": "35.6352px",
+          "width": 195
+        },
+        {
+          "content": 195,
+          "height": 36,
+          "lineHeight": "35.6352px",
+          "width": 195
+        },
+        {
+          "content": 195,
+          "height": 36,
+          "lineHeight": "35.6352px",
+          "width": 195
+        }
+      ],
+      "documentWidth": 1024,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 724,
+      "headingWidth": 724,
+      "height": 768,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 1024
+    },
+    {
+      "label": "laptop-1366",
+      "amount": "39.614px",
+      "amounts": [
+        {
+          "content": 301,
+          "height": 48,
+          "lineHeight": "47.5368px",
+          "width": 301
+        },
+        {
+          "content": 301,
+          "height": 48,
+          "lineHeight": "47.5368px",
+          "width": 301
+        },
+        {
+          "content": 301,
+          "height": 48,
+          "lineHeight": "47.5368px",
+          "width": 301
+        }
+      ],
+      "documentWidth": 1366,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "38.248px",
+      "headingContent": 673,
+      "headingWidth": 673,
+      "height": 768,
+      "search": "11px",
+      "select": "11px",
+      "theme": "dark",
+      "width": 1366
+    },
+    {
+      "label": "monitor-1920",
+      "amount": "46px",
+      "amounts": [
+        {
+          "content": 459,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 459
+        },
+        {
+          "content": 459,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 459
+        },
+        {
+          "content": 459,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 459
+        }
+      ],
+      "documentWidth": 1920,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "43px",
+      "headingContent": 1177,
+      "headingWidth": 1177,
+      "height": 1080,
+      "search": "12px",
+      "select": "12px",
+      "theme": "dark",
+      "width": 1920
+    },
+    {
+      "label": "monitor-2560",
+      "amount": "46px",
+      "amounts": [
+        {
+          "content": 477,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 477
+        },
+        {
+          "content": 477,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 477
+        },
+        {
+          "content": 477,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 477
+        }
+      ],
+      "documentWidth": 2560,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "43px",
+      "headingContent": 1229,
+      "headingWidth": 1229,
+      "height": 1440,
+      "search": "12px",
+      "select": "12px",
+      "theme": "dark",
+      "width": 2560
+    },
+    {
+      "label": "monitor-2560-light",
+      "amount": "46px",
+      "amounts": [
+        {
+          "content": 477,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 477
+        },
+        {
+          "content": 477,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 477
+        },
+        {
+          "content": 477,
+          "height": 55,
+          "lineHeight": "55.2px",
+          "width": 477
+        }
+      ],
+      "documentWidth": 2560,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "43px",
+      "headingContent": 1229,
+      "headingWidth": 1229,
+      "height": 1440,
+      "search": "12px",
+      "select": "12px",
+      "theme": "light",
+      "width": 2560
+    },
+    {
+      "label": "phone-390-light",
+      "amount": "35px",
+      "amounts": [
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        }
+      ],
+      "documentWidth": 390,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 356,
+      "headingWidth": 356,
+      "height": 844,
+      "search": "16px",
+      "select": "16px",
+      "theme": "light",
+      "width": 390
+    },
+    {
+      "label": "stress-phone-390",
+      "amount": "21px",
+      "amounts": [
+        {
+          "content": 200,
+          "height": 25,
+          "lineHeight": "25.2px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 25,
+          "lineHeight": "25.2px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        }
+      ],
+      "documentWidth": 390,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 356,
+      "headingWidth": 356,
+      "height": 844,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 390
+    },
+    {
+      "label": "stress-phone-320",
+      "amount": "21px",
+      "amounts": [
+        {
+          "content": 200,
+          "height": 25,
+          "lineHeight": "25.2px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 25,
+          "lineHeight": "25.2px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        }
+      ],
+      "documentWidth": 320,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 286,
+      "headingWidth": 286,
+      "height": 740,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 320
+    },
+    {
+      "label": "stress-laptop-1366",
+      "amount": "27.32px",
+      "amounts": [
+        {
+          "content": 301,
+          "height": 33,
+          "lineHeight": "32.784px",
+          "width": 301
+        },
+        {
+          "content": 301,
+          "height": 33,
+          "lineHeight": "32.784px",
+          "width": 301
+        },
+        {
+          "content": 301,
+          "height": 48,
+          "lineHeight": "47.5368px",
+          "width": 301
+        }
+      ],
+      "documentWidth": 1366,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "38.248px",
+      "headingContent": 671,
+      "headingWidth": 671,
+      "height": 768,
+      "search": "11px",
+      "select": "11px",
+      "theme": "dark",
+      "width": 1366
+    },
+    {
+      "label": "phone-375",
+      "amount": "35px",
+      "amounts": [
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "height": 42,
+          "lineHeight": "42px",
+          "width": 200
+        }
+      ],
+      "documentWidth": 375,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "headingContent": 341,
+      "headingWidth": 341,
+      "height": 812,
+      "search": "16px",
+      "select": "16px",
+      "theme": "dark",
+      "width": 375
+    }
+  ],
+  "extraChecks": [
+    {
+      "label": "stress-budget-320",
+      "amounts": [
+        {
+          "content": 200,
+          "font": "19px",
+          "height": 23,
+          "lineHeight": "22.8px",
+          "text": "119 999 999 999,88₽",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "font": "19px",
+          "height": 23,
+          "lineHeight": "22.8px",
+          "text": "119 999 999 999,88$",
+          "width": 200
+        },
+        {
+          "content": 200,
+          "font": "35px",
+          "height": 42,
+          "lineHeight": "42px",
+          "text": "239,88€",
+          "width": 200
+        }
+      ],
+      "documentWidth": 320,
+      "width": 320,
+      "year": "2027"
+    },
+    {
+      "label": "stress-money-cells-390",
+      "cells": [
+        {
+          "content": 220,
+          "font": "16px",
+          "width": 220
+        },
+        {
+          "content": 237,
+          "font": "16px",
+          "width": 237
+        },
+        {
+          "content": 237,
+          "font": "18px",
+          "width": 237
+        }
+      ]
+    },
+    {
+      "label": "login-laptop-1366",
+      "documentWidth": 1366,
+      "formContent": 370,
+      "formWidth": 370,
+      "heading": "42px",
+      "password": "14px",
+      "username": "14px",
+      "width": 1366
+    }
+  ],
+  "status": "passed",
+  "physical_device_testing": false,
+  "notes": [
+    "Ширины проверены в браузерной эмуляции Chromium. Реальные iPhone/iPad/Android, Safari и различия сглаживания Windows/macOS отдельно не проверялись.",
+    "Данные стресс-проверки созданы в отдельной временной базе, внешние каналы и фоновые отправки отключены.",
+    "Для независимых браузерных установок используйте разные hostname (например, localhost и 127.0.0.1), а не только разные порты: cookie не изолируются по порту."
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-24",
+  "environment": "Chromium CSS viewport emulation; overview v3, light and dark",
+  "results": [
+    {
+      "documentWidth": 320,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "height": 740,
+      "overflows": [],
+      "width": 320
+    },
+    {
+      "documentWidth": 375,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "30px",
+      "height": 812,
+      "overflows": [],
+      "width": 375
+    },
+    {
+      "documentWidth": 390,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "34px",
+      "height": 844,
+      "overflows": [],
+      "width": 390
+    },
+    {
+      "documentWidth": 768,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "32px",
+      "height": 1024,
+      "overflows": [],
+      "width": 768
+    },
+    {
+      "documentWidth": 1024,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "32px",
+      "height": 768,
+      "overflows": [],
+      "width": 1024
+    },
+    {
+      "documentWidth": 1366,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "40.98px",
+      "height": 768,
+      "overflows": [],
+      "width": 1366
+    },
+    {
+      "documentWidth": 1920,
+      "font": "Inter, -apple-system, \"system-ui\", \"Segoe UI\", sans-serif",
+      "heading": "46px",
+      "height": 1080,
+      "overflows": [],
+      "width": 1920
+    },
+    {
+      "documentWidth": 2560,
+      "heading": "46px",
+      "height": 1440,
+      "overflows": [],
+      "width": 2560
+    }
+  ]
+}

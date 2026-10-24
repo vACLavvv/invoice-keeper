@@ -1,0 +1,12 @@
+[Unit]
+Description=Rotate only the Invoice Keeper Nginx error log
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/logrotate -s /opt/invoice-keeper/config/nginx-logrotate.state /opt/invoice-keeper/config/nginx-logrotate.conf
+User=root
+Nice=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/invoice-keeper /opt/invoice-keeper/config

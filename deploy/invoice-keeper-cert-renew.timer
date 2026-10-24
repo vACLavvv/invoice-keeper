@@ -1,0 +1,8 @@
+[Unit]
+Description=Check Invoice Keeper certificate twice daily
+[Timer]
+OnCalendar=*-*-* 01,13:15:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+[Install]
+WantedBy=timers.target

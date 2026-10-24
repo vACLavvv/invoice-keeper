@@ -1,0 +1,7 @@
+[Unit]
+Description=Bound Invoice Keeper proxy error logs
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+[Install]
+WantedBy=timers.target

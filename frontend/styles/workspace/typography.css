@@ -1,0 +1,196 @@
+/* Shared reading scale for the workspace. Keep 10px rem geometry for legacy
+   styled components; text uses these explicit tokens across every page. */
+:root {
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --text-caption: 12px;
+  --text-small: 13px;
+  --text-control: 14px;
+  --text-body: 15px;
+  --focus-ring: #0071e324;
+  font-optical-sizing: auto;
+}
+:root[data-theme='dark'] { --focus-ring: #2997ff38; }
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -.012em;
+  font-feature-settings: normal;
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font-family: var(--font-ui); letter-spacing: inherit; }
+button, .button { line-height: 1.35; }
+button, a { text-underline-offset: 3px; }
+input, select, textarea { font-size: var(--text-body); line-height: 1.4; }
+input:focus, select:focus, textarea:focus { border-color: var(--apple-blue); box-shadow: 0 0 0 3px var(--focus-ring); }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--apple-blue); outline-offset: 3px; }
+code, kbd { font-size: .92em; line-height: 1.6; }
+
+/* Navigation remains available on shorter laptops; only the menu scrolls. */
+.sidebar { overflow: hidden; }
+.sidebar nav { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 0 8px; scrollbar-width: thin; }
+.sidebar-bottom { flex-shrink: 0; margin-top: 0; padding-top: 14px; }
+.nav-item { font-size: var(--text-control); font-weight: 450; line-height: 1.35; min-height: 40px; }
+.nav-item.active { font-weight: 600; }
+.nav-section { font-size: 11px; font-weight: 550; line-height: 1.4; letter-spacing: .035em; }
+.nav-count { font-size: 11px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.workspace-label { font-size: 13px; line-height: 1.35; }
+.workspace-label small { font-size: 11px; }
+.docs-link, .profile { font-size: 12px; line-height: 1.45; }
+.profile small { font-size: 11px; }
+.profile-avatar { font-size: 13px; }
+.topbar { font-size: 13px; }
+.topbar-right { font-size: 12px; }
+.timezone { font-size: 11px; line-height: 1.4; }
+.lang-toggle { font-size: 11px; }
+
+/* Hierarchy: restrained headings, readable descriptions and clear amounts. */
+.page-heading { margin-bottom: 28px; }
+.page-heading h1 { font-size: clamp(32px, 2.8vw, 44px); font-weight: 620; line-height: 1.12; letter-spacing: -.045em; }
+.page-heading .eyebrow { font-size: 11px; line-height: 1.5; font-weight: 500; letter-spacing: .055em; }
+.page-heading .muted { font-size: var(--text-body); line-height: 1.6; max-width: 640px; }
+.button, .page-heading .primary { font-size: var(--text-control); font-weight: 550; min-height: 44px; }
+.button.small { font-size: 12px; min-height: 36px; }
+.text-button, .section-heading .text-button, .work-panel-heading .text-button { font-size: 13px; line-height: 1.4; }
+.section-heading h2, .work-panel-heading h2 { font-size: 20px; font-weight: 600; line-height: 1.3; letter-spacing: -.025em; }
+.section-heading p, .section-caption { font-size: var(--text-caption); line-height: 1.5; }
+.section-title { font-size: 20px; font-weight: 600; line-height: 1.35; letter-spacing: -.025em; }
+.workflow-tile > span { font-size: 14px; font-weight: 500; line-height: 1.35; }
+.workflow-tile strong { font-size: 40px; font-weight: 600; line-height: 1.15; letter-spacing: -.045em; }
+.workflow-tile small { display: block; font-size: var(--text-caption); line-height: 1.45; }
+.month-health strong { font-weight: 550; }
+.month-health small { font-size: var(--text-caption); line-height: 1.4; }
+.currency-label { font-size: 14px; }
+.currency-label small { font-size: 12px; line-height: 1.4; }
+.currency-code, .summary-caption { font-size: 12px; }
+.summary-amount { font-size: clamp(34px, 3vw, 46px); font-weight: 580; line-height: 1.2; letter-spacing: -.045em; }
+.summary-bottom { font-size: 12px; line-height: 1.6; }
+.summary-bottom b { font-size: 13px; font-weight: 550; }
+.work-panel-heading { padding-bottom: 18px; }
+.work-item { padding-top: 17px; padding-bottom: 17px; }
+.work-item-copy b { font-size: 15px; line-height: 1.45; font-weight: 550; letter-spacing: -.018em; }
+.work-item-copy small { font-size: 12px; line-height: 1.5; margin-top: 3px; }
+.work-item-money { font-size: 15px; line-height: 1.4; font-weight: 550; }
+.work-item-money > small, .work-item-state { font-size: 12px; line-height: 1.45; }
+.work-more, .work-empty { font-size: 13px; line-height: 1.55; }
+
+/* Controls and ledger: no 9px labels or tightly packed financial data. */
+.ledger-toolbar { gap: 16px; }
+.status-tab { font-size: 13px; min-height: 40px; line-height: 1.35; }
+.status-tab span { font-size: 11px; font-variant-numeric: tabular-nums; }
+.search-field { min-height: 44px; }
+.search-field input { font-size: 14px; line-height: 1.4; }
+.ledger-filters select { min-height: 42px; font-size: 13px; padding: 10px 12px; }
+.period-switcher h2 { font-size: 18px; font-weight: 550; }
+.period-heading > .text-button, .payment-range-label, .history-filter-label, .history-date-note { font-size: 13px; line-height: 1.5; }
+th { font-size: 11px; font-weight: 550; line-height: 1.5; letter-spacing: .045em; }
+td { font-size: 14px; line-height: 1.5; padding-top: 19px; padding-bottom: 19px; }
+.payment-name b { font-size: 14px; font-weight: 550; line-height: 1.5; }
+.payment-name small { font-size: 12px; line-height: 1.5; }
+.amount-cell { font-size: 15px; font-weight: 550; }
+.amount-cell small { font-size: 12px; }
+.date-cell { font-size: 13px; line-height: 1.55; }
+.pill { font-size: 12px; font-weight: 500; line-height: 1.3; padding: 6px 9px; }
+.row-action { font-size: 12px; line-height: 1.35; min-height: 36px; }
+.ledger-footer, .bottom-caption, .app-footer { font-size: 12px; line-height: 1.55; }
+.empty-state { font-size: 14px; line-height: 1.7; }
+.empty-state b { font-size: 19px; }
+.notice { font-size: 14px; line-height: 1.6; }
+.notice small, .notice .notice-detail { font-size: 12px; line-height: 1.55; }
+.notification-card h3 { font-size: 15px; line-height: 1.4; }
+.notification-card p, .channel-card p { font-size: 14px; line-height: 1.65; }
+.notification-card time { font-size: 12px; }
+.budget-card-detail { font-size: 13px; line-height: 1.6; }
+.calendar-weekday { font-size: 12px; }
+.calendar-day-number { font-size: 13px; }
+.calendar-item { font-size: 11px; line-height: 1.4; }
+
+/* The same scale applies to new Go screens, dialogs and the sign-in page. */
+label.form-field { font-size: 13px; font-weight: 500; line-height: 1.5; }
+label.form-field > input, label.form-field > select, label.form-field > textarea { font-size: 15px; font-weight: 400; line-height: 1.4; }
+.form-field small, .form-info, .form-hint, .confirm-copy { font-size: 13px; line-height: 1.6; }
+dialog h2 { font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -.035em; }
+.log-tabs button { font-size: 13px; line-height: 1.4; }
+.log-retention { font-size: 13px; }
+.system-log-meta { font-size: 12px; line-height: 1.5; }
+.login-content h1 { font-size: clamp(36px, 3.2vw, 46px); line-height: 1.1; font-weight: 620; letter-spacing: -.045em; }
+.login-content .eyebrow { font-size: 11px; letter-spacing: .07em; }
+.login-intro { font-size: 15px; line-height: 1.65; }
+.login-help { font-size: 13px; line-height: 1.65; }
+.login-content form label { font-size: 13px; }
+.login-content input { font-size: 16px; min-height: 48px; }
+.login-submit { font-size: 14px; min-height: 48px; }
+.login-art h2 { line-height: 1.15; letter-spacing: -.04em; }
+
+.summary-amount, .summary-bottom b, .amount-cell, .work-item-money, .workflow-tile strong,
+.date-cell, .month-health strong, .currency-code { font-variant-numeric: tabular-nums lining-nums; }
+.amount-cell.amount-long { font-size: 14px; }
+.amount-cell.amount-extra-long { font-size: 13px; }
+.summary-amount.amount-long { font-size: clamp(26px, 2.4vw, 36px); }
+.summary-amount.amount-extra-long { font-size: clamp(23px, 2vw, 31px); }
+.summary-amount.amount-giant { font-size: clamp(20px, 1.8vw, 28px); }
+
+@media (min-width: 1600px) {
+  :root { --text-body: 16px; --text-small: 14px; --text-control: 15px; --text-caption: 13px; }
+  .work-item-copy b, .work-item-money { font-size: 16px; }
+  .work-item-copy small, .work-item-state { font-size: 13px; }
+  td, .payment-name b { font-size: 15px; }
+  .amount-cell { font-size: 16px; }
+}
+@media (min-width: 1001px) and (max-height: 850px) {
+  .sidebar nav { gap: 3px; margin-top: 18px; }
+  .nav-section { font-size: 10px; padding-top: 12px; }
+  .nav-item { min-height: 38px; padding-top: 8px; padding-bottom: 8px; }
+}
+@media (min-width: 721px) and (max-width: 1000px) {
+  .nav-section { font-size: 0; }
+  .nav-item { font-size: 0; min-height: 44px; }
+}
+@media (max-width: 1100px), (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  :root select, :root textarea,
+  label.form-field > input, label.form-field > select, label.form-field > textarea { font-size: 16px; }
+}
+@media (max-width: 720px) {
+  .sidebar { overflow: visible; }
+  .sidebar nav { flex: initial; overflow-x: auto; overflow-y: hidden; padding: 10px 0 8px; gap: 5px; }
+  .nav-item { font-size: 13px; min-height: 44px; }
+  .page-heading h1 { font-size: clamp(29px, 6.7vw, 34px); }
+  .page-heading .muted { font-size: 14px; line-height: 1.6; }
+  .page-heading .primary { font-size: 13px; min-height: 44px; }
+  .workflow-tile > span { font-size: 12px; }
+  .workflow-tile strong { font-size: 32px; }
+  .workflow-tile small { font-size: 11px; line-height: 1.4; }
+  .work-panel-heading h2, .section-heading h2 { font-size: 19px; }
+  .section-caption, .section-heading .text-button { font-size: 12px; }
+  .work-item-copy b { font-size: 14px; }
+  .work-item-copy small, .work-item-state { font-size: 12px; }
+  .work-item-money { font-size: 14px; }
+  .table-wrap.cards td { font-size: 14px; line-height: 1.5; }
+  .table-wrap.cards td[data-label]:not(:first-child)::before { font-size: 12px; }
+  .payment-name b { font-size: 15px; }
+  .payment-name small { font-size: 12px; }
+  .pill { font-size: 12px; }
+  .status-tab { font-size: 12px; min-height: 44px; }
+  .status-tab span { font-size: 11px; }
+  .row-action, .modal-actions .button { min-height: 44px; font-size: 13px; }
+  .topbar-right #today-label { font-size: 12px; }
+  .theme-toggle, .bell-button { min-width: 44px; min-height: 44px; }
+  .login-content h1 { font-size: clamp(31px, 7.5vw, 38px); }
+  .login-intro { font-size: 14px; }
+  .login-help, .login-content form label { font-size: 13px; }
+  .calendar-item { font-size: 10px; }
+  .calendar-weekday { font-size: 11px; }
+}
+@media (max-width: 380px) {
+  .workflow-tile small { display: none; }
+  .workflow-tile > span { font-size: 12px; }
+  .work-item-money { margin-left: 39px; font-size: 14px; }
+  .work-item-state { display: inline; margin-left: 8px; }
+  .period-switcher h2 { font-size: 14px; }
+  .status-tab { font-size: 12px; }
+  .summary-amount.amount-long { font-size: 26px; }
+  .summary-amount.amount-extra-long { font-size: 21px; }
+  .summary-amount.amount-giant { font-size: 19px; }
+}

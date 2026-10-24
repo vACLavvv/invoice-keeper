@@ -1,0 +1,169 @@
+'use strict';
+// Popup: runs detect.js in the active tab (allowed by activeTab because the user clicked),
+// lets the user correct what was found and sends it as suggestions with the API key.
+
+const $ = (selector) => document.querySelector(selector);
+let settings = { server: '', key: '' };
+let page = { host: '', url: '', pageTitle: '' };
+
+async function loadSettings() {
+  const stored = await chrome.storage.local.get(['server', 'key']);
+  settings = { server: stored.server || '', key: stored.key || '' };
+  $('#server').value = settings.server;
+  $('#key').value = settings.key;
+}
+
+function normalizeServer(value) {
+  const url = new URL(value.trim());
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Адрес должен начинаться с http:// или https://');
+  return url.origin;
+}
+
+async function call(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(settings.server + '/api/v1' + path, {
+      ...options,
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + settings.key },
+    });
+  } catch {
+    throw new Error('Сервер недоступен. Проверьте адрес');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = data.detail;
+    throw new Error(typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((e) => e.msg).join('. ') : `Ошибка ${response.status}`);
+  }
+  return data;
+}
+
+function showSettings(show) {
+  $('#settings').hidden = !show;
+  $('#main').hidden = show;
+  $('#toggle-settings').textContent = show ? 'назад' : 'настройки';
+}
+
+async function saveSettings() {
+  const status = $('#settings-status');
+  status.className = 'muted';
+  status.textContent = 'проверяем…';
+  try {
+    settings = { server: normalizeServer($('#server').value), key: $('#key').value.trim() };
+    const me = await call('/extension/whoami');
+    await chrome.storage.local.set(settings);
+    status.textContent = `подключено: @${me.username}`;
+    setTimeout(() => { showSettings(false); detect(); }, 700);
+  } catch (e) {
+    status.textContent = e.message;
+    status.className = 'bad';
+  }
+}
+
+function addCard(item = {}) {
+  const card = $('#card').content.firstElementChild.cloneNode(true);
+  const field = (name) => card.querySelector(`[name="${name}"]`);
+  field('title').value = item.title || page.pageTitle || page.host;
+  field('amount').value = item.amount || '';
+  field('currency').value = item.currency || 'RUB';
+  field('date').value = item.date || '';
+  card.dataset.sourceKey = item.sourceKey || '';
+  card.querySelector('.title-text').textContent = item.how ? `найдено: ${item.how}` : 'вручную';
+  const notes = [item.context];
+  if (item.yearly) {
+    field('use').checked = false;
+    notes.unshift('похоже на годовую оплату — система повторяет ежемесячно');
+  }
+  card.querySelector('.context').textContent = notes.filter(Boolean).join(' · ');
+  card.querySelector('.context').title = item.context || '';
+  field('title').addEventListener('input', () => { card.dataset.sourceKey = ''; });
+  $('#list').append(card);
+  updateSend();
+  return card;
+}
+
+function updateSend() {
+  $('#send').disabled = !document.querySelector('.card [name="use"]:checked');
+}
+
+function notice(text, bad = false) {
+  $('#notice').hidden = !text;
+  $('#notice').textContent = text || '';
+  $('#notice').classList.toggle('bad', bad);
+}
+
+async function detect() {
+  $('#list').replaceChildren();
+  notice('');
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  page = { host: '', url: tab?.url || '', pageTitle: tab?.title || '' };
+  try {
+    const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['detect.js'] });
+    page = { ...page, ...result.result };
+  } catch {
+    $('#headline').textContent = 'страница недоступна';
+    $('#page').textContent = 'Служебные страницы браузера и магазина расширений читать нельзя.';
+    return;
+  }
+  $('#page').textContent = page.host;
+  if (page.blocked) {
+    $('#headline').textContent = 'здесь не ищем';
+    notice('Банки и почта в стоп-листе: расширение не читает такие страницы.');
+    return;
+  }
+  const found = page.candidates || [];
+  $('#headline').textContent = found.length ? `${found.length} ${plural(found.length, 'платёж', 'платежа', 'платежей')}` : 'ничего не нашли';
+  if (!found.length) notice('Выделите на странице текст с суммой и датой и откройте расширение снова — или добавьте платёж вручную.');
+  found.forEach(addCard);
+  if (!settings.server || !settings.key) notice('Укажите адрес сервера и ключ API в настройках, чтобы отправлять платежи.', true);
+}
+
+function plural(n, one, few, many) {
+  if (n % 10 === 1 && n % 100 !== 11) return one;
+  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return few;
+  return many;
+}
+
+async function send() {
+  if (!settings.server || !settings.key) {
+    showSettings(true);
+    return;
+  }
+  const cards = [...document.querySelectorAll('.card')].filter((card) => card.querySelector('[name="use"]').checked);
+  $('#send').disabled = true;
+  let ok = 0;
+  for (const card of cards) {
+    const value = (name) => card.querySelector(`[name="${name}"]`).value.trim();
+    const status = card.querySelector('.status');
+    const title = value('title');
+    const body = {
+      source_key: card.dataset.sourceKey || `${page.host || 'manual'}:${title.toLowerCase()}`.slice(0, 200),
+      source_url: /^https?:/.test(page.url) ? page.url.slice(0, 500) : undefined,
+      title, amount: value('amount').replace(',', '.'), currency: value('currency'), next_due_date: value('date'),
+    };
+    try {
+      const answer = await call('/payment-suggestions', { method: 'POST', body: JSON.stringify(body) });
+      const decided = { accepted: 'уже принято администратором', rejected: 'администратор отклонил ранее' };
+      status.textContent = answer.result === 'created' ? 'отправлено' : answer.result === 'updated' ? 'обновлено' : decided[answer.suggestion.status];
+      status.className = 'status ' + (answer.result === 'unchanged' ? 'warn' : 'ok');
+      card.querySelector('[name="use"]').checked = false;
+      ok++;
+    } catch (e) {
+      status.textContent = e.message;
+      status.className = 'status bad';
+    }
+  }
+  updateSend();
+  if (ok) notice(`Готово: ${ok} из ${cards.length}. Предложения ждут подтверждения в панели.`);
+}
+
+$('#toggle-settings').addEventListener('click', () => showSettings($('#settings').hidden));
+$('#save').addEventListener('click', saveSettings);
+$('#manual').addEventListener('click', () => addCard().querySelector('[name="amount"]').focus());
+$('#send').addEventListener('click', send);
+$('#list').addEventListener('change', updateSend);
+
+loadSettings().then(() => {
+  if (!settings.server || !settings.key) showSettings(true);
+  detect();
+});

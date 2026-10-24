@@ -1,42 +1,89 @@
 import { createGlobalStyle, css } from 'styled-components';
 
 // Root font-size is 10px, so 1rem = 10px: 1.4rem is 14px.
-// The panel is dark (like a hosting control panel); the sign-in page is light (like a landing page).
-export const theme = {
+// Two palettes in the spirit of a hosting control panel: dark (default for dark systems) and light.
+// The sign-in page always uses the light landing palette (`light`).
+
+const shared = {
+  accent: '#22b6ca',
+  accentDeep: '#1595a8',
+  accentSoft: 'rgba(34, 182, 202, 0.14)',
+};
+
+const light = {
+  page: '#f4f5f6',
+  panel: '#ffffff',
+  tile: '#f2f3f4',
+  ink: '#111214',
+  muted: '#7b7f86',
+  line: '#e7e9ec',
+};
+
+const base = {
+  light,
+  radius: { sm: '0.8rem', md: '1.2rem', lg: '1.6rem', xl: '2.4rem', sheet: '4.8rem', pill: '99rem' },
+  font: `'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif`,
+  mobile: '@media (max-width: 960px)',
+};
+
+export const darkTheme = {
+  ...base,
+  name: 'dark' as 'dark' | 'light',
   color: {
+    ...shared,
     page: '#000000',
     surface: '#161616',
     tile: '#232323',
     tileHover: '#2b2b2b',
+    inset: '#000000',
+    hover: 'rgba(255, 255, 255, 0.025)',
     line: '#2c2c2c',
     text: '#ececec',
     strong: '#ffffff',
     muted: '#8b8b8b',
     faint: '#5c5c5c',
     ghost: '#343434',
-    accent: '#22b6ca',
-    accentDeep: '#1595a8',
-    accentSoft: 'rgba(34, 182, 202, 0.14)',
+    chevron: '#000000',
+    chevronText: '#ffffff',
+    shadow: 'rgba(0, 0, 0, 0.6)',
     paid: '#4ed36b',
     unpaid: '#f2c94c',
     overdue: '#ff6150',
     overdueSoft: 'rgba(255, 97, 80, 0.12)',
     unpaidSoft: 'rgba(242, 201, 76, 0.12)',
   },
-  light: {
-    page: '#f4f5f6',
-    panel: '#ffffff',
-    tile: '#f2f3f4',
-    ink: '#111214',
-    muted: '#7b7f86',
-    line: '#e7e9ec',
-  },
-  radius: { sm: '0.8rem', md: '1.2rem', lg: '1.6rem', xl: '2.4rem', sheet: '4.8rem', pill: '99rem' },
-  font: `'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif`,
-  mobile: '@media (max-width: 960px)',
-} as const;
+};
 
-export type Theme = typeof theme;
+export const lightTheme: typeof darkTheme = {
+  ...base,
+  name: 'light',
+  color: {
+    ...shared,
+    page: '#eef0f2',
+    surface: '#ffffff',
+    tile: '#f2f3f4',
+    tileHover: '#e8eaed',
+    inset: '#ffffff',
+    hover: 'rgba(17, 18, 20, 0.025)',
+    line: '#e5e7ea',
+    text: '#26282c',
+    strong: '#111214',
+    muted: '#70757d',
+    faint: '#a5aab2',
+    ghost: '#e2e4e8',
+    chevron: '#111214',
+    chevronText: '#ffffff',
+    shadow: 'rgba(17, 18, 20, 0.18)',
+    paid: '#1f9d55',
+    unpaid: '#b7791f',
+    overdue: '#d9412b',
+    overdueSoft: 'rgba(217, 65, 43, 0.1)',
+    unpaidSoft: 'rgba(183, 121, 31, 0.12)',
+  },
+};
+
+export const theme = darkTheme;
+export type Theme = typeof darkTheme;
 
 declare module 'styled-components' {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -77,7 +124,8 @@ export const GlobalStyle = createGlobalStyle`
     background: ${({ theme }) => theme.color.page};
     font-feature-settings: 'tnum' 1, 'cv11' 1;
     -webkit-font-smoothing: antialiased;
-    color-scheme: dark;
+    color-scheme: ${({ theme }) => theme.name};
+    transition: background 0.2s, color 0.2s;
   }
   h1, h2, h3, p { margin: 0; }
   a { color: inherit; text-decoration: none; }
@@ -86,5 +134,5 @@ export const GlobalStyle = createGlobalStyle`
   button:disabled { cursor: wait; opacity: 0.6; }
   :focus-visible { outline: 0.2rem solid ${({ theme }) => theme.color.accent}; outline-offset: 0.2rem; }
   [hidden] { display: none !important; }
-  ::selection { background: ${({ theme }) => theme.color.accent}; color: #000; }
+  ::selection { background: ${({ theme }) => theme.color.accent}; color: #fff; }
 `;

@@ -1,41 +1,52 @@
 import { useMemo, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
-import { PayModal } from '@/components/PaymentModals';
+import { PayModal, ReceiptsModal } from '@/components/PaymentModals';
 import { Shell } from '@/components/Shell';
 import {
   Amount, Button, Chevron, CurrencyBadge, Empty, Input, Muted, Notice, PaymentName, Pill, Row, Select, Sticker,
   TableWrap, Tile, TileTitle, Wire,
 } from '@/components/ui';
-import { api, type Occurrence, type Summary, type Totals } from '@/lib/api';
-import { currencies, date, money, monthRange, plural, statusNames, symbols, type Currency } from '@/lib/format';
+import { api, query, type Occurrence, type Summary, type TeamUser, type Totals } from '@/lib/api';
+import { currencies, currencyName, longDate, money, monthRange, numericDate, perPeriod, statusName, symbols, type Currency } from '@/lib/format';
+import { t, tp } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 
 type Tab = 'all' | 'unpaid' | 'overdue' | 'paid';
-const tabs: [Tab, string][] = [['all', 'все'], ['unpaid', 'к оплате'], ['overdue', 'просрочено'], ['paid', 'оплачено']];
-const currencyTitles: Record<Currency, string> = { RUB: 'рубли', USD: 'доллары', EUR: 'евро' };
 
 export default function Payments() {
-  const { month, setMonth } = useSession();
+  const { month, setMonth, isAdmin, user } = useSession();
   const [tab, setTab] = useState<Tab>('all');
   const [currency, setCurrency] = useState<Currency | ''>('');
+  const [category, setCategory] = useState('');
+  const [assignee, setAssignee] = useState('');
   const [search, setSearch] = useState('');
+  const [onDate, setOnDate] = useState('');
   const [paying, setPaying] = useState<Occurrence | null>(null);
+  const [receipts, setReceipts] = useState<Occurrence | null>(null);
+  const tabs: [Tab, string][] = [['all', t('все')], ['unpaid', t('к оплате')], ['overdue', t('просрочено')], ['paid', t('оплачено')]];
 
-  const range = monthRange(month);
-  const { data: summary } = useLoad(() => api<Summary>('/payments/summary?' + new URLSearchParams(range)), [month]);
-  const { data: all, error } = useLoad(() => api<Occurrence[]>('/payment-occurrences'), []);
+  // «Итоги на дату»: everything due up to the chosen day; otherwise the selected month.
+  const range = onDate ? { to_date: onDate } : monthRange(month);
+  const { data: summary } = useLoad(() => api<Summary>('/payments/summary' + query(range)), [month, onDate]);
+  const { data: all, error } = useLoad(() => api<Occurrence[]>('/payment-occurrences' + query({ category, assignee })), [category, assignee]);
+  const users = useLoad(() => (isAdmin ? api<TeamUser[]>('/users') : Promise.resolve([])), [isAdmin]).data ?? [];
+  const everything = useLoad(() => api<Occurrence[]>('/payment-occurrences'), []).data;
+  const categories = useMemo(() => [...new Set((everything ?? []).map((o) => o.category).filter(Boolean) as string[])].sort(), [everything]);
 
   const overdue = useMemo(() => (all ?? []).filter((o) => o.active && o.status === 'overdue'), [all]);
   const inMonth = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('ru');
+    const q = search.trim().toLocaleLowerCase();
     return (all ?? []).filter((o) => o.due_date.startsWith(month)
       && (!currency || o.currency === currency)
-      && (!query || o.title.toLocaleLowerCase('ru').includes(query)));
+      && (!q || o.title.toLocaleLowerCase().includes(q)));
   }, [all, month, currency, search]);
-  const matches = (o: Occurrence, t: Tab) => t === 'all' || (t === 'unpaid' ? o.status !== 'paid' : o.status === t);
+  const matches = (o: Occurrence, k: Tab) => k === 'all' || (k === 'unpaid' ? o.status !== 'paid' : o.status === k);
   const items = inMonth.filter((o) => matches(o, tab));
-  const filtered = !!search || !!currency || tab !== 'all';
+  const filtered = !!search || !!currency || !!category || !!assignee || tab !== 'all';
+  const exportUrl = '/api/v1/payment-occurrences/export' + query({
+    ...monthRange(month), currency, category, assignee, search: search.trim(), status: tab === 'all' || tab === 'unpaid' ? '' : tab,
+  });
 
   function showOverdue() {
     if (!overdue.length) return;
@@ -46,25 +57,33 @@ export default function Payments() {
   }
 
   return (
-    <Shell title="Платежи" heading="мои платежи" subtitle="Что и когда оплатить, что уже оплачено и что просрочено.">
+    <Shell title={t('Платежи')} heading={t('мои платежи')} subtitle={t('Что и когда оплатить, что уже оплачено и что просрочено.')}
+      action={<Button as="a" href={exportUrl} $variant="secondary">{t('Скачать CSV ↓')}</Button>}>
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
-      <MonthSwitcher hint="суммы по сроку оплаты, без конвертации" />
+      <Row $between $wrap>
+        <MonthSwitcher />
+        <OnDate>
+          {t('итоги на дату')}
+          <Input type="date" value={onDate} max="2100-12-31" min="2000-01-01" onChange={(e) => setOnDate(e.target.value)} aria-label={t('Итоги на дату')} />
+          {onDate && <Button type="button" $variant="ghost" onClick={() => setOnDate('')}>{t('сбросить')}</Button>}
+        </OnDate>
+      </Row>
       <Tiles aria-live="polite">
         {currencies.map((c) => (
-          <CurrencyTile key={c} currency={c} totals={summary?.currencies[c]}
+          <CurrencyTile key={c} currency={c} totals={summary?.currencies[c]} onDate={onDate}
             onClick={() => { setCurrency(c); setTab('unpaid'); }} />
         ))}
       </Tiles>
       {overdue.length > 0 && (
         <Notice $tone="error">
-          <b>{overdue.length} {plural(overdue.length, 'платёж просрочен', 'платежа просрочены', 'платежей просрочены')}.</b>
-          <span>Есть неоплаченные периоды с истёкшим сроком.</span>
-          <Button type="button" $variant="ghost" onClick={showOverdue}>показать →</Button>
+          <b>{overdue.length} {tp(overdue.length, ['платёж просрочен', 'платежа просрочены', 'платежей просрочены'], ['payment is overdue', 'payments are overdue'])}.</b>
+          <span>{t('Есть неоплаченные периоды с истёкшим сроком.')}</span>
+          <Button type="button" $variant="ghost" onClick={showOverdue}>{t('показать →')}</Button>
         </Notice>
       )}
       <section>
         <Toolbar>
-          <Tabs role="group" aria-label="Статус платежа">
+          <Tabs role="group" aria-label={t('Статус платежа')}>
             {tabs.map(([key, label]) => (
               <TabButton key={key} type="button" $selected={tab === key} aria-pressed={tab === key} onClick={() => setTab(key)}>
                 {label} <span>{inMonth.filter((o) => matches(o, key)).length}</span>
@@ -72,22 +91,39 @@ export default function Payments() {
             ))}
           </Tabs>
           <Row $gap={0.8} $wrap>
-            <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Найти платёж" aria-label="Найти платёж" />
-            <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency | '')} aria-label="Валюта">
-              <option value="">Все валюты</option>
+            {!isAdmin && (
+              <TabButton type="button" $selected={assignee === 'me'} aria-pressed={assignee === 'me'} onClick={() => setAssignee(assignee === 'me' ? '' : 'me')}>
+                {t('только мои')}
+              </TabButton>
+            )}
+            <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Найти платёж')} aria-label={t('Найти платёж')} />
+            <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency | '')} aria-label={t('Валюта')}>
+              <option value="">{t('Все валюты')}</option>
               {currencies.map((c) => <option key={c}>{c}</option>)}
             </Select>
+            <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t('Категория')}>
+              <option value="">{t('Все категории')}</option>
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              <option value="-">{t('Без категории')}</option>
+            </Select>
+            {isAdmin && (
+              <Select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label={t('Ответственный')}>
+                <option value="">{t('Все ответственные')}</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                <option value="-">{t('Без ответственного')}</option>
+              </Select>
+            )}
           </Row>
         </Toolbar>
-        {!all ? <Empty>Загружаем платежи…</Empty> : items.length === 0 ? (
+        {!all ? <Empty>{t('Загружаем платежи…')}</Empty> : items.length === 0 ? (
           <Empty>
-            <b>{filtered ? 'Ничего не нашлось' : 'Здесь пока спокойно'}</b>
-            {filtered ? 'Измените запрос, валюту или статус.' : 'В этом месяце нет периодов оплаты. Система создаёт их до конца следующего месяца.'}
+            <b>{filtered ? t('Ничего не нашлось') : t('Здесь пока спокойно')}</b>
+            {filtered ? t('Измените запрос, фильтры или статус.') : t('В этом месяце нет периодов оплаты. Система создаёт их до конца следующего месяца.')}
           </Empty>
         ) : (
           <TableWrap>
             <table>
-              <thead><tr><th>Имя</th><th>Сумма</th><th>Срок</th><th>Состояние</th><th>Оплачено</th><th /></tr></thead>
+              <thead><tr><th>{t('Имя')}</th><th>{t('Сумма')}</th><th>{t('Срок')}</th><th>{t('Состояние')}</th><th>{t('Оплачено')}</th><th /></tr></thead>
               <tbody>
                 {items.map((o) => (
                   <tr key={o.id}>
@@ -95,20 +131,28 @@ export default function Payments() {
                       <PaymentName>
                         <CurrencyBadge aria-hidden="true">{symbols[o.currency]}</CurrencyBadge>
                         <b>{o.title}</b>
-                        <small>{o.active ? 'ежемесячно' : 'архив'}</small>
+                        <small>
+                          {[o.category, o.assignee && (o.assignee.id === user.id && !isAdmin ? t('вы') : '@' + o.assignee.username), !o.active && t('архив')]
+                            .filter(Boolean).join(' · ')}
+                        </small>
                       </PaymentName>
                     </td>
-                    <td><Amount>{symbols[o.currency]} {money(o.amount)}<small>/ месяц</small></Amount></td>
+                    <td><Amount>{symbols[o.currency]} {money(o.amount)}<small>{perPeriod(o.frequency)}</small></Amount></td>
                     <td>
-                      <Due $late={o.is_late}>{date(o.due_date, { day: '2-digit', month: '2-digit', year: 'numeric' })}</Due>
-                      {o.is_late && <Muted> · {o.days_overdue} дн.</Muted>}
+                      <Due $late={o.is_late}>{numericDate(o.due_date)}</Due>
+                      {o.is_late && <Muted> · {t('{n} дн.', { n: o.days_overdue })}</Muted>}
                     </td>
-                    <td><Pill $status={o.status}>{statusNames[o.status].toLowerCase()}</Pill></td>
-                    <td><Muted>{o.paid_at ? date(o.paid_at, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}</Muted></td>
+                    <td><Pill $status={o.status}>{statusName(o.status)}</Pill></td>
+                    <td><Muted>{o.paid_at ? numericDate(o.paid_at) : '—'}</Muted></td>
                     <td>
-                      <Button type="button" $small $variant={o.status === 'paid' ? 'secondary' : 'primary'} onClick={() => setPaying(o)}>
-                        {o.status === 'paid' ? 'изменить' : 'оплатить'}
-                      </Button>
+                      <Row $gap={0.6}>
+                        <Button type="button" $small $variant="secondary" onClick={() => setReceipts(o)} title={t('Чеки и ссылки')} aria-label={t('Чеки и ссылки')}>
+                          🧾{o.receipts > 0 ? ` ${o.receipts}` : ''}
+                        </Button>
+                        <Button type="button" $small $variant={o.status === 'paid' ? 'secondary' : 'primary'} onClick={() => setPaying(o)}>
+                          {o.status === 'paid' ? t('изменить') : t('оплатить')}
+                        </Button>
+                      </Row>
                     </td>
                   </tr>
                 ))}
@@ -116,34 +160,43 @@ export default function Payments() {
             </table>
           </TableWrap>
         )}
-        <Pager>{items.length} {plural(items.length, 'платёж', 'платежа', 'платежей')}</Pager>
+        <Pager>{items.length} {tp(items.length, ['платёж', 'платежа', 'платежей'], ['payment', 'payments'])}</Pager>
       </section>
       {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}
+      {receipts && <ReceiptsModal occurrence={receipts} onClose={() => setReceipts(null)} />}
     </Shell>
   );
 }
 
 /** A service-style tile: caption, big remaining amount and two rings showing paid vs. unpaid. */
-function CurrencyTile({ currency, totals, onClick }: { currency: Currency; totals?: Totals; onClick: () => void }) {
+function CurrencyTile({ currency, totals, onDate, onClick }: { currency: Currency; totals?: Totals; onDate: string; onClick: () => void }) {
   const total = Number(totals?.total ?? 0);
   const paid = total ? Math.round((Number(totals?.paid ?? 0) / total) * 100) : 0;
   const overdue = Number(totals?.overdue ?? 0);
   return (
     <Tile $interactive role="button" tabIndex={0} onClick={onClick} onKeyDown={(e) => { if (e.key === 'Enter') onClick(); }}
-      aria-label={`${currencyTitles[currency]}: показать неоплаченные`}>
-      <TileTitle>{currencyTitles[currency]} · {currency}<Chevron aria-hidden="true">›</Chevron></TileTitle>
-      <Muted>осталось оплатить за месяц</Muted>
+      aria-label={t('{name}: показать неоплаченные', { name: currencyName(currency) })}>
+      <TileTitle>{currencyName(currency)} · {currency}<Chevron aria-hidden="true">›</Chevron></TileTitle>
+      <Muted>{onDate ? t('не оплачено на {date}', { date: longDate(onDate) }) : t('осталось оплатить за месяц')}</Muted>
       <Big>{symbols[currency]} {totals ? money(totals.unpaid) : '—'}</Big>
-      <Muted>оплачено {totals ? money(totals.paid) : '—'} из {totals ? money(totals.total) : '—'} {symbols[currency]}</Muted>
+      <Muted>{t('оплачено {paid} из {total} {symbol}', { paid: totals ? money(totals.paid) : '—', total: totals ? money(totals.total) : '—', symbol: symbols[currency] })}</Muted>
       <Wire height={12}>
         <Ring $size={paid >= 50 ? 13 : 7}>{paid}%</Ring>
         <Ring $size={paid >= 50 ? 7 : 13}>{100 - paid}%</Ring>
       </Wire>
-      {overdue > 0 && <Corner><Sticker $tilt={-7}>просрочено {money(overdue)} {symbols[currency]}</Sticker></Corner>}
-      {totals?.count === 0 && <Corner><Sticker $tilt={6}>спокойно ✓</Sticker></Corner>}
+      {overdue > 0 && <Corner><Sticker $tilt={-7}>{t('просрочено {sum}', { sum: `${money(overdue)} ${symbols[currency]}` })}</Sticker></Corner>}
+      {totals?.count === 0 && <Corner><Sticker $tilt={6}>{t('спокойно ✓')}</Sticker></Corner>}
     </Tile>
   );
 }
+
+const OnDate = styled.label`
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: ${({ theme }) => theme.color.muted};
+  input { width: auto; min-height: 3.8rem; }
+`;
 
 const Tiles = styled.div`
   display: grid;
@@ -190,7 +243,7 @@ const Toolbar = styled.div`
   gap: 1.2rem;
   margin-bottom: 0.8rem;
   input, select { min-height: 4rem; width: auto; }
-  input { width: 22rem; }
+  input { width: 20rem; }
   ${({ theme }) => theme.mobile} { input { width: 100%; } }
 `;
 

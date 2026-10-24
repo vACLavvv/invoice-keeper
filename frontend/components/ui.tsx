@@ -44,8 +44,8 @@ export const Chevron = styled.span`
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
-  background: #000;
-  color: #fff;
+  background: ${({ theme }) => theme.color.chevron};
+  color: ${({ theme }) => theme.color.chevronText};
   font-size: 1.2rem;
   line-height: 1;
 `;
@@ -103,7 +103,7 @@ export const Sticker = styled.span<{ $tilt?: number }>`
   font-weight: 600;
   white-space: nowrap;
   transform: rotate(${({ $tilt = -6 }) => $tilt}deg);
-  box-shadow: 0 0 0 0.2rem #000;
+  box-shadow: 0 0 0 0.2rem ${({ theme }) => theme.color.page};
 `;
 
 const statusColor = (status: Status | 'archived' | 'active') => css`
@@ -117,7 +117,7 @@ export const Pill = styled.span<{ $status: Status | 'archived' | 'active' }>`
   gap: 0.8rem;
   white-space: nowrap;
   color: ${({ theme }) => theme.color.text};
-  &::before { content: ''; width: 1rem; height: 1rem; border-radius: 50%; background: ${({ $status }) => statusColor($status)}; }
+  &::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: 50%; background: ${({ $status }) => statusColor($status)}; }
 `;
 
 export const Notice = styled.div<{ $tone?: 'info' | 'error' | 'warning' }>`
@@ -165,7 +165,7 @@ export const TableWrap = styled.div`
     vertical-align: middle;
   }
   tbody tr { transition: background 0.15s; }
-  tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+  tbody tr:hover { background: ${({ theme }) => theme.color.hover}; }
 `;
 
 export const Muted = styled.span`

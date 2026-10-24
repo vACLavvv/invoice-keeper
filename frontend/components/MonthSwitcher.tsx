@@ -1,5 +1,6 @@
 import styled from 'styled-components';
 import { monthLabel, shiftMonth } from '@/lib/format';
+import { t } from '@/lib/i18n';
 import { useSession } from '@/lib/session';
 import { Button, Row } from './ui';
 
@@ -10,12 +11,12 @@ export function MonthSwitcher({ hint }: { hint?: string }) {
   return (
     <Row $between $wrap>
       <Row $gap={0.4}>
-        <Arrow type="button" aria-label="Предыдущий месяц" onClick={() => setMonth(shiftMonth(month, -1))}>‹</Arrow>
+        <Arrow type="button" aria-label={t('Предыдущий месяц')} onClick={() => setMonth(shiftMonth(month, -1))}>‹</Arrow>
         <Label aria-live="polite">{monthLabel(month)}</Label>
-        <Arrow type="button" aria-label="Следующий месяц" onClick={() => setMonth(shiftMonth(month, 1))}>›</Arrow>
+        <Arrow type="button" aria-label={t('Следующий месяц')} onClick={() => setMonth(shiftMonth(month, 1))}>›</Arrow>
       </Row>
       {month !== current
-        ? <Button type="button" $variant="ghost" onClick={() => setMonth(current)}>к текущему месяцу →</Button>
+        ? <Button type="button" $variant="ghost" onClick={() => setMonth(current)}>{t('к текущему месяцу →')}</Button>
         : hint && <Hint>{hint}</Hint>}
     </Row>
   );

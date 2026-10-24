@@ -65,9 +65,10 @@ func (e *harness) start() {
 }
 
 type client struct {
-	e    *harness
-	http *http.Client
-	csrf string
+	e     *harness
+	http  *http.Client
+	csrf  string
+	token string // API key, sent as Authorization: Bearer
 }
 
 func (e *harness) client() *client {
@@ -111,6 +112,9 @@ func (c *client) do(method, path string, body any, headers ...string) response {
 	request.Header.Set("Content-Type", "application/json")
 	if c.csrf != "" {
 		request.Header.Set("X-CSRF-Token", c.csrf)
+	}
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	for i := 0; i+1 < len(headers); i += 2 {
 		request.Header.Set(headers[i], headers[i+1])

@@ -5,10 +5,12 @@ import { PayModal } from '@/components/PaymentModals';
 import { Shell } from '@/components/Shell';
 import { Notice } from '@/components/ui';
 import { api, type Occurrence } from '@/lib/api';
-import { moneyWith, statusNames, type Status } from '@/lib/format';
+import { moneyWith, statusName, type Status } from '@/lib/format';
+import { locale, t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 
-const weekdays = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+// Monday-first short weekday names in the current language (5 Jan 2026 is a Monday).
+const weekdays = () => Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(2026, 0, 5 + i)));
 
 export default function CalendarPage() {
   const { month, settings } = useSession();
@@ -22,11 +24,11 @@ export default function CalendarPage() {
   const items = (data ?? []).filter((o) => o.due_date.startsWith(month));
 
   return (
-    <Shell title="Календарь" heading="календарь оплат" subtitle="Как распределяются расходы в течение месяца.">
+    <Shell title={t('Календарь')} heading={t('календарь оплат')} subtitle={t('Как распределяются расходы в течение месяца.')}>
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
-      <MonthSwitcher hint="план расходов по датам" />
+      <MonthSwitcher hint={t('план расходов по датам')} />
       <Grid>
-        {weekdays.map((d) => <Weekday key={d}>{d}</Weekday>)}
+        {weekdays().map((d) => <Weekday key={d}>{d}</Weekday>)}
         {Array.from({ length: leading }, (_, i) => <Day key={'lead' + i} $blank aria-hidden="true" />)}
         {Array.from({ length: days }, (_, i) => {
           const day = `${month}-${String(i + 1).padStart(2, '0')}`;
@@ -35,7 +37,7 @@ export default function CalendarPage() {
               <DayNumber>{i + 1}</DayNumber>
               {items.filter((o) => o.due_date === day).map((o) => (
                 <Item key={o.id} type="button" $status={o.status} onClick={() => setPaying(o)}
-                  title={`${o.title} · ${moneyWith(o.amount, o.currency)} · ${statusNames[o.status]}`}>
+                  title={`${o.title} · ${moneyWith(o.amount, o.currency)} · ${statusName(o.status)}`}>
                   <span>{o.title}</span>
                   <b>{moneyWith(o.amount, o.currency)}</b>
                 </Item>
@@ -95,7 +97,7 @@ const Item = styled.button<{ $status: Status }>`
   gap: 0.2rem;
   padding: 0.6rem 0.8rem;
   border-radius: ${({ theme }) => theme.radius.sm};
-  background: #000;
+  background: ${({ theme }) => theme.color.inset};
   color: ${({ theme }) => theme.color.text};
   text-align: left;
   font-size: 1.2rem;

@@ -49,8 +49,58 @@ CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL,
     entity TEXT NOT NULL, created_at TEXT NOT NULL
 );
-PRAGMA user_version=1;
+-- v2: keys for the browser extension and the payments it finds.
+CREATE TABLE IF NOT EXISTS api_keys (
+    id INTEGER PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL, name TEXT NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, is_admin INTEGER NOT NULL DEFAULT 0,
+    admin_fingerprint TEXT, created_at TEXT NOT NULL, last_used_at TEXT
+);
+CREATE TABLE IF NOT EXISTS payment_suggestions (
+    id INTEGER PRIMARY KEY, source_key TEXT NOT NULL UNIQUE, source_url TEXT, title TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK(amount_cents > 0), currency TEXT NOT NULL CHECK(currency IN ('RUB','USD','EUR')),
+    next_due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected')),
+    submitted_by TEXT NOT NULL, recurring_payment_id INTEGER REFERENCES recurring_payments(id),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY, value TEXT NOT NULL
+);
+-- v3: pauses, receipts, Telegram accounts linked to panel users, personal reminders.
+CREATE TABLE IF NOT EXISTS payment_pauses (
+    id INTEGER PRIMARY KEY, recurring_payment_id INTEGER NOT NULL REFERENCES recurring_payments(id),
+    from_date TEXT NOT NULL, until_date TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS receipts (
+    id INTEGER PRIMARY KEY, occurrence_id INTEGER NOT NULL REFERENCES payment_occurrences(id),
+    kind TEXT NOT NULL CHECK(kind IN ('link','file')), url TEXT, file_name TEXT, content_type TEXT,
+    size INTEGER, data BLOB, created_by TEXT NOT NULL, author_user_id INTEGER, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS receipts_occurrence ON receipts(occurrence_id);
+CREATE TABLE IF NOT EXISTS telegram_links (
+    id INTEGER PRIMARY KEY, user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    is_admin INTEGER NOT NULL DEFAULT 0, telegram_user_id INTEGER NOT NULL UNIQUE, chat_id INTEGER NOT NULL,
+    username TEXT, linked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS telegram_link_codes (
+    code_hash TEXT PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    is_admin INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS personal_reminders (
+    occurrence_id INTEGER NOT NULL REFERENCES payment_occurrences(id), chat_id INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('sending','sent','failed')), sent_at TEXT, error TEXT,
+    PRIMARY KEY(occurrence_id, chat_id)
+);
 `
+
+// columns added to existing tables after v1; ALTER TABLE runs only where a column is missing.
+var addedColumns = []struct{ table, column, definition string }{
+	{"recurring_payments", "frequency", "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly'))"},
+	{"recurring_payments", "category", "TEXT"},
+	{"recurring_payments", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
+}
+
+const schemaVersion = 3
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
@@ -87,11 +137,28 @@ func (db *DB) initialize() error {
 	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version != 0 && version != 1 {
+	// Older versions are upgraded in place: later versions only add tables and nullable/defaulted columns.
+	if version < 0 || version > schemaVersion {
 		return errors.New("Неизвестная версия базы. Запуск остановлен без изменения данных.")
 	}
-	_, err := db.Exec(schema)
-	return err
+	return db.Write(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(schema); err != nil {
+			return err
+		}
+		for _, c := range addedColumns {
+			var exists int
+			if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?", c.table, c.column).Scan(&exists); err != nil {
+				return err
+			}
+			if exists == 0 {
+				if _, err := tx.Exec("ALTER TABLE " + c.table + " ADD COLUMN " + c.column + " " + c.definition); err != nil {
+					return err
+				}
+			}
+		}
+		_, err := tx.Exec("PRAGMA user_version=" + itoa(schemaVersion))
+		return err
+	})
 }
 
 // Write runs fn in an immediate transaction and commits unless fn returns an error.

@@ -1,16 +1,19 @@
 import Head from 'next/head';
 import { useState, type FormEvent } from 'react';
 import styled, { css } from 'styled-components';
-import { Logo } from '@/components/Shell';
+import { Logo, Switches } from '@/components/Shell';
 import { Button, Field, Input, Notice } from '@/components/ui';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { t } from '@/lib/i18n';
 import { globe } from '@/styles/theme';
 
 // The sign-in page is the light "landing": glass globe hero, white sheet with the form.
+// With admin two-factor sign-in the server answers code=two_factor_required and a code field appears.
 export default function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
+  const [needCode, setNeedCode] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -18,65 +21,85 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await api('/auth/login', { method: 'POST', body: { username: data.get('username'), password: data.get('password') } });
+      const body: Record<string, FormDataEntryValue | null> = { username: data.get('username'), password: data.get('password') };
+      if (needCode) body.code = data.get('code');
+      await api('/auth/login', { method: 'POST', body });
       window.location.assign('/');
     } catch (e) {
-      setError((e as Error).message === 'Неверный логин или пароль' ? 'Проверьте логин и пароль' : (e as Error).message);
+      const err = e as ApiError;
+      if (err.code === 'two_factor_required') {
+        setError(needCode ? err.message : null);
+        setNeedCode(true);
+      } else {
+        setError(err.status === 401 ? t('Проверьте логин и пароль') : err.message);
+      }
       setBusy(false);
     }
   }
 
   return (
     <Page>
-      <Head><title>Вход · Invoice Keeper</title></Head>
+      <Head><title>{t('Вход')} · Invoice Keeper</title></Head>
       <Hero>
         <Top>
           <Brand><Logo dark size={32} /> invoice keeper</Brand>
-          <Pill href="#login">Войти</Pill>
+          <TopRight><Switches compact /><Pill href="#login">{t('Войти')}</Pill></TopRight>
         </Top>
         <HeroText>
           <Wordmark>invoice keeper</Wordmark>
-          <Tagline>Платежи нового поколения</Tagline>
-          <Button as="a" href="#login">Попробовать <span aria-hidden="true">→</span></Button>
+          <Tagline>{t('Платежи нового поколения')}</Tagline>
+          <Button as="a" href="#login">{t('Попробовать')} <span aria-hidden="true">→</span></Button>
         </HeroText>
       </Hero>
       <Sheet>
         <Stats>
-          <Stat><b>3 дня</b><span>напоминание в Telegram до срока</span></Stat>
-          <Stat><b>2 роли</b><span>администратор и команда</span></Stat>
-          <Stat><b>3 валюты</b><span>RUB · USD · EUR, без конвертации</span></Stat>
+          <Stat><b>{t('3 дня')}</b><span>{t('напоминание в Telegram до срока')}</span></Stat>
+          <Stat><b>{t('2 роли')}</b><span>{t('администратор и команда')}</span></Stat>
+          <Stat><b>{t('3 валюты')}</b><span>{t('RUB · USD · EUR, без конвертации')}</span></Stat>
         </Stats>
         <Frame id="login">
           <Card>
-            <h1>Вход в панель</h1>
-            <Lead>Все регулярные платежи команды — в одном месте.</Lead>
+            <h1>{t('Вход в панель')}</h1>
+            <Lead>{t('Все регулярные платежи команды — в одном месте.')}</Lead>
             <form onSubmit={submit}>
               <fieldset disabled={busy}>
-                <LightField>Логин<LightInput name="username" autoComplete="username" required maxLength={64} placeholder="Ваш логин" autoFocus /></LightField>
+                <LightField>{t('Логин')}<LightInput name="username" autoComplete="username" required maxLength={64} placeholder={t('Ваш логин')} autoFocus /></LightField>
                 <LightField>
-                  Пароль
+                  {t('Пароль')}
                   <Password>
-                    <LightInput name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" required maxLength={128} placeholder="Введите пароль" />
-                    <Button type="button" $variant="ghost" onClick={() => setVisible((v) => !v)} aria-label={visible ? 'Скрыть пароль' : 'Показать пароль'}>
-                      {visible ? 'скрыть' : 'показать'}
+                    <LightInput name="password" type={visible ? 'text' : 'password'} autoComplete="current-password" required maxLength={128} placeholder={t('Введите пароль')} />
+                    <Button type="button" $variant="ghost" onClick={() => setVisible((v) => !v)} aria-label={visible ? t('Скрыть пароль') : t('Показать пароль')}>
+                      {visible ? t('скрыть') : t('показать')}
                     </Button>
                   </Password>
                 </LightField>
+                {needCode && (
+                  <LightField>
+                    {t('Код из приложения-аутентификатора')}
+                    <LightInput name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} required autoFocus placeholder="123 456" />
+                  </LightField>
+                )}
                 {error && <Notice $tone="error" role="alert">{error}</Notice>}
-                <Dark type="submit">{busy ? 'Входим…' : 'Войти'}</Dark>
+                <Dark type="submit">{busy ? t('Входим…') : needCode ? t('Подтвердить') : t('Войти')}</Dark>
               </fieldset>
             </form>
-            <Help>Нет доступа? Попросите администратора создать для вас учётную запись.</Help>
+            <Help>{t('Нет доступа? Попросите администратора создать для вас учётную запись.')}</Help>
           </Card>
         </Frame>
       </Sheet>
       <Footer>
         <span>© {new Date().getFullYear()} Invoice Keeper</span>
-        <span>Меньше рутины — больше спокойствия</span>
+        <span>{t('Меньше рутины — больше спокойствия')}</span>
       </Footer>
     </Page>
   );
 }
+
+const TopRight = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+`;
 
 const light = css`color: ${({ theme }) => theme.light.ink};`;
 
@@ -204,7 +227,7 @@ const LightInput = styled(Input)`
   border-color: transparent;
   ${light}
   &::placeholder { color: #a9adb3; }
-  &:focus { background: #fff; }
+  &:focus { background: ${({ theme }) => theme.light.panel}; }
 `;
 
 const Password = styled.div`

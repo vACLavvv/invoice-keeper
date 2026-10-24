@@ -5,151 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
-	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var currencies = []string{"RUB", "USD", "EUR"}
-
-// --- recurring payments ---
-
-type recurringItem struct {
-	ID           int64   `json:"id"`
-	Title        string  `json:"title"`
-	Amount       string  `json:"amount"`
-	Currency     string  `json:"currency"`
-	FirstDueDate string  `json:"first_due_date"`
-	AnchorDay    int     `json:"anchor_day"`
-	Frequency    string  `json:"frequency"`
-	Active       bool    `json:"active"`
-	UnpaidCount  int     `json:"unpaid_count"`
-	CreatedAt    string  `json:"created_at"`
-	DeletedAt    *string `json:"deleted_at"`
-}
-
-func (s *Server) recurringList(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.currentUser(r); err != nil {
-		return err
-	}
-	items := []recurringItem{}
-	err := s.DB.Write(func(tx *sql.Tx) error {
-		if err := materialize(tx, s.Today()); err != nil {
-			return err
-		}
-		rows, err := tx.Query(`SELECT r.id,r.title,r.amount_cents,r.currency,r.first_due_date,r.anchor_day,r.active,r.created_at,r.deleted_at,
-			(SELECT COUNT(*) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.paid_at IS NULL)
-			FROM recurring_payments r ORDER BY r.active DESC,r.id DESC`)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			item := recurringItem{Frequency: "monthly"}
-			var cents int64
-			var deleted sql.NullString
-			if err := rows.Scan(&item.ID, &item.Title, &cents, &item.Currency, &item.FirstDueDate, &item.AnchorDay, &item.Active,
-				&item.CreatedAt, &deleted, &item.UnpaidCount); err != nil {
-				return err
-			}
-			item.Amount = money(cents)
-			if deleted.Valid {
-				item.DeletedAt = &deleted.String
-			}
-			items = append(items, item)
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return err
-	}
-	return writeJSON(w, 200, items)
-}
-
-func (s *Server) recurringCreate(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.adminWrite(r)
-	if err != nil {
-		return err
-	}
-	f, err := readForm(r, "title", "amount", "currency", "first_due_date", "frequency")
-	if err != nil {
-		return err
-	}
-	f.require("title", "amount", "currency", "first_due_date")
-	title := f.text("title", textRule{trim: true, min: 1, max: 120})
-	cents := f.amount("amount")
-	currency := f.text("currency", textRule{max: 3})
-	if f.has("currency") && (currency == nil || !slices.Contains(currencies, *currency)) {
-		f.add("currency", "Допустимые значения: RUB, USD, EUR", "literal_error")
-	}
-	due := f.date("first_due_date")
-	if due != nil && (due.Before(civil(2000, 1, 1)) || due.After(civil(2100, 12, 31))) {
-		f.add("first_due_date", "Дата должна быть между 2000 и 2100 годами", "value_error")
-	}
-	if frequency := f.text("frequency", textRule{max: 16}); f.has("frequency") && (frequency == nil || *frequency != "monthly") {
-		f.add("frequency", "Поддерживается только monthly", "literal_error")
-	}
-	if f.isNull("title") || f.isNull("amount") || f.isNull("currency") || f.isNull("first_due_date") {
-		f.add("", "Поля платежа не могут быть пустыми", "missing")
-	}
-	if err := f.err(); err != nil {
-		return err
-	}
-	var id int64
-	err = s.DB.Write(func(tx *sql.Tx) error {
-		result, err := tx.Exec("INSERT INTO recurring_payments(title,amount_cents,currency,first_due_date,anchor_day,created_at) VALUES(?,?,?,?,?,?)",
-			*title, cents, *currency, formatDate(*due), due.Day(), timestamp())
-		if err != nil {
-			return err
-		}
-		if id, err = result.LastInsertId(); err != nil {
-			return err
-		}
-		if err := materialize(tx, s.Today()); err != nil {
-			return err
-		}
-		return audit(tx, user.Username, "recurring.create", id)
-	})
-	if err != nil {
-		return err
-	}
-	// Added less than 3 days before the due date → the reminder is checked right away.
-	s.Worker.Kick()
-	return writeJSON(w, 201, map[string]any{"id": id, "title": *title, "amount": money(cents), "currency": *currency,
-		"first_due_date": formatDate(*due), "frequency": "monthly", "active": true})
-}
-
-func (s *Server) recurringDelete(w http.ResponseWriter, r *http.Request) error {
-	user, err := s.adminWrite(r)
-	if err != nil {
-		return err
-	}
-	id, err := pathID(r, "payment_id")
-	if err != nil {
-		return err
-	}
-	err = s.DB.Write(func(tx *sql.Tx) error {
-		var active bool
-		err := tx.QueryRow("SELECT active FROM recurring_payments WHERE id=?", id).Scan(&active)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fail(404, "Регулярный платёж не найден")
-		}
-		if err != nil || !active {
-			return err
-		}
-		if _, err := tx.Exec("UPDATE recurring_payments SET active=0,deleted_at=? WHERE id=?", timestamp(), id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec("UPDATE reminders SET state='cancelled' WHERE state='pending' AND occurrence_id IN (SELECT id FROM payment_occurrences WHERE recurring_payment_id=?)", id); err != nil {
-			return err
-		}
-		return audit(tx, user.Username, "recurring.archive", id)
-	})
-	if err != nil {
-		return err
-	}
-	return noContent(w)
-}
 
 // --- payment occurrences ---
 
@@ -158,6 +19,8 @@ type occurrenceFilter struct {
 	status          string
 	currency        string
 	search          string
+	category        string // "-" — without a category
+	assignee        string // user id, or "-" — without an assignee
 	includeArchived bool
 }
 
@@ -175,6 +38,16 @@ func (s *Server) loadOccurrences(q querier, filter occurrenceFilter) ([]Occurren
 	}
 	if !filter.includeArchived {
 		clauses = append(clauses, "r.active=1")
+	}
+	if filter.category == "-" {
+		clauses = append(clauses, "(r.category IS NULL OR r.category='')")
+	}
+	switch filter.assignee {
+	case "":
+	case "-":
+		clauses = append(clauses, "r.assignee_id IS NULL")
+	default:
+		clauses, args = append(clauses, "r.assignee_id=?"), append(args, filter.assignee)
 	}
 	query := occurrenceSelect
 	if len(clauses) > 0 {
@@ -199,6 +72,10 @@ func (s *Server) loadOccurrences(q querier, filter occurrenceFilter) ([]Occurren
 		if search != "" && !strings.Contains(strings.ToLower(item.Title), search) {
 			continue
 		}
+		// Compared in Go: SQLite NOCASE folds only ASCII, and categories are usually Cyrillic.
+		if filter.category != "" && filter.category != "-" && (item.Category == nil || !strings.EqualFold(*item.Category, filter.category)) {
+			continue
+		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -213,25 +90,50 @@ func parseRange(q *queryParams) (from, to *time.Time) {
 	return from, to
 }
 
-func (s *Server) occurrenceList(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.currentUser(r); err != nil {
-		return err
-	}
+// occurrenceQuery reads the list filters shared by the list and the CSV export.
+func occurrenceQuery(r *http.Request, user *User) (occurrenceFilter, error) {
 	q := &queryParams{values: r.URL.Query()}
 	from, to := parseRange(q)
 	filter := occurrenceFilter{from: from, to: to,
 		status:          q.choice("status", "paid", "unpaid", "overdue"),
 		currency:        q.choice("currency", currencies...),
 		search:          q.values.Get("search"),
+		category:        strings.TrimSpace(q.values.Get("category")),
 		includeArchived: q.boolean("include_archived", true)}
 	if len([]rune(filter.search)) > 120 {
 		q.add("search", "Максимальная длина — 120", "string_too_long")
 	}
-	if err := q.err(); err != nil {
+	if len([]rune(filter.category)) > 40 {
+		q.add("category", "Максимальная длина — 40", "string_too_long")
+	}
+	switch assignee := q.values.Get("assignee"); {
+	case assignee == "" || assignee == "-":
+		filter.assignee = assignee
+	case assignee == "me":
+		// "Только мои" for a user; the admin is responsible for everything, so no filter.
+		if user.Role != "admin" {
+			filter.assignee = itoa(user.ID)
+		}
+	default:
+		if _, err := strconv.ParseInt(assignee, 10, 64); err != nil {
+			q.add("assignee", "Ожидается me, - или ID пользователя", "value_error")
+		}
+		filter.assignee = assignee
+	}
+	return filter, q.err()
+}
+
+func (s *Server) occurrenceList(w http.ResponseWriter, r *http.Request) error {
+	user, err := s.currentUser(r)
+	if err != nil {
+		return err
+	}
+	filter, err := occurrenceQuery(r, user)
+	if err != nil {
 		return err
 	}
 	var items []Occurrence
-	err := s.DB.Write(func(tx *sql.Tx) error {
+	err = s.DB.Write(func(tx *sql.Tx) error {
 		if err := materialize(tx, s.Today()); err != nil {
 			return err
 		}

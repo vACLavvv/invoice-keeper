@@ -1,14 +1,21 @@
+import { locale, t, tp } from './i18n';
+
 export type Currency = 'RUB' | 'USD' | 'EUR';
 export type Status = 'paid' | 'unpaid' | 'overdue';
+export type Frequency = 'monthly' | 'quarterly' | 'yearly';
 
 export const currencies: Currency[] = ['RUB', 'USD', 'EUR'];
+export const frequencies: Frequency[] = ['monthly', 'quarterly', 'yearly'];
 export const symbols: Record<Currency, string> = { RUB: '₽', USD: '$', EUR: '€' };
-export const currencyNames: Record<Currency, string> = { RUB: 'Российский рубль', USD: 'Доллар США', EUR: 'Евро' };
-export const statusNames: Record<Status, string> = { paid: 'Оплачено', unpaid: 'К оплате', overdue: 'Просрочено' };
+
+export const currencyName = (c: Currency) => ({ RUB: t('рубли'), USD: t('доллары'), EUR: t('евро') })[c];
+export const statusName = (s: Status) => ({ paid: t('оплачено'), unpaid: t('к оплате'), overdue: t('просрочено') })[s];
+export const frequencyName = (f: Frequency) => ({ monthly: t('ежемесячно'), quarterly: t('ежеквартально'), yearly: t('ежегодно') })[f];
+export const perPeriod = (f: Frequency) => ({ monthly: t('/ месяц'), quarterly: t('/ квартал'), yearly: t('/ год') })[f];
 
 export function money(value: string | number): string {
   const n = Number(value);
-  return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat(locale(), { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(n);
 }
 
 export function moneyWith(value: string | number, currency: Currency): string {
@@ -17,19 +24,19 @@ export function moneyWith(value: string | number, currency: Currency): string {
 
 // Dates are calendar days (YYYY-MM-DD); noon avoids shifting the day in any browser timezone.
 export function date(value: string | null | undefined, options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }): string {
-  return value ? new Intl.DateTimeFormat('ru-RU', options).format(new Date(value.slice(0, 10) + 'T12:00:00')) : '—';
+  return value ? new Intl.DateTimeFormat(locale(), options).format(new Date(value.slice(0, 10) + 'T12:00:00')) : '—';
 }
 
 export const longDate = (value: string | null | undefined) => date(value, { day: 'numeric', month: 'long', year: 'numeric' });
+export const numericDate = (value: string | null | undefined) => date(value, { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-export function plural(n: number, one: string, few: string, many: string): string {
-  if (n % 10 === 1 && n % 100 !== 11) return one;
-  if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return few;
-  return many;
+/** Kept for existing callers: picks the Russian or English plural form. */
+export function plural(n: number, one: string, few: string, many: string, english?: [string, string]): string {
+  return tp(n, [one, few, many], english ?? [t(one), t(many)]);
 }
 
 export function monthLabel(month: string): string {
-  const label = date(month + '-01', { month: 'long', year: 'numeric' }).replace(/ г\.$/, '');
+  const label = date(month + '-01', { month: 'long', year: 'numeric' }).replace(/ г\.$/, ''); // i18n-ignore: strips Russian «г.»
   return label[0].toUpperCase() + label.slice(1);
 }
 

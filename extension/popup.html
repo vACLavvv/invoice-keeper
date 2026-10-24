@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Invoice Keeper</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="icons/icon-32.png" alt="" width="24" height="24"> invoice keeper</div>
+    <button id="toggle-settings" class="link" type="button">настройки</button>
+  </header>
+
+  <section id="settings" hidden>
+    <div class="ghost">НАСТРОЙКИ</div>
+    <label>Адрес сервера<input id="server" type="url" placeholder="http://217.144.184.107" autocomplete="off"></label>
+    <label>Ключ API<input id="key" type="password" placeholder="ik_…" autocomplete="off"></label>
+    <p class="hint">Ключ создаётся в панели: раздел «Расширение» → «Создать ключ». Ключ умеет только отправлять предложения платежей.</p>
+    <div class="row">
+      <button id="save" class="primary" type="button">Сохранить и проверить</button>
+      <span id="settings-status" class="muted"></span>
+    </div>
+  </section>
+
+  <main id="main">
+    <div class="ghost">НАЙДЕНО</div>
+    <h1 id="headline">ищем платежи…</h1>
+    <p id="page" class="muted"></p>
+    <div id="notice" class="notice" hidden></div>
+    <form id="list"></form>
+    <div class="actions">
+      <button id="manual" type="button" class="secondary">добавить вручную +</button>
+      <button id="send" type="button" class="primary" disabled>отправить</button>
+    </div>
+    <p class="hint">Платежи попадут в «Предложения»: администратор подтвердит их в панели. Читается только эта вкладка и только сейчас.</p>
+  </main>
+
+  <template id="card">
+    <fieldset class="card">
+      <label class="check"><input type="checkbox" name="use" checked><span class="title-text"></span></label>
+      <input name="title" maxlength="120" required aria-label="Название">
+      <div class="grid">
+        <input name="amount" inputmode="decimal" required aria-label="Сумма" placeholder="0.00">
+        <select name="currency" aria-label="Валюта"><option>RUB</option><option>USD</option><option>EUR</option></select>
+        <input name="date" type="date" required aria-label="Следующая оплата" min="2000-01-01" max="2100-12-31">
+      </div>
+      <p class="context muted"></p>
+      <p class="status"></p>
+    </fieldset>
+  </template>
+</body>
+</html>

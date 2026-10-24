@@ -36,60 +36,162 @@ func monthlyDate(first time.Time, index, anchor int) time.Time {
 	return civil(y, m, min(anchor, daysIn(y, m)))
 }
 
+// frequencyMonths is the step between periods; the anchor day keeps every step on the same day.
+var frequencyMonths = map[string]int{"monthly": 1, "quarterly": 3, "yearly": 12}
+
+var frequencies = []string{"monthly", "quarterly", "yearly"}
+
+// periodDate is the due date of period index: 29 Feb yearly → 28 Feb in a common year.
+func periodDate(first time.Time, index, anchor int, frequency string) time.Time {
+	step := frequencyMonths[frequency]
+	if step == 0 {
+		step = 1
+	}
+	return monthlyDate(first, index*step, anchor)
+}
+
 type querier interface {
 	Exec(query string, args ...any) (sql.Result, error)
 	Query(query string, args ...any) (*sql.Rows, error)
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-// materialize keeps the calendar complete for both the current and the following month.
-func materialize(q querier, today time.Time) error {
-	horizon := monthlyDate(civil(today.Year(), today.Month(), 1), 2, 1).AddDate(0, 0, -1)
-	type plan struct {
-		id, amount, anchor, next int64
-		first, currency          string
+// pause skips due dates from From through Until (inclusive); an open pause has no Until.
+type pause struct {
+	From  time.Time
+	Until *time.Time
+}
+
+func (p pause) covers(due time.Time) bool {
+	return !due.Before(p.From) && (p.Until == nil || !due.After(*p.Until))
+}
+
+func isPaused(pauses []pause, due time.Time) bool {
+	for _, p := range pauses {
+		if p.covers(due) {
+			return true
+		}
 	}
-	rows, err := q.Query("SELECT id,amount_cents,anchor_day,next_index,first_due_date,currency FROM recurring_payments WHERE active=1")
+	return false
+}
+
+func loadPauses(q querier) (map[int64][]pause, error) {
+	rows, err := q.Query("SELECT recurring_payment_id,from_date,until_date FROM payment_pauses ORDER BY from_date")
 	if err != nil {
-		return err
+		return nil, err
 	}
+	defer rows.Close()
+	result := map[int64][]pause{}
+	for rows.Next() {
+		var id int64
+		var from string
+		var until sql.NullString
+		if err := rows.Scan(&id, &from, &until); err != nil {
+			return nil, err
+		}
+		p := pause{}
+		if p.From, err = parseDate(from); err != nil {
+			return nil, err
+		}
+		if until.Valid {
+			u, err := parseDate(until.String)
+			if err != nil {
+				return nil, err
+			}
+			p.Until = &u
+		}
+		result[id] = append(result[id], p)
+	}
+	return result, rows.Err()
+}
+
+// plan is the repetition rule of one recurring payment.
+type plan struct {
+	id, amount, anchor, next int64
+	first                    time.Time
+	currency, frequency      string
+}
+
+func loadPlans(q querier, where string) ([]plan, error) {
+	rows, err := q.Query("SELECT id,amount_cents,anchor_day,next_index,first_due_date,currency,frequency FROM recurring_payments WHERE " + where)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	var plans []plan
 	for rows.Next() {
 		var p plan
-		if err := rows.Scan(&p.id, &p.amount, &p.anchor, &p.next, &p.first, &p.currency); err != nil {
-			rows.Close()
-			return err
+		var first string
+		if err := rows.Scan(&p.id, &p.amount, &p.anchor, &p.next, &first, &p.currency, &p.frequency); err != nil {
+			return nil, err
+		}
+		if p.first, err = parseDate(first); err != nil {
+			return nil, err
 		}
 		plans = append(plans, p)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	return plans, rows.Err()
+}
+
+// materialize keeps the calendar complete through the end of next month and always keeps
+// the next upcoming period, so a yearly payment shows its next date right away.
+// Periods inside a pause are skipped: they are neither created nor overdue later.
+func materialize(q querier, today time.Time) error {
+	horizon := monthlyDate(civil(today.Year(), today.Month(), 1), 2, 1).AddDate(0, 0, -1)
+	plans, err := loadPlans(q, "active=1")
+	if err != nil {
+		return err
+	}
+	pauses, err := loadPauses(q)
+	if err != nil {
 		return err
 	}
 	for _, p := range plans {
-		first, err := parseDate(p.first)
-		if err != nil {
-			return err
-		}
+		// A pause can end earlier than planned (resume), so paused payments are re-scanned from the start.
 		index := p.next
-		for {
-			due := monthlyDate(first, int(index), int(p.anchor))
-			if index > 0 && due.After(horizon) {
+		if len(pauses[p.id]) > 0 {
+			index = 0
+		}
+		prev := time.Time{}
+		if index > 0 {
+			prev = periodDate(p.first, int(index-1), int(p.anchor), p.frequency)
+		}
+		for ; index < 2400; index++ {
+			due := periodDate(p.first, int(index), int(p.anchor), p.frequency)
+			if index > 0 && due.After(horizon) && prev.After(today) {
 				break
+			}
+			prev = due
+			if isPaused(pauses[p.id], due) {
+				continue
 			}
 			if _, err := q.Exec("INSERT OR IGNORE INTO payment_occurrences(recurring_payment_id,due_date,amount_cents,currency) VALUES(?,?,?,?)",
 				p.id, formatDate(due), p.amount, p.currency); err != nil {
 				return err
 			}
-			index++
 		}
-		if index != p.next {
+		if index != p.next && len(pauses[p.id]) == 0 {
 			if _, err := q.Exec("UPDATE recurring_payments SET next_index=? WHERE id=?", index, p.id); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// projectedDates lists the due dates of a plan within [from, to], skipping pauses.
+func projectedDates(p plan, pauses []pause, from, to time.Time) []time.Time {
+	var dates []time.Time
+	for index := 0; index < 2400; index++ {
+		due := periodDate(p.first, index, int(p.anchor), p.frequency)
+		if due.After(to) {
+			break
+		}
+		if !due.Before(from) && !isPaused(pauses, due) {
+			dates = append(dates, due)
+		}
+	}
+	return dates
 }
 
 func money(cents int64) string { return fmt.Sprintf("%d.%02d", cents/100, cents%100) }
@@ -107,21 +209,41 @@ type Occurrence struct {
 	IsLate             bool    `json:"is_late"`
 	Active             bool    `json:"active"`
 	UpdatedBy          *string `json:"updated_by"`
+	Frequency          string  `json:"frequency"`
+	Category           *string `json:"category"`
+	Assignee           *Person `json:"assignee"`
+	Receipts           int     `json:"receipts"`
 
 	amountCents int64
 }
 
-const occurrenceSelect = `SELECT o.id,o.recurring_payment_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,r.active,o.updated_by
-FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id`
+// Person is a regular user shown next to a payment (its assignee).
+type Person struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+}
+
+const occurrenceSelect = `SELECT o.id,o.recurring_payment_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,r.active,o.updated_by,
+r.frequency,r.category,u.id,u.display_name,u.username,(SELECT COUNT(*) FROM receipts x WHERE x.occurrence_id=o.id)
+FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id LEFT JOIN users u ON u.id=r.assignee_id`
 
 type scanner interface{ Scan(dest ...any) error }
 
 // scanOccurrence derives status and lateness from the two dates; nothing derived is stored.
 func scanOccurrence(row scanner, today time.Time) (Occurrence, error) {
 	var o Occurrence
-	var paid, updatedBy sql.NullString
-	if err := row.Scan(&o.ID, &o.RecurringPaymentID, &o.Title, &o.amountCents, &o.Currency, &o.DueDate, &paid, &o.Active, &updatedBy); err != nil {
+	var paid, updatedBy, category, assigneeName, assigneeLogin sql.NullString
+	var assigneeID sql.NullInt64
+	if err := row.Scan(&o.ID, &o.RecurringPaymentID, &o.Title, &o.amountCents, &o.Currency, &o.DueDate, &paid, &o.Active, &updatedBy,
+		&o.Frequency, &category, &assigneeID, &assigneeName, &assigneeLogin, &o.Receipts); err != nil {
 		return o, err
+	}
+	if category.Valid {
+		o.Category = &category.String
+	}
+	if assigneeID.Valid {
+		o.Assignee = &Person{ID: assigneeID.Int64, DisplayName: assigneeName.String, Username: assigneeLogin.String}
 	}
 	due, err := parseDate(o.DueDate)
 	if err != nil {

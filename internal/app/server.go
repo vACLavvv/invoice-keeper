@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,12 +27,21 @@ type Server struct {
 	Settings *Settings
 	Worker   *ReminderWorker
 	Today    func() time.Time
+	Now      func() time.Time // wall clock for one-time codes; replaceable in tests
 
-	assets    fs.FS
-	pages     map[string]page
-	adminHash string
-	handler   http.Handler
+	assets      fs.FS
+	pages       map[string]page
+	adminHash   string
+	handler     http.Handler
+	botUsername atomic.Value // set by the Telegram bot after getMe
 }
+
+func (s *Server) BotUsername() string {
+	name, _ := s.botUsername.Load().(string)
+	return name
+}
+
+func (s *Server) SetBotUsername(name string) { s.botUsername.Store(name) }
 
 // NewServer prepares routes and materializes periods. The reminder loop is started separately.
 func NewServer(settings *Settings, db *DB, assets fs.FS, opts Options) (*Server, error) {
@@ -40,7 +50,7 @@ func NewServer(settings *Settings, db *DB, assets fs.FS, opts Options) (*Server,
 		today = func() time.Time { return localToday(settings) }
 	}
 	s := &Server{
-		DB: db, Settings: settings, Today: today, assets: assets,
+		DB: db, Settings: settings, Today: today, Now: time.Now, assets: assets,
 		Worker:    NewReminderWorker(db, settings, opts.Sender, today),
 		adminHash: hashPassword(settings.AdminPassword),
 	}
@@ -75,7 +85,11 @@ func (h handlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for key, values := range apiErr.Header {
 		w.Header()[key] = values
 	}
-	writeJSON(w, apiErr.Status, map[string]any{"detail": apiErr.Detail})
+	body := map[string]any{"detail": apiErr.Detail}
+	if apiErr.Code != "" {
+		body["code"] = apiErr.Code
+	}
+	writeJSON(w, apiErr.Status, body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) error {
@@ -122,6 +136,10 @@ func (s *Server) routes() http.Handler {
 	handle("GET /login", s.loginPage)
 	handle("GET /api/v1/docs", s.docs)
 	handle("GET /api/v1/openapi.json", s.openapi)
+	handle("GET /extension.zip", s.extensionZip)
+	preflight := cors(func(http.ResponseWriter, *http.Request) error { return nil })
+	handle("OPTIONS /api/v1/extension/whoami", preflight)
+	handle("OPTIONS /api/v1/payment-suggestions", preflight)
 	for _, route := range s.apiRoutes() {
 		handle(route.pattern, route.handler)
 	}
@@ -142,15 +160,34 @@ func (s *Server) apiRoutes() []route {
 		{"GET /api/v1/auth/me", s.me},
 		{"POST /api/v1/auth/logout", s.logout},
 		{"GET /api/v1/settings", s.appSettings},
+		{"POST /api/v1/auth/password", s.changePassword},
+		{"GET /api/v1/auth/2fa", s.twoFactorStatus},
+		{"POST /api/v1/auth/2fa/setup", s.twoFactorSetup},
+		{"POST /api/v1/auth/2fa/enable", s.twoFactorEnable},
+		{"POST /api/v1/auth/2fa/disable", s.twoFactorDisable},
+		{"GET /api/v1/me/telegram", s.myTelegram},
+		{"POST /api/v1/me/telegram/link", s.myTelegramLinkCode},
+		{"DELETE /api/v1/me/telegram", s.myTelegramUnlink},
 
 		{"GET /api/v1/recurring-payments", s.recurringList},
 		{"POST /api/v1/recurring-payments", s.recurringCreate},
 		{"DELETE /api/v1/recurring-payments/{payment_id}", s.recurringDelete},
+		{"PATCH /api/v1/recurring-payments/{payment_id}", s.recurringUpdate},
+		{"POST /api/v1/recurring-payments/{payment_id}/pause", s.recurringPause},
+		{"POST /api/v1/recurring-payments/{payment_id}/resume", s.recurringResume},
+		{"POST /api/v1/recurring-payments/import", s.recurringImport},
+		{"GET /api/v1/recurring-payments/import/template", s.importTemplate},
 
 		{"GET /api/v1/payment-occurrences", s.occurrenceList},
 		{"GET /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceGet},
 		{"PATCH /api/v1/payment-occurrences/{occurrence_id}", s.occurrenceUpdate},
 		{"GET /api/v1/payments/summary", s.summary},
+		{"GET /api/v1/payment-occurrences/export", s.occurrencesExport},
+		{"GET /api/v1/payment-occurrences/{occurrence_id}/receipts", s.receiptsList},
+		{"POST /api/v1/payment-occurrences/{occurrence_id}/receipts", s.receiptsAdd},
+		{"GET /api/v1/receipts/{receipt_id}/file", s.receiptFile},
+		{"DELETE /api/v1/receipts/{receipt_id}", s.receiptsDelete},
+		{"GET /api/v1/budget", s.budget},
 
 		{"GET /api/v1/users", s.usersList},
 		{"POST /api/v1/users", s.usersCreate},
@@ -159,6 +196,15 @@ func (s *Server) apiRoutes() []route {
 
 		{"GET /api/v1/reminders", s.remindersList},
 		{"GET /api/v1/audit-log", s.auditList},
+
+		{"GET /api/v1/api-keys", s.apiKeysList},
+		{"POST /api/v1/api-keys", s.apiKeysCreate},
+		{"DELETE /api/v1/api-keys/{key_id}", s.apiKeysDelete},
+		{"GET /api/v1/extension/whoami", cors(s.extensionWhoami)},
+		{"POST /api/v1/payment-suggestions", cors(s.suggestionsSubmit)},
+		{"GET /api/v1/payment-suggestions", s.suggestionsList},
+		{"POST /api/v1/payment-suggestions/{suggestion_id}/accept", s.suggestionsAccept},
+		{"POST /api/v1/payment-suggestions/{suggestion_id}/reject", s.suggestionsReject},
 	}
 }
 
@@ -309,13 +355,14 @@ func clientIP(r *http.Request) string {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
-	f, err := readForm(r, "username", "password")
+	f, err := readForm(r, "username", "password", "code")
 	if err != nil {
 		return err
 	}
 	f.require("username", "password")
 	username := f.text("username", textRule{trim: true, min: 1, max: 64})
 	password := f.text("password", textRule{min: 1, max: 128})
+	code := f.text("code", textRule{trim: true, max: 12})
 	if f.isNull("username") || f.isNull("password") {
 		f.add("", "Укажите логин и пароль", "missing")
 	}
@@ -332,23 +379,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	var storedName, storedDisplay, storedHash string
 	found := false
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		for _, key := range keys {
-			var count, resetAt int64
-			err := tx.QueryRow("SELECT count,reset_at FROM auth_attempts WHERE key=? AND reset_at>?", key, now).Scan(&count, &resetAt)
-			if err == nil && count >= 10 {
-				return &apiError{Status: 429, Detail: "Слишком много попыток. Попробуйте через 5 минут",
-					Header: http.Header{"Retry-After": {strconv.FormatInt(resetAt-now, 10)}}}
-			}
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
-		}
-		for _, key := range keys {
-			if _, err := tx.Exec(`INSERT INTO auth_attempts(key,count,reset_at) VALUES(?,1,?)
-				ON CONFLICT(key) DO UPDATE SET count=CASE WHEN reset_at<=? THEN 1 ELSE count+1 END,
-				reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END`, key, now+300, now, now, now+300); err != nil {
-				return err
-			}
+		if err := limitAttempts(tx, keys, now); err != nil {
+			return err
 		}
 		err := tx.QueryRow("SELECT id,username,display_name,password_hash FROM users WHERE username=? COLLATE NOCASE", *username).
 			Scan(&storedID, &storedName, &storedDisplay, &storedHash)
@@ -369,6 +401,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !verifyPassword(*password, encoded) || !(isAdmin || found) {
 		return fail(401, "Неверный логин или пароль")
+	}
+	if isAdmin {
+		if err := s.checkSecondFactor(code); err != nil {
+			return err
+		}
 	}
 	token, csrf := randomToken(32), randomToken(32)
 	user := User{ID: storedID, Username: storedName, DisplayName: storedDisplay, Role: "user", CSRFToken: csrf}
@@ -400,6 +437,30 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, user)
 }
 
+// limitAttempts refuses after 10 failures in 5 minutes per key and counts this attempt;
+// a successful sign-in clears the user's bucket afterwards.
+func limitAttempts(tx *sql.Tx, keys []string, now int64) error {
+	for _, key := range keys {
+		var count, resetAt int64
+		err := tx.QueryRow("SELECT count,reset_at FROM auth_attempts WHERE key=? AND reset_at>?", key, now).Scan(&count, &resetAt)
+		if err == nil && count >= 10 {
+			return &apiError{Status: 429, Detail: "Слишком много попыток. Попробуйте через 5 минут",
+				Header: http.Header{"Retry-After": {strconv.FormatInt(resetAt-now, 10)}}}
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	for _, key := range keys {
+		if _, err := tx.Exec(`INSERT INTO auth_attempts(key,count,reset_at) VALUES(?,1,?)
+			ON CONFLICT(key) DO UPDATE SET count=CASE WHEN reset_at<=? THEN 1 ELSE count+1 END,
+			reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END`, key, now+300, now, now, now+300); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
 	user, err := s.currentUser(r)
 	if err != nil {
@@ -427,6 +488,8 @@ func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	return writeJSON(w, 200, map[string]any{
 		"timezone": s.Settings.Timezone, "today": formatDate(s.Today()), "telegram_enabled": s.Settings.TelegramEnabled,
+		"team_chat": s.Settings.TelegramEnabled && s.Settings.TelegramChatID != "", "bot_username": s.BotUsername(),
 		"reminder_days": 3, "reminder_interval_seconds": s.Settings.ReminderInterval,
+		"support_telegram": s.Settings.SupportTelegram, "support_email": s.Settings.SupportEmail,
 	})
 }

@@ -22,6 +22,8 @@ type Settings struct {
 	TelegramBotToken string
 	TelegramChatID   string
 	ReminderInterval int
+	SupportTelegram  string // shown on the help page, e.g. @team_support
+	SupportEmail     string
 
 	location *time.Location
 }
@@ -48,8 +50,9 @@ func (s *Settings) Validate() error {
 	if !usernamePattern.MatchString(s.AdminUsername) || n < 12 || n > 128 || s.AdminPassword == "replace-with-a-long-random-password" {
 		return errors.New("Задайте ADMIN_USERNAME и случайный ADMIN_PASSWORD (минимум 12 символов). Запуск: invoice-keeper bootstrap --demo")
 	}
-	if s.TelegramEnabled && (s.TelegramBotToken == "" || s.TelegramChatID == "") {
-		return errors.New("Для Telegram необходимы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID")
+	// Without TELEGRAM_CHAT_ID reminders go only to users who linked Telegram in the panel.
+	if s.TelegramEnabled && s.TelegramBotToken == "" {
+		return errors.New("Для Telegram необходим TELEGRAM_BOT_TOKEN")
 	}
 	if s.SessionHours < 1 || s.SessionHours > 168 || s.ReminderInterval < 10 || s.ReminderInterval > 3600 {
 		return errors.New("Недопустимый срок сессии или интервал напоминаний")
@@ -142,6 +145,8 @@ func SettingsFromEnv(root string) (*Settings, error) {
 		TelegramBotToken: env("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:   env("TELEGRAM_CHAT_ID", ""),
 		ReminderInterval: interval,
+		SupportTelegram:  strings.TrimSpace(env("SUPPORT_TELEGRAM", "")),
+		SupportEmail:     strings.TrimSpace(env("SUPPORT_EMAIL", "")),
 	}
 	if err := s.Validate(); err != nil {
 		return nil, err

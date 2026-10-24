@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import styled from 'styled-components';
+import { t } from '@/lib/i18n';
 import { IconButton, Notice, Row } from './ui';
 
-type Props = { title: string; eyebrow?: string; onClose: () => void; children: ReactNode };
+type Props = { title: string; eyebrow?: string; wide?: boolean; onClose: () => void; children: ReactNode };
 
 /** Native <dialog>: focus trap, Esc and the backdrop come from the browser. */
-export function Modal({ title, eyebrow = 'INVOICE KEEPER', onClose, children }: Props) {
+export function Modal({ title, eyebrow = 'INVOICE KEEPER', wide = false, onClose, children }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -15,6 +16,7 @@ export function Modal({ title, eyebrow = 'INVOICE KEEPER', onClose, children }: 
   return (
     <Dialog
       ref={ref}
+      $wide={wide}
       aria-labelledby="modal-title"
       onCancel={(e) => { e.preventDefault(); onClose(); }}
       onClick={(e) => { if (e.target === ref.current) onClose(); }}
@@ -24,7 +26,7 @@ export function Modal({ title, eyebrow = 'INVOICE KEEPER', onClose, children }: 
           <Eyebrow>{eyebrow}</Eyebrow>
           <h2 id="modal-title">{title}</h2>
         </div>
-        <IconButton type="button" aria-label="Закрыть" onClick={onClose}>×</IconButton>
+        <IconButton type="button" aria-label={t('Закрыть')} onClick={onClose}>×</IconButton>
       </Header>
       {children}
     </Dialog>
@@ -64,16 +66,17 @@ export function ModalForm({ onSubmit, actions, children }: FormProps) {
   );
 }
 
-const Dialog = styled.dialog`
-  width: min(52rem, calc(100vw - 3.2rem));
+const Dialog = styled.dialog<{ $wide: boolean }>`
+  width: min(${({ $wide }) => ($wide ? "88rem" : "52rem")}, calc(100vw - 3.2rem));
   max-height: calc(100dvh - 3.2rem);
+  overflow-y: auto;
   padding: 2.8rem;
   border: 1px solid ${({ theme }) => theme.color.line};
   border-radius: ${({ theme }) => theme.radius.xl};
   background: ${({ theme }) => theme.color.surface};
   color: ${({ theme }) => theme.color.text};
-  box-shadow: 0 2.4rem 6.4rem rgba(0, 0, 0, 0.6);
-  &::backdrop { background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(0.3rem); }
+  box-shadow: 0 2.4rem 6.4rem ${({ theme }) => theme.color.shadow};
+  &::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(0.3rem); }
   h2 { font-size: 2.4rem; font-weight: 600; text-transform: lowercase; color: ${({ theme }) => theme.color.strong}; }
   ${({ theme }) => theme.mobile} { padding: 2rem; }
 `;

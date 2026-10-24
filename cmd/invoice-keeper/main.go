@@ -4,6 +4,7 @@
 //	invoice-keeper bootstrap [--demo]
 //	invoice-keeper backup [--destination path]
 //	invoice-keeper healthcheck [--port 8000]
+//	invoice-keeper 2fa-off
 package main
 
 import (
@@ -44,8 +45,10 @@ func main() {
 		err = backup(args)
 	case "healthcheck":
 		err = healthcheck(args)
+	case "2fa-off":
+		err = twoFactorOff()
 	default:
-		err = fmt.Errorf("неизвестная команда %q; доступны serve, bootstrap, backup, healthcheck", command)
+		err = fmt.Errorf("неизвестная команда %q; доступны serve, bootstrap, backup, healthcheck, 2fa-off", command)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -83,6 +86,9 @@ func serve(args []string) error {
 	}
 	server.Worker.Start()
 	defer server.Worker.Stop()
+	bot := app.NewBot(server, "")
+	bot.Start()
+	defer bot.Stop()
 
 	httpServer := &http.Server{
 		Addr:              net.JoinHostPort(*host, strconv.Itoa(*port)),
@@ -124,6 +130,24 @@ func backup(args []string) error {
 		return err
 	}
 	fmt.Println("Создана копия:", path)
+	return nil
+}
+
+// twoFactorOff is the recovery path when the admin lost the authenticator.
+func twoFactorOff() error {
+	settings, err := app.SettingsFromEnv(root())
+	if err != nil {
+		return err
+	}
+	db, err := app.OpenDB(settings.DatabasePath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := app.DisableTwoFactor(db); err != nil {
+		return err
+	}
+	fmt.Println("Двухфакторный вход администратора выключен.")
 	return nil
 }
 

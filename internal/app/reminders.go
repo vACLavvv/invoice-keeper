@@ -16,6 +16,7 @@ import (
 )
 
 type ReminderRow struct {
+	ChatID       string // empty: the team chat (TELEGRAM_CHAT_ID)
 	OccurrenceID int64
 	Title        string
 	AmountCents  int64
@@ -33,8 +34,13 @@ type SendResult struct {
 type Sender func(ReminderRow) SendResult
 
 func reminderText(row ReminderRow) string {
-	return fmt.Sprintf("🔔 Пора запланировать оплату\n\n%s\nСумма: %s %s\nСрок: %s\n\nInvoice Keeper · отметьте оплату в панели",
+	return fmt.Sprintf("🔔 Пора запланировать оплату\n\n%s\nСумма: %s %s\nСрок: %s\n\nОплатили — нажмите «Оплачено» или отметьте в панели",
 		row.Title, money(row.AmountCents), row.Currency, row.DueDate)
+}
+
+// paidKeyboard is the inline button under a reminder; the bot handles its callback (see bot.go).
+func paidKeyboard(occurrenceID int64) map[string]any {
+	return map[string]any{"inline_keyboard": [][]map[string]string{{{"text": "✅ Оплачено", "callback_data": "paid:" + itoa(occurrenceID)}}}}
 }
 
 // TelegramSender posts plain text (no parse_mode, so titles cannot inject markup).
@@ -47,7 +53,11 @@ func TelegramSender(s *Settings, baseURL string) Sender {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	return func(row ReminderRow) SendResult {
-		body, _ := json.Marshal(map[string]string{"chat_id": s.TelegramChatID, "text": reminderText(row)})
+		chat := s.TelegramChatID
+		if row.ChatID != "" {
+			chat = row.ChatID
+		}
+		body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": reminderText(row), "reply_markup": paidKeyboard(row.OccurrenceID)})
 		response, err := client.Post(baseURL+"/bot"+s.TelegramBotToken+"/sendMessage", "application/json", bytes.NewReader(body))
 		// Never persist err, the response or the URL: each can expose the bot token.
 		if err != nil {
@@ -177,7 +187,7 @@ func (w *ReminderWorker) tick() error {
 			{`UPDATE reminders SET state='cancelled' WHERE state='pending' AND occurrence_id IN
 				(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0)`, nil},
 		}
-		if w.Settings.TelegramEnabled {
+		if w.Settings.TelegramEnabled && w.Settings.TelegramChatID != "" {
 			horizon := formatDate(today.AddDate(0, 0, 3))
 			statements = append(statements,
 				stmt{"INSERT OR IGNORE INTO reminders(occurrence_id,state) SELECT id,'pending' FROM (" + eligible + ")", []any{horizon}},
@@ -194,6 +204,12 @@ func (w *ReminderWorker) tick() error {
 	})
 	if err != nil || !w.Settings.TelegramEnabled {
 		return err
+	}
+	if err := w.sendPersonal(today); err != nil {
+		return err
+	}
+	if w.Settings.TelegramChatID == "" {
+		return nil
 	}
 	for range 20 {
 		var row ReminderRow
@@ -248,6 +264,59 @@ func (w *ReminderWorker) tick() error {
 		}
 		if result.State == "pending" {
 			return nil
+		}
+	}
+	return nil
+}
+
+// sendPersonal writes to linked users in private: the assignee of a payment, and the admin for
+// assigned payments (or for all, when there is no team chat). Only upcoming periods (today…+3 days),
+// so linking an account does not flood it with old debts. One message per period and chat.
+func (w *ReminderWorker) sendPersonal(today time.Time) error {
+	noTeamChat := w.Settings.TelegramChatID == ""
+	for range 20 {
+		var row ReminderRow
+		var chat int64
+		found := false
+		err := w.DB.Write(func(tx *sql.Tx) error {
+			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,t.chat_id
+				FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
+				JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
+				WHERE r.active=1 AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
+				AND NOT EXISTS (SELECT 1 FROM personal_reminders p WHERE p.occurrence_id=o.id AND p.chat_id=t.chat_id)
+				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, formatDate(today), formatDate(today.AddDate(0, 0, 3))).
+				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &chat)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			found = true
+			_, err = tx.Exec("INSERT INTO personal_reminders(occurrence_id,chat_id,state) VALUES(?,?,'sending')", row.OccurrenceID, chat)
+			return err
+		})
+		if err != nil || !found {
+			return err
+		}
+		row.ChatID = itoa(chat)
+		result := w.send(row)
+		err = w.DB.Write(func(tx *sql.Tx) error {
+			if result.State == "pending" {
+				// Certainly not delivered (no connection or rate limit): try again on a later pass.
+				_, err := tx.Exec("DELETE FROM personal_reminders WHERE occurrence_id=? AND chat_id=?", row.OccurrenceID, chat)
+				return err
+			}
+			state, sentAt := "failed", any(nil)
+			if result.State == "sent" {
+				state, sentAt = "sent", timestamp()
+			}
+			_, err := tx.Exec("UPDATE personal_reminders SET state=?,sent_at=?,error=? WHERE occurrence_id=? AND chat_id=?",
+				state, sentAt, nullable(result.Error), row.OccurrenceID, chat)
+			return err
+		})
+		if err != nil || result.State == "pending" {
+			return err
 		}
 	}
 	return nil

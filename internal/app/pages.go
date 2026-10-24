@@ -26,6 +26,8 @@ type page struct {
 var panelPages = map[string]string{
 	"/": "index.html", "/recurring": "recurring.html", "/calendar": "calendar.html",
 	"/team": "team.html", "/activity": "activity.html",
+	"/suggestions": "suggestions.html", "/extension": "extension.html",
+	"/budget": "budget.html", "/help": "help.html", "/account": "account.html",
 }
 
 var inlineScript = regexp.MustCompile(`(?s)<script([^>]*)>(.*?)</script>`)

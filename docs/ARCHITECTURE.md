@@ -24,7 +24,13 @@ Browser (Next.js export) → net/http (auth + role + CSRF) → SQLite
 
 `docs/openapi.json`: спецификация API, она же отдаётся на `/api/v1/openapi.json` и в Swagger. Тест сверяет её с таблицей маршрутов `apiRoutes()` в обе стороны — при изменении API правьте оба места.
 
-`cmd/invoice-keeper`: команды `serve`, `bootstrap`, `backup`, `healthcheck`. `assets.go` встраивает `web/app` (через `all:`, иначе `go:embed` пропустит каталог `_next`), `web/swagger` и `docs/openapi.json`.
+`internal/app/extension.go` и `extension/`: ключи API (`Authorization: Bearer ik_…`, в базе только SHA-256), предложения платежей с уникальным `source_key` и CORS без cookie только для двух эндпоинтов ключа. Само расширение — Manifest V3 с `activeTab`, `scripting`, `storage`; `detect.js` внедряется по клику и возвращает найденное во всплывающее окно. Папка `extension/` встроена в бинарник и отдаётся как `/extension.zip`.
+
+`internal/app/recurring.go`, `account.go`, `telegram_links.go`, `receipts.go`, `budget.go`, `csv.go`: периодичность и пауза (`payment_pauses`; периоды внутри паузы не создаются, у платежа с паузами материализация идёт с первого периода, чтобы возобновление восстановило сроки), смена пароля и TOTP администратора (секрет в `app_state`, повтор кода отклоняется по номеру шага), привязка Telegram (одноразовые коды как SHA-256) и личные напоминания (`personal_reminders`, одно сообщение на период и чат), чеки в SQLite, бюджет с проекцией по правилу повторения, CSV с защитой от формул. Сравнение регистра для кириллицы делается в Go: `NOCASE` и `lower()` в SQLite понимают только ASCII.
+
+`frontend/lib/i18n.ts` и `lib/en.ts`: тексты пишутся по-русски в `t('…')`, английский — словарь; `npm run i18n` проверяет, что словарь полный и русского текста вне `t()` нет. Тема и язык хранятся в браузере.
+
+`cmd/invoice-keeper`: команды `serve`, `bootstrap`, `backup`, `healthcheck`, `2fa-off`. `assets.go` встраивает `web/app` (через `all:`, иначе `go:embed` пропустит каталог `_next`), `web/swagger` и `docs/openapi.json`.
 
 При падении после доставки, но до записи результата, остаётся `sending`. Через 5 минут запись становится `uncertain`; повторной отправки нет. Снятие отметки оплаты не сбрасывает `sent`. Только заведомо недоставленные попытки (ConnectError и явный 429) повторяются автоматически. Журнал отдаёт безопасное описание ошибки; URL с токеном и исходный ответ Telegram не сохраняются.
 

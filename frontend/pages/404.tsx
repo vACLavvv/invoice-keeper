@@ -1,15 +1,16 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import styled from 'styled-components';
+import { t } from '@/lib/i18n';
 
 export default function NotFound() {
   return (
     <Page>
-      <Head><title>Страница не найдена · Invoice Keeper</title></Head>
+      <Head><title>{t('Страница не найдена')} · Invoice Keeper</title></Head>
       <Ghost aria-hidden="true">404</Ghost>
-      <h1>такой страницы нет</h1>
-      <p>Возможно, ссылка устарела. Вернитесь к платежам.</p>
-      <Link href="/">на главную →</Link>
+      <h1>{t('такой страницы нет')}</h1>
+      <p>{t('Возможно, ссылка устарела. Вернитесь к платежам.')}</p>
+      <Link href="/">{t('на главную →')}</Link>
     </Page>
   );
 }

@@ -2,21 +2,28 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useState, type ReactNode } from 'react';
-import styled, { css } from 'styled-components';
-import { api, type Occurrence } from '@/lib/api';
+import styled, { css, useTheme } from 'styled-components';
+import { api, type Occurrence, type Suggestion } from '@/lib/api';
 import { date } from '@/lib/format';
+import { t } from '@/lib/i18n';
+import { usePreferences, type ThemeMode } from '@/lib/preferences';
 import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 import { icons } from './icons';
 import { CreatePaymentModal } from './PaymentModals';
 import { Sticker } from './ui';
 
-const nav = [
-  { href: '/', label: 'Платежи', icon: icons.payments },
-  { href: '/recurring', label: 'Регулярные', icon: icons.recurring },
-  { href: '/calendar', label: 'Календарь', icon: icons.calendar },
-  { href: '/team', label: 'Команда', icon: icons.team, admin: true },
-  { href: '/activity', label: 'Журнал', icon: icons.activity, admin: true },
+const nav = () => [
+  { href: '/', label: t('Платежи'), icon: icons.payments },
+  { href: '/recurring', label: t('Регулярные'), icon: icons.recurring },
+  { href: '/calendar', label: t('Календарь'), icon: icons.calendar },
+  { href: '/budget', label: t('Бюджет'), icon: icons.budget },
+  { href: '/team', label: t('Команда'), icon: icons.team, admin: true },
+  { href: '/suggestions', label: t('Предложения'), icon: icons.inbox, admin: true },
+  { href: '/activity', label: t('Журнал'), icon: icons.activity, admin: true },
+  { href: '/extension', label: t('Расширение'), icon: icons.extension },
+  { href: '/account', label: t('Аккаунт'), icon: icons.account },
+  { href: '/help', label: t('Помощь'), icon: icons.help },
 ];
 
 type Props = {
@@ -30,12 +37,15 @@ type Props = {
 
 export function Shell({ title, heading, subtitle, action, children }: Props) {
   const router = useRouter();
+  const theme = useTheme();
   const { user, settings, isAdmin } = useSession();
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   // Periods that are due today or late: what needs attention right now.
   const { data: open } = useLoad(() => api<Occurrence[]>('/payment-occurrences?include_archived=false'), []);
   const due = open?.filter((o) => o.status !== 'paid' && o.due_date <= settings.today).length ?? 0;
+  const { data: inbox } = useLoad(() => (isAdmin ? api<Suggestion[]>('/payment-suggestions?status=pending') : Promise.resolve([])), [isAdmin]);
+  const counters: Record<string, number> = { '/suggestions': inbox?.length ?? 0 };
 
   async function logout() {
     try {
@@ -53,24 +63,24 @@ export function Shell({ title, heading, subtitle, action, children }: Props) {
         <Account>
           <AccountRow>
             <span title={user.display_name}>@{user.username}</span>
-            <Bell href="/" aria-label={due ? `${due} к оплате сегодня или просрочено` : 'Нет срочных платежей'}>
+            <Bell href="/" aria-label={due ? t('{n} к оплате сегодня или просрочено', { n: due }) : t('Нет срочных платежей')}>
               {icons.bell}
               {due > 0 && <BellBadge>{due}</BellBadge>}
             </Bell>
           </AccountRow>
           <AccountRow>
             <Today>{date(settings.today, { day: 'numeric', month: 'short' }).replace('.', '')}</Today>
-            <Sticker $tilt={-8} title={settings.telegram_enabled ? 'Напоминания в Telegram включены' : 'Telegram не подключён'}>
+            <Sticker $tilt={-8} title={settings.telegram_enabled ? t('Напоминания в Telegram включены') : t('Telegram не подключён')}>
               {settings.telegram_enabled ? 'tg ✓' : 'tg off'}
             </Sticker>
           </AccountRow>
         </Account>
-        <Nav aria-label="Разделы">
-          {nav.filter((item) => !item.admin || isAdmin).map((item) => {
+        <Nav aria-label={t('Разделы')}>
+          {nav().filter((item) => !item.admin || isAdmin).map((item) => {
             const active = router.pathname === item.href;
             return (
               <NavItem key={item.href} href={item.href} $active={active} aria-current={active ? 'page' : undefined}>
-                {item.label}{item.icon}
+                <span>{item.label}{counters[item.href] ? <Count>{counters[item.href]}</Count> : null}</span>{item.icon}
               </NavItem>
             );
           })}
@@ -78,12 +88,13 @@ export function Shell({ title, heading, subtitle, action, children }: Props) {
         <Bottom>
           {isAdmin && (
             <AddButton type="button" onClick={() => setCreating(true)}>
-              Добавить платёж <Plus aria-hidden="true">+</Plus>
+              {t('Добавить платёж')} <Plus aria-hidden="true">+</Plus>
             </AddButton>
           )}
-          <NavItem href="/api/v1/docs" target="_blank" rel="noopener" $active={false}>Документация API{icons.docs}</NavItem>
-          <NavButton type="button" onClick={logout}>Выйти{icons.logout}</NavButton>
-          <LogoLink href="/" aria-label="Invoice Keeper — на главную"><Logo /></LogoLink>
+          <Switches />
+          <NavItem href="/api/v1/docs" target="_blank" rel="noopener" $active={false}>{t('Документация API')}{icons.docs}</NavItem>
+          <NavButton type="button" onClick={logout}>{t('Выйти')}{icons.logout}</NavButton>
+          <LogoLink href="/" aria-label={t('Invoice Keeper — на главную')}><Logo dark={theme.name === 'light'} /></LogoLink>
         </Bottom>
       </Sidebar>
       <Surface>
@@ -104,6 +115,56 @@ export function Shell({ title, heading, subtitle, action, children }: Props) {
     </Layout>
   );
 }
+
+/** Theme (system / light / dark) and language, remembered in this browser. */
+export function Switches({ compact = false }: { compact?: boolean }) {
+  const { mode, setMode, language, setLanguage } = usePreferences();
+  const modes: [ThemeMode, string, string][] = [['system', '◐', t('Как в системе')], ['light', '☀', t('Светлая тема')], ['dark', '☾', t('Тёмная тема')]];
+  return (
+    <SwitchRow $compact={compact}>
+      {!compact && (
+        <Segment role="group" aria-label={t('Тема')}>
+          {modes.map(([value, icon, label]) => (
+            <SegmentButton key={value} type="button" $on={mode === value} aria-pressed={mode === value} title={label} aria-label={label} onClick={() => setMode(value)}>{icon}</SegmentButton>
+          ))}
+        </Segment>
+      )}
+      <Segment role="group" aria-label={t('Язык')}>
+        {(['ru', 'en'] as const).map((value) => (
+          <SegmentButton key={value} type="button" $on={language === value} aria-pressed={language === value} onClick={() => setLanguage(value)}>{value.toUpperCase()}</SegmentButton>
+        ))}
+      </Segment>
+    </SwitchRow>
+  );
+}
+
+const SwitchRow = styled.div<{ $compact: boolean }>`
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0 0 1.2rem;
+  ${({ $compact }) => $compact && css`margin: 0; justify-content: flex-end;`}
+`;
+
+const Segment = styled.div`
+  display: inline-flex;
+  padding: 0.3rem;
+  border-radius: ${({ theme }) => theme.radius.md};
+  background: ${({ theme }) => theme.color.surface};
+  border: 1px solid ${({ theme }) => theme.color.line};
+`;
+
+const SegmentButton = styled.button<{ $on: boolean }>`
+  min-width: 3.2rem;
+  height: 2.8rem;
+  padding: 0 0.8rem;
+  border-radius: ${({ theme }) => theme.radius.sm};
+  color: ${({ theme }) => theme.color.muted};
+  font-size: 1.3rem;
+  font-weight: 600;
+  &:hover { color: ${({ theme }) => theme.color.strong}; }
+  ${({ $on, theme }) => $on && css`background: ${theme.color.tile}; color: ${theme.color.strong};`}
+`;
 
 /** Black receipt mark on a white tile; inverted for light pages. */
 export function Logo({ dark = false, size = 36 }: { dark?: boolean; size?: number }) {
@@ -179,6 +240,18 @@ const BellBadge = styled.span`
   font-size: 1rem;
   font-weight: 700;
   transform: rotate(8deg);
+`;
+
+const Count = styled.span`
+  display: inline-block;
+  margin-left: 0.8rem;
+  padding: 0 0.6rem;
+  border-radius: 0.4rem;
+  background: ${({ theme }) => theme.color.accent};
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+  transform: rotate(-6deg);
 `;
 
 const Today = styled.span`

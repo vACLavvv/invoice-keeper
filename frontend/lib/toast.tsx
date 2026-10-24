@@ -31,9 +31,9 @@ const Bubble = styled.div<{ $visible: boolean; $error: boolean }>`
   padding: 1.4rem 1.8rem;
   border-radius: ${({ theme }) => theme.radius.md};
   background: ${({ theme }) => theme.color.tile};
-  color: #fff;
+  color: ${({ theme }) => theme.color.strong};
   font-weight: 600;
-  box-shadow: 0 1.2rem 3.2rem rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1.2rem 3.2rem ${({ theme }) => theme.color.shadow};
   border-left: 0.4rem solid ${({ theme, $error }) => ($error ? theme.color.overdue : theme.color.accent)};
   transition: opacity 0.2s, transform 0.2s;
   ${({ $visible }) => ($visible ? css`opacity: 1; transform: none;` : css`opacity: 0; transform: translateY(1rem); pointer-events: none;`)}

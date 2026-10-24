@@ -18,6 +18,7 @@ import (
 type apiError struct {
 	Status int
 	Detail any
+	Code   string // machine-readable reason, e.g. two_factor_required
 	Header http.Header
 }
 
@@ -126,6 +127,19 @@ func (f *form) boolean(name string) *bool {
 	return &value
 }
 
+// integer returns nil when absent or null; a non-integer records an error.
+func (f *form) integer(name string) *int64 {
+	if !f.has(name) || f.isNull(name) {
+		return nil
+	}
+	var value int64
+	if json.Unmarshal(f.values[name], &value) != nil {
+		f.add(name, "Ожидается целое число", "int_type")
+		return nil
+	}
+	return &value
+}
+
 func (f *form) date(name string) *time.Time {
 	value := f.text(name, textRule{max: 10})
 	if value == nil {
@@ -158,18 +172,27 @@ func (f *form) amount(name string) int64 {
 		}
 		text = number.String()
 	}
+	cents, ok := parseCents(text)
+	switch {
+	case !ok:
+		f.add(name, "Сумма — положительное число, не более 10 цифр до точки и 2 после", "decimal_parsing")
+	case cents == 0:
+		f.add(name, "Сумма должна быть больше нуля", "greater_than")
+	default:
+		return cents
+	}
+	return 0
+}
+
+// parseCents reads "1490", "1490.5", "1490.50" into cents.
+func parseCents(text string) (int64, bool) {
 	match := amountPattern.FindStringSubmatch(strings.TrimSpace(text))
 	if match == nil {
-		f.add(name, "Сумма — положительное число, не более 10 цифр до точки и 2 после", "decimal_parsing")
-		return 0
+		return 0, false
 	}
 	whole, _ := strconv.ParseInt(match[1], 10, 64)
 	cents, _ := strconv.ParseInt((match[2] + "00")[:2], 10, 64)
-	if total := whole*100 + cents; total > 0 {
-		return total
-	}
-	f.add(name, "Сумма должна быть больше нуля", "greater_than")
-	return 0
+	return whole*100 + cents, true
 }
 
 // query parameters

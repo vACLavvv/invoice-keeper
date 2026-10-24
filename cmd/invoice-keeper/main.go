@@ -21,12 +21,18 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata" // timezones work on Windows and in minimal containers
 
 	invoicekeeper "invoice-keeper"
 	"invoice-keeper/internal/app"
+	"invoice-keeper/internal/app/bot"
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/wallet"
 )
 
 func main() {
@@ -52,7 +58,7 @@ func main() {
 	case "ofac-update":
 		err = ofacUpdate(args)
 	case "keygen":
-		fmt.Println("DATA_ENCRYPTION_KEY=" + app.NewEncryptionKey())
+		fmt.Println("DATA_ENCRYPTION_KEY=" + security.NewEncryptionKey())
 	default:
 		err = fmt.Errorf("неизвестная команда %q; доступны serve, bootstrap, backup, healthcheck, 2fa-off, ofac-update, keygen", command)
 	}
@@ -77,33 +83,22 @@ func serve(args []string) error {
 	port := flags.Int("port", 18080, "Порт")
 	flags.Parse(args)
 
-	settings, err := app.SettingsFromEnv(root())
+	settings, err := config.FromEnv(root())
 	if err != nil {
 		return err
 	}
-	if warning := app.EnvFileWarning(root()); warning != "" {
+	if warning := config.EnvFileWarning(root()); warning != "" {
 		log.Print(warning)
 	}
-	db, err := app.OpenDB(settings.DatabasePath)
+	db, err := store.OpenDB(settings.DatabasePath)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
 	server, err := app.NewServer(settings, db, invoicekeeper.Assets, app.Options{})
 	if err != nil {
+		db.Close()
 		return err
 	}
-	server.Worker.Start()
-	defer server.Worker.Stop()
-	bot := app.NewBot(server, "")
-	bot.Start()
-	defer bot.Stop()
-	maxBot := app.NewMaxBot(server, nil)
-	maxBot.Start()
-	defer maxBot.Stop()
-	server.Sanctions.Start()
-	defer server.Sanctions.Stop()
-
 	httpServer := &http.Server{
 		Addr:              net.JoinHostPort(*host, strconv.Itoa(*port)),
 		Handler:           server,
@@ -112,22 +107,80 @@ func serve(args []string) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+
+	// Background work runs until ctx is cancelled: on SIGINT/SIGTERM or when the HTTP server fails.
+	signals, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(signals)
+	defer cancel()
+	var background sync.WaitGroup
+	for _, run := range []func(context.Context){
+		server.Worker.Run,
+		bot.NewTelegram(settings, db, server.BotBackend(), "").Run,
+		bot.NewMax(settings, db, server.BotBackend(), nil).Run,
+		server.Sanctions.Run,
+	} {
+		background.Add(1)
+		go func() {
+			defer background.Done()
+			run(ctx)
+		}()
+	}
+
 	errs := make(chan error, 1)
 	go func() { errs <- httpServer.ListenAndServe() }()
 	log.Printf("Invoice Keeper: http://%s", httpServer.Addr)
+	var failure error
 	select {
 	case err := <-errs:
-		if !errors.Is(err, http.ErrServerClosed) {
+		failure = err // e.g. the port is taken
+	case <-ctx.Done():
+	}
+	return shutdown(httpServer, db, server, &background, cancel, stopSignals, failure)
+}
+
+const (
+	drainTimeout      = 10 * time.Second // in-flight HTTP requests
+	backgroundTimeout = 15 * time.Second // reminder pass, bots, OFAC download, security alerts
+)
+
+// shutdown stops in order: no new connections, in-flight requests finish, background work stops
+// between messages, and only then the database is closed. A second Ctrl+C ends the process at once.
+func shutdown(httpServer *http.Server, db *store.DB, server *app.Server, background *sync.WaitGroup,
+	cancel context.CancelFunc, stopSignals context.CancelFunc, failure error) error {
+	stopSignals() // restore the default handler: the next Ctrl+C terminates immediately
+	log.Print("Остановка: новые запросы не принимаются, текущие завершаются…")
+
+	drain, cancelDrain := context.WithTimeout(context.Background(), drainTimeout)
+	defer cancelDrain()
+	if err := httpServer.Shutdown(drain); err != nil {
+		log.Printf("Не все запросы завершились за %s — соединения закрыты", drainTimeout)
+		httpServer.Close()
+	}
+
+	cancel() // background loops stop; requests are done, so nothing starts new reminder passes
+	done := make(chan struct{})
+	go func() {
+		background.Wait()
+		server.Worker.Wait()
+		server.WaitAlerts()
+		close(done)
+	}()
+	select {
+	case <-done:
+		if err := db.Close(); err != nil {
 			return err
 		}
-	case <-ctx.Done():
-		log.Print("Остановка…")
+		log.Print("Остановлено")
+	case <-time.After(backgroundTimeout):
+		// The database stays open under the unfinished work; SQLite keeps it consistent on exit.
+		// A reminder caught mid-send is marked «Нужна проверка» on the next start — never re-sent.
+		return fmt.Errorf("фоновые задачи не завершились за %s, выход без ожидания", backgroundTimeout)
 	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return httpServer.Shutdown(shutdown)
+	if failure != nil && !errors.Is(failure, http.ErrServerClosed) {
+		return failure
+	}
+	return nil
 }
 
 func backup(args []string) error {
@@ -135,7 +188,7 @@ func backup(args []string) error {
 	stamp := time.Now().UTC().Format("20060102T150405.000000Z")
 	destination := flags.String("destination", filepath.Join(root(), "backups", "invoice-keeper-"+stamp+".sqlite3"), "Путь копии")
 	flags.Parse(args)
-	settings, err := app.SettingsFromEnv(root())
+	settings, err := config.FromEnv(root())
 	if err != nil {
 		return err
 	}
@@ -153,11 +206,11 @@ func ofacUpdate(args []string) error {
 	flags := flag.NewFlagSet("ofac-update", flag.ExitOnError)
 	file := flags.String("file", "", "Путь к скачанному SDN.XML; по умолчанию — загрузка с OFAC_LIST_URL")
 	flags.Parse(args)
-	settings, err := app.SettingsFromEnv(root())
+	settings, err := config.FromEnv(root())
 	if err != nil {
 		return err
 	}
-	db, err := app.OpenDB(settings.DatabasePath)
+	db, err := store.OpenDB(settings.DatabasePath)
 	if err != nil {
 		return err
 	}
@@ -169,7 +222,7 @@ func ofacUpdate(args []string) error {
 	if *file != "" {
 		source = *file
 	}
-	count, err := app.ImportSanctions(db, source, nil)
+	count, err := wallet.Import(context.Background(), db, source, nil)
 	if err != nil {
 		return err
 	}
@@ -179,11 +232,11 @@ func ofacUpdate(args []string) error {
 
 // twoFactorOff is the recovery path when the admin lost the authenticator.
 func twoFactorOff() error {
-	settings, err := app.SettingsFromEnv(root())
+	settings, err := config.FromEnv(root())
 	if err != nil {
 		return err
 	}
-	db, err := app.OpenDB(settings.DatabasePath)
+	db, err := store.OpenDB(settings.DatabasePath)
 	if err != nil {
 		return err
 	}

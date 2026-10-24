@@ -2,12 +2,14 @@ package app
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 func TestOriginRequiredOnCookieWrites(t *testing.T) {
@@ -41,13 +43,13 @@ func TestUnknownQueryParametersRefused(t *testing.T) {
 }
 
 func TestArgon2idAndRehashOfOldHashes(t *testing.T) {
-	encoded := hashPassword("Fresh-pass-123!")
+	encoded := security.HashPassword("Fresh-pass-123!")
 	if !strings.HasPrefix(encoded, "$argon2id$v=19$") {
 		t.Fatalf("format: %s", encoded)
 	}
-	expect(t, "verifies", verifyPassword("Fresh-pass-123!", encoded), true)
-	expect(t, "wrong", verifyPassword("Fresh-pass-124!", encoded), false)
-	expect(t, "absurd cost refused", verifyPassword("x", "$argon2id$v=19$m=99999999,t=1,p=1$AAAA$AAAA"), false)
+	expect(t, "verifies", security.VerifyPassword("Fresh-pass-123!", encoded), true)
+	expect(t, "wrong", security.VerifyPassword("Fresh-pass-124!", encoded), false)
+	expect(t, "absurd cost refused", security.VerifyPassword("x", "$argon2id$v=19$m=99999999,t=1,p=1$AAAA$AAAA"), false)
 
 	e := setup(t)
 	admin := e.client()
@@ -75,7 +77,7 @@ func TestWeakPasswordsRefused(t *testing.T) {
 		"Vintage-Kettle-91!":  false,
 		"щука-плавает-в-реке": false,
 	} {
-		if got := weakPasswordReason(password, "alex") != ""; got != weak {
+		if got := security.WeakPasswordReason(password, "alex") != ""; got != weak {
 			t.Errorf("%q: weak=%v, want %v", password, got, weak)
 		}
 	}
@@ -86,7 +88,7 @@ func TestWeakPasswordsRefused(t *testing.T) {
 	expect(t, "weak password refused", weak.status, 422)
 	expect(t, "with login refused", admin.post("/api/v1/users", map[string]any{"username": "olga", "display_name": "Ольга", "password": "olga-Password-91!"}).status, 422)
 
-	settings := &Settings{DatabasePath: "x", AdminUsername: "admin", AdminPassword: "admin-password-2026"}
+	settings := &config.Settings{DatabasePath: "x", AdminUsername: "admin", AdminPassword: "admin-password-2026"}
 	if err := settings.Validate(); err == nil {
 		t.Fatal("a weak ADMIN_PASSWORD must stop the server")
 	}
@@ -134,16 +136,6 @@ func TestAPIRateLimit(t *testing.T) {
 	expect(t, "pages are not limited", c.get("/login").status, 200)
 }
 
-func TestEnvFileWarning(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, ".env"), []byte("X=1\n"), 0o644)
-	if EnvFileWarning(dir) == "" {
-		t.Fatal("a world-readable .env must be reported")
-	}
-	os.Chmod(filepath.Join(dir, ".env"), 0o600)
-	expect(t, "private .env", EnvFileWarning(dir), "")
-}
-
 func TestEncryptionAtRest(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
@@ -156,7 +148,7 @@ func TestEncryptionAtRest(t *testing.T) {
 	admin.post("/api/v1/auth/2fa/setup", nil)
 
 	// The key is added to an existing installation: old values are encrypted on start.
-	key := must(ParseEncryptionKey(NewEncryptionKey()))
+	key := must(security.ParseEncryptionKey(security.NewEncryptionKey()))
 	e.settings.EncryptionKey = key
 	e.start()
 	admin = e.client()
@@ -168,11 +160,11 @@ func TestEncryptionAtRest(t *testing.T) {
 	e.db.QueryRow("SELECT data FROM receipts WHERE kind='file'").Scan(&data)
 	e.db.QueryRow("SELECT value FROM app_state WHERE key='admin_totp_pending'").Scan(&pending)
 	for name, stored := range map[string]string{"details": details, "link": link, "totp": pending} {
-		if !strings.HasPrefix(stored, textPrefix) {
+		if !strings.HasPrefix(stored, security.TextPrefix) {
 			t.Errorf("%s is stored in plain text: %q", name, stored)
 		}
 	}
-	expect(t, "file encrypted", bytes.HasPrefix(data, []byte(blobPrefix)) && !bytes.Contains(data, []byte("%PDF")), true)
+	expect(t, "file encrypted", bytes.HasPrefix(data, []byte(security.BlobPrefix)) && !bytes.Contains(data, []byte("%PDF")), true)
 
 	expect(t, "details readable", admin.get("/api/v1/recurring-payments").list(t)[0]["payment_details"], any("р/с 40702810000000000001"))
 	receipts := admin.get("/api/v1/payment-occurrences/" + id(occurrence) + "/receipts").list(t)
@@ -183,11 +175,11 @@ func TestEncryptionAtRest(t *testing.T) {
 	// New values are written encrypted, too.
 	admin.patch("/api/v1/recurring-payments/"+id(payment), map[string]any{"payment_details": "новые реквизиты"})
 	e.db.QueryRow("SELECT payment_details FROM recurring_payments WHERE id=?", payment["id"]).Scan(&details)
-	expect(t, "update encrypted", strings.HasPrefix(details, textPrefix), true)
+	expect(t, "update encrypted", strings.HasPrefix(details, security.TextPrefix), true)
 
 	// Without the key, or with another one, the server refuses to start instead of showing garbage.
-	for name, other := range map[string][]byte{"no key": nil, "wrong key": must(ParseEncryptionKey(NewEncryptionKey()))} {
-		db, err := OpenDB(e.settings.DatabasePath)
+	for name, other := range map[string][]byte{"no key": nil, "wrong key": must(security.ParseEncryptionKey(security.NewEncryptionKey()))} {
+		db, err := store.OpenDB(e.settings.DatabasePath)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +188,7 @@ func TestEncryptionAtRest(t *testing.T) {
 		}
 		db.Close()
 	}
-	dataKey = key
+	security.SetKey(key)
 }
 
 func TestAuditChainDetectsTampering(t *testing.T) {
@@ -279,19 +271,19 @@ func TestPaidButtonOnlyForLinkedMembers(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil)
 	item := c.get("/api/v1/payment-occurrences").list(t)[0]
-	bot, tg := botFor(e)
+	tb, tg := botFor(e)
 	e.settings.PaidLinkedOnly = true
 
 	guest := pressPaid(ourChat, id(item))
 	guest.CallbackQuery.From.ID = 501
-	bot.handle(guest)
+	tb.Handle(guest)
 	expect(t, "guest refused", strings.HasPrefix(tg.sent("answerCallbackQuery")[0]["text"].(string), "Привяжите Telegram"), true)
 	expect(t, "still unpaid", c.get("/api/v1/payment-occurrences/" + id(item)).object(t)["paid_at"], nil)
 
 	c.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	users := c.get("/api/v1/users").list(t)
 	e.db.Exec("INSERT INTO telegram_links(user_id,is_admin,telegram_user_id,chat_id,linked_at) VALUES(?,0,501,501,'x')", users[0]["id"])
-	bot.handle(guest)
+	tb.Handle(guest)
 	e.server.Worker.Wait()
 	paid := c.get("/api/v1/payment-occurrences/" + id(item)).object(t)
 	expect(t, "linked member pays", paid["paid_at"], any("2026-01-28"))

@@ -7,13 +7,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"invoice-keeper/internal/app/bot"
 )
 
 // fakeTelegram records Bot API calls and serves queued updates to getUpdates.
 type fakeTelegram struct {
 	mu      sync.Mutex
 	calls   []fakeCall
-	updates []tgUpdate
+	updates []bot.Update
 	server  *httptest.Server
 }
 
@@ -36,7 +38,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		var result any = true
 		if method == "getUpdates" {
 			offset := int64(body["offset"].(float64))
-			pending := []tgUpdate{}
+			pending := []bot.Update{}
 			for _, u := range f.updates {
 				if u.UpdateID >= offset {
 					pending = append(pending, u)
@@ -65,23 +67,23 @@ func (f *fakeTelegram) sent(method string) []map[string]any {
 
 const ourChat = -100123
 
-func botFor(e *harness) (*Bot, *fakeTelegram) {
+func botFor(e *harness) (*bot.Telegram, *fakeTelegram) {
 	e.settings.TelegramBotToken = "test-token"
 	e.settings.TelegramChatID = "-100123"
 	tg := newFakeTelegram(e.t)
-	return NewBot(e.server, tg.server.URL), tg
+	return bot.NewTelegram(e.settings, e.db, e.server.BotBackend(), tg.server.URL), tg
 }
 
-func message(chat int64, text string) tgUpdate {
-	m := &tgMessage{Text: text}
+func message(chat int64, text string) bot.Update {
+	m := &bot.Message{Text: text}
 	m.Chat.ID = chat
-	return tgUpdate{Message: m}
+	return bot.Update{Message: m}
 }
 
-func pressPaid(chat int64, occurrenceID string) tgUpdate {
-	m := &tgMessage{MessageID: 77, Text: "🔔 Пора запланировать оплату"}
+func pressPaid(chat int64, occurrenceID string) bot.Update {
+	m := &bot.Message{MessageID: 77, Text: "🔔 Пора запланировать оплату"}
 	m.Chat.ID = chat
-	return tgUpdate{CallbackQuery: &tgCallback{ID: "cb1", From: tgUser{Username: "alex"}, Message: m, Data: "paid:" + occurrenceID}}
+	return bot.Update{CallbackQuery: &bot.Callback{ID: "cb1", From: bot.User{Username: "alex"}, Message: m, Data: "paid:" + occurrenceID}}
 }
 
 func TestPaidButtonMarksPeriodAndEditsMessage(t *testing.T) {
@@ -90,9 +92,9 @@ func TestPaidButtonMarksPeriodAndEditsMessage(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil)
 	item := c.get("/api/v1/payment-occurrences").list(t)[0]
-	bot, tg := botFor(e)
+	tb, tg := botFor(e)
 
-	bot.handle(pressPaid(ourChat, id(item)))
+	tb.Handle(pressPaid(ourChat, id(item)))
 	e.server.Worker.Wait()
 	paid := c.get("/api/v1/payment-occurrences/" + id(item)).object(t)
 	expect(t, "paid today", paid["paid_at"], any("2026-01-28"))
@@ -108,9 +110,9 @@ func TestPaidButtonMarksPeriodAndEditsMessage(t *testing.T) {
 	audit := c.get("/api/v1/audit-log").list(t)
 	expect(t, "audit actor", audit[0]["actor"], any("tg:@alex"))
 
-	bot.handle(pressPaid(ourChat, id(item)))
+	tb.Handle(pressPaid(ourChat, id(item)))
 	expect(t, "second press", tg.sent("answerCallbackQuery")[1]["text"], any("Уже отмечено ранее"))
-	bot.handle(pressPaid(ourChat, "99999"))
+	tb.Handle(pressPaid(ourChat, "99999"))
 	expect(t, "unknown period", tg.sent("answerCallbackQuery")[2]["text"], any("Платёж не найден"))
 }
 
@@ -120,14 +122,14 @@ func TestForeignChatCannotUseTheBot(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil)
 	item := c.get("/api/v1/payment-occurrences").list(t)[0]
-	bot, tg := botFor(e)
+	tb, tg := botFor(e)
 
-	bot.handle(pressPaid(555, id(item)))
+	tb.Handle(pressPaid(555, id(item)))
 	expect(t, "denied", tg.sent("answerCallbackQuery")[0]["text"], any("Нет доступа"))
 	expect(t, "still unpaid", c.get("/api/v1/payment-occurrences/" + id(item)).object(t)["paid_at"], nil)
-	bot.handle(message(555, "/todo"))
+	tb.Handle(message(555, "/todo"))
 	expect(t, "no data for strangers", tg.sent("sendMessage")[0]["text"], any("Этот чат не подключён к Invoice Keeper."))
-	bot.handle(message(555, "/chatid@all_invoice_keeper_bot"))
+	tb.Handle(message(555, "/chatid@all_invoice_keeper_bot"))
 	if !strings.Contains(tg.sent("sendMessage")[1]["text"].(string), "ID этого чата: 555") {
 		t.Fatal("/chatid must answer anywhere")
 	}
@@ -140,9 +142,9 @@ func TestTodoAndOverdueCommands(t *testing.T) {
 	c.createPayment(map[string]any{"title": "Аренда", "amount": "100.10", "first_due_date": "2026-01-20"})
 	c.createPayment(map[string]any{"title": "Сервер", "amount": "24", "currency": "USD", "first_due_date": "2026-01-30"})
 	c.createPayment(map[string]any{"title": "Далёкий", "amount": "5", "currency": "EUR", "first_due_date": "2026-03-15"})
-	bot, tg := botFor(e)
+	tb, tg := botFor(e)
 
-	bot.handle(message(ourChat, "/todo"))
+	tb.Handle(message(ourChat, "/todo"))
 	todo := tg.sent("sendMessage")[0]["text"].(string)
 	for _, want := range []string{"🔴 Просрочено", "Аренда — 100.10 RUB, срок 20.01, 8 дн. назад", "🟡 В ближайшие 7 дней", "Сервер — 24.00 USD, срок 30.01, через 2 дн.", "Итого: 100.10 RUB · 24.00 USD"} {
 		if !strings.Contains(todo, want) {
@@ -152,7 +154,7 @@ func TestTodoAndOverdueCommands(t *testing.T) {
 	if strings.Contains(todo, "Далёкий") {
 		t.Fatal("/todo must cover only 7 days")
 	}
-	bot.handle(message(ourChat, "/overdue"))
+	tb.Handle(message(ourChat, "/overdue"))
 	overdue := tg.sent("sendMessage")[1]["text"].(string)
 	if !strings.Contains(overdue, "Аренда") || strings.Contains(overdue, "Сервер") {
 		t.Fatalf("/overdue:\n%s", overdue)
@@ -161,33 +163,18 @@ func TestTodoAndOverdueCommands(t *testing.T) {
 
 func TestPollingRemembersOffset(t *testing.T) {
 	e := setup(t)
-	bot, tg := botFor(e)
-	tg.updates = []tgUpdate{message(ourChat, "/help"), message(ourChat, "просто текст")}
+	tb, tg := botFor(e)
+	tg.updates = []bot.Update{message(ourChat, "/help"), message(ourChat, "просто текст")}
 	tg.updates[0].UpdateID, tg.updates[1].UpdateID = 41, 42
-	if err := bot.pollOnce(0); err != nil {
+	if err := tb.PollOnce(0); err != nil {
 		t.Fatal(err)
 	}
 	expect(t, "help answered once", len(tg.sent("sendMessage")), 1)
-	// A restarted bot continues after the last handled update instead of replaying it.
-	if err := NewBot(e.server, tg.server.URL).pollOnce(0); err != nil {
+	// A restarted tb continues after the last handled update instead of replaying it.
+	if err := bot.NewTelegram(e.settings, e.db, e.server.BotBackend(), tg.server.URL).PollOnce(0); err != nil {
 		t.Fatal(err)
 	}
 	expect(t, "no replay", len(tg.sent("sendMessage")), 1)
 	polls := tg.sent("getUpdates")
 	expect(t, "offset", polls[len(polls)-1]["offset"], any(43.0))
-}
-
-func TestReminderCarriesPaidButton(t *testing.T) {
-	var body map[string]any
-	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"ok":true,"result":{"message_id":5}}`))
-	}))
-	defer telegram.Close()
-	sender := TelegramSender(&Settings{TelegramBotToken: "t", TelegramChatID: "1"}, telegram.URL)
-	sender(ReminderRow{OccurrenceID: 12, Title: "Аренда", AmountCents: 100, Currency: "RUB", DueDate: "2026-01-31"})
-	raw, _ := json.Marshal(body["reply_markup"])
-	if !strings.Contains(string(raw), `"callback_data":"paid:12"`) || !strings.Contains(string(raw), "Оплачено") {
-		t.Fatalf("keyboard: %s", raw)
-	}
 }

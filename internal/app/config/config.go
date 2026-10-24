@@ -1,9 +1,12 @@
-package app
+// Package config reads the settings from the environment and .env, fills defaults and refuses
+// unsafe or incomplete configuration.
+package config
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/security"
 )
 
 type Settings struct {
@@ -82,7 +87,7 @@ func (s *Settings) Validate() error {
 	if !usernamePattern.MatchString(s.AdminUsername) || n < 12 || n > 128 || s.AdminPassword == "replace-with-a-long-random-password" {
 		return errors.New("Задайте ADMIN_USERNAME и случайный ADMIN_PASSWORD (минимум 12 символов). Запуск: invoice-keeper bootstrap --demo")
 	}
-	if reason := weakPasswordReason(s.AdminPassword, s.AdminUsername); reason != "" {
+	if reason := security.WeakPasswordReason(s.AdminPassword, s.AdminUsername); reason != "" {
 		return errors.New("ADMIN_PASSWORD слабый: " + reason + ". Сгенерируйте случайный, например: openssl rand -base64 24")
 	}
 	// Without TELEGRAM_CHAT_ID reminders go only to users who linked Telegram in the panel.
@@ -112,7 +117,7 @@ func (s *Settings) Validate() error {
 	if s.SMTPHost != "" && (s.SMTPFrom == "" || len(s.SMTPTo) == 0) {
 		return errors.New("Для email-напоминаний нужны SMTP_HOST, SMTP_FROM и SMTP_TO")
 	}
-	if s.WebhookURL != "" && !isWebURL(s.WebhookURL) {
+	if s.WebhookURL != "" && !webURL(s.WebhookURL) {
 		return errors.New("WEBHOOK_URL должен начинаться с http:// или https://")
 	}
 	if s.KeyIdleDays < 0 || s.KeyIdleDays > 3650 {
@@ -128,7 +133,7 @@ func (s *Settings) Validate() error {
 		return errors.New("RATE_LIMIT_PER_SECOND должен быть не меньше 1, а RATE_LIMIT_BURST — не меньше него")
 	}
 	if s.OFACListURL == "" {
-		s.OFACListURL = defaultOFACURL
+		s.OFACListURL = DefaultOFACURL
 	}
 	if s.OFACRefreshHours == 0 {
 		s.OFACRefreshHours = 24
@@ -193,7 +198,8 @@ func LoadDotenv(path string) error {
 	return scanner.Err()
 }
 
-func env(key, fallback string) string {
+// Env returns the variable, or fallback when it is not set (an empty value counts as set).
+func Env(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
@@ -212,12 +218,12 @@ func envInt(key string, fallback int) (int, error) {
 	return n, nil
 }
 
-// SettingsFromEnv reads ./.env (relative to root) and the process environment.
-func SettingsFromEnv(root string) (*Settings, error) {
+// FromEnv reads ./.env (relative to root) and the process environment.
+func FromEnv(root string) (*Settings, error) {
 	if err := LoadDotenv(filepath.Join(root, ".env")); err != nil {
 		return nil, err
 	}
-	dbPath := env("DATABASE_PATH", "./data/invoice-keeper.sqlite3")
+	dbPath := Env("DATABASE_PATH", "./data/invoice-keeper.sqlite3")
 	if !filepath.IsAbs(dbPath) {
 		dbPath = filepath.Join(root, dbPath)
 	}
@@ -249,49 +255,49 @@ func SettingsFromEnv(root string) (*Settings, error) {
 	if err != nil {
 		return nil, err
 	}
-	encryptionKey, err := ParseEncryptionKey(strings.TrimSpace(env("DATA_ENCRYPTION_KEY", "")))
+	encryptionKey, err := security.ParseEncryptionKey(strings.TrimSpace(Env("DATA_ENCRYPTION_KEY", "")))
 	if err != nil {
 		return nil, err
 	}
 	var smtpTo []string
-	for _, address := range strings.Split(env("SMTP_TO", ""), ",") {
+	for _, address := range strings.Split(Env("SMTP_TO", ""), ",") {
 		if address = strings.TrimSpace(address); address != "" {
 			smtpTo = append(smtpTo, address)
 		}
 	}
 	s := &Settings{
 		DatabasePath:       dbPath,
-		AdminUsername:      env("ADMIN_USERNAME", "admin"),
-		AdminPassword:      env("ADMIN_PASSWORD", ""),
-		Timezone:           env("APP_TIMEZONE", "Europe/Moscow"),
+		AdminUsername:      Env("ADMIN_USERNAME", "admin"),
+		AdminPassword:      Env("ADMIN_PASSWORD", ""),
+		Timezone:           Env("APP_TIMEZONE", "Europe/Moscow"),
 		SessionHours:       sessionHours,
-		CookieSecure:       strings.EqualFold(env("COOKIE_SECURE", "false"), "true"),
-		TelegramEnabled:    strings.EqualFold(env("TELEGRAM_ENABLED", "false"), "true"),
-		TelegramBotToken:   env("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:     env("TELEGRAM_CHAT_ID", ""),
+		CookieSecure:       strings.EqualFold(Env("COOKIE_SECURE", "false"), "true"),
+		TelegramEnabled:    strings.EqualFold(Env("TELEGRAM_ENABLED", "false"), "true"),
+		TelegramBotToken:   Env("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:     Env("TELEGRAM_CHAT_ID", ""),
 		ReminderInterval:   interval,
-		SupportTelegram:    strings.TrimSpace(env("SUPPORT_TELEGRAM", "")),
-		SupportEmail:       strings.TrimSpace(env("SUPPORT_EMAIL", "")),
-		OverdueReminders:   !strings.EqualFold(env("OVERDUE_REMINDERS", "true"), "false"),
-		MaxBotToken:        strings.TrimSpace(env("MAX_BOT_TOKEN", "")),
-		MaxChatID:          strings.TrimSpace(env("MAX_CHAT_ID", "")),
-		MaxAPIURL:          strings.TrimRight(strings.TrimSpace(env("MAX_API_URL", "")), "/"),
-		MaxCAFile:          strings.TrimSpace(env("MAX_CA_FILE", "")),
-		SMTPHost:           strings.TrimSpace(env("SMTP_HOST", "")),
+		SupportTelegram:    strings.TrimSpace(Env("SUPPORT_TELEGRAM", "")),
+		SupportEmail:       strings.TrimSpace(Env("SUPPORT_EMAIL", "")),
+		OverdueReminders:   !strings.EqualFold(Env("OVERDUE_REMINDERS", "true"), "false"),
+		MaxBotToken:        strings.TrimSpace(Env("MAX_BOT_TOKEN", "")),
+		MaxChatID:          strings.TrimSpace(Env("MAX_CHAT_ID", "")),
+		MaxAPIURL:          strings.TrimRight(strings.TrimSpace(Env("MAX_API_URL", "")), "/"),
+		MaxCAFile:          strings.TrimSpace(Env("MAX_CA_FILE", "")),
+		SMTPHost:           strings.TrimSpace(Env("SMTP_HOST", "")),
 		SMTPPort:           smtpPort,
-		SMTPUsername:       env("SMTP_USERNAME", ""),
-		SMTPPassword:       env("SMTP_PASSWORD", ""),
-		SMTPFrom:           strings.TrimSpace(env("SMTP_FROM", "")),
+		SMTPUsername:       Env("SMTP_USERNAME", ""),
+		SMTPPassword:       Env("SMTP_PASSWORD", ""),
+		SMTPFrom:           strings.TrimSpace(Env("SMTP_FROM", "")),
 		SMTPTo:             smtpTo,
-		SMTPSecurity:       strings.ToLower(strings.TrimSpace(env("SMTP_SECURITY", ""))),
-		WebhookURL:         strings.TrimSpace(env("WEBHOOK_URL", "")),
-		WebhookSecret:      env("WEBHOOK_SECRET", ""),
-		OFACEnabled:        !strings.EqualFold(env("OFAC_ENABLED", "true"), "false"),
-		OFACListURL:        strings.TrimSpace(env("OFAC_LIST_URL", "")),
+		SMTPSecurity:       strings.ToLower(strings.TrimSpace(Env("SMTP_SECURITY", ""))),
+		WebhookURL:         strings.TrimSpace(Env("WEBHOOK_URL", "")),
+		WebhookSecret:      Env("WEBHOOK_SECRET", ""),
+		OFACEnabled:        !strings.EqualFold(Env("OFAC_ENABLED", "true"), "false"),
+		OFACListURL:        strings.TrimSpace(Env("OFAC_LIST_URL", "")),
 		OFACRefreshHours:   ofacHours,
 		EncryptionKey:      encryptionKey,
-		LoginAlerts:        !strings.EqualFold(env("LOGIN_ALERTS", "true"), "false"),
-		PaidLinkedOnly:     !strings.EqualFold(env("TELEGRAM_PAID_LINKED_ONLY", "true"), "false"),
+		LoginAlerts:        !strings.EqualFold(Env("LOGIN_ALERTS", "true"), "false"),
+		PaidLinkedOnly:     !strings.EqualFold(Env("TELEGRAM_PAID_LINKED_ONLY", "true"), "false"),
 		KeyIdleDays:        keyIdleDays,
 		RateLimitPerSecond: ratePerSecond,
 		RateLimitBurst:     rateBurst,
@@ -300,4 +306,12 @@ func SettingsFromEnv(root string) (*Settings, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// DefaultOFACURL is the official SDN list of the U.S. Treasury (XML, redirects to cloud storage).
+const DefaultOFACURL = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML"
+
+func webURL(link string) bool {
+	parsed, err := url.Parse(link)
+	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
 }

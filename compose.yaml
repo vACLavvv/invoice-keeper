@@ -16,10 +16,12 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    mem_limit: 128m
+    mem_limit: 256m # Argon2id takes 64 MiB per sign-in, two at a time
     cpus: 0.50
     pids_limit: 64
     restart: unless-stopped
+    # Graceful shutdown: in-flight requests (10 s) and background work (15 s) finish before exit.
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "invoice-keeper", "healthcheck", "--port", "8000"]
       interval: 30s

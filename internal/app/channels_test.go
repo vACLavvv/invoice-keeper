@@ -1,17 +1,16 @@
 package app
 
 import (
-	"bufio"
 	"encoding/json"
-	"io"
-	"mime"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
-	"time"
+
+	"invoice-keeper/internal/app/bot"
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/schedule"
 )
 
 func TestPaymentLinkAndDetails(t *testing.T) {
@@ -34,31 +33,11 @@ func TestPaymentLinkAndDetails(t *testing.T) {
 	expect(t, "details cleared", cleared.object(t)["payment_details"], nil)
 }
 
-func TestReminderHasPayButtonAndDetails(t *testing.T) {
-	row := ReminderRow{OccurrenceID: 12, Title: "Аренда", AmountCents: 100, Currency: "RUB", DueDate: "2026-01-31",
-		PaymentURL: "https://bank.ru/pay", PaymentDetails: "счёт 40702"}
-	raw, _ := json.Marshal(paidKeyboard(row))
-	if !strings.Contains(string(raw), `"url":"https://bank.ru/pay"`) || !strings.Contains(string(raw), "Оплатить") {
-		t.Fatalf("keyboard: %s", raw)
-	}
-	if !strings.Contains(reminderText(row), "Реквизиты: счёт 40702") {
-		t.Fatalf("text: %s", reminderText(row))
-	}
-	row.Kind = "overdue"
-	if !strings.HasPrefix(reminderText(row), "⚠️ Платёж просрочен") {
-		t.Fatalf("overdue text: %s", reminderText(row))
-	}
-	raw, _ = json.Marshal(maxKeyboard(row))
-	if !strings.Contains(string(raw), `"type":"link"`) || !strings.Contains(string(raw), `"payload":"paid:12"`) {
-		t.Fatalf("max keyboard: %s", raw)
-	}
-}
-
 // channelWorker is a worker with recorded Telegram and extra channels.
-func channelWorker(e *harness, telegram *recorder, channels map[string]Sender) *ReminderWorker {
+func channelWorker(e *harness, telegram *recorder, channels map[string]notify.Sender) *notify.ReminderWorker {
 	settings := enabledSettings(e)
 	settings.OverdueReminders = true
-	w := NewReminderWorker(e.db, settings, telegram.sender(SendResult{State: "sent", MessageID: "1"}), e.clock.Today)
+	w := notify.NewReminderWorker(e.db, settings, telegram.sender(notify.SendResult{State: "sent", MessageID: "1"}), e.clock.Today)
 	w.Channels = channels
 	return w
 }
@@ -83,29 +62,29 @@ func TestOverdueReminderOnceTheNextDay(t *testing.T) {
 	admin.signIn()
 	admin.createPayment(nil) // due 31 Jan, today 28 Jan
 	telegram := &recorder{}
-	w := channelWorker(e, telegram, map[string]Sender{})
+	w := channelWorker(e, telegram, map[string]notify.Sender{})
 	w.Tick()
 	expect(t, "due reminder", kinds(telegram), "due:2026-01-31")
-	e.clock.Set(civil(2026, 1, 31))
+	e.clock.Set(schedule.Civil(2026, 1, 31))
 	w.Tick()
 	expect(t, "nothing on the due day", telegram.count(), 1)
-	e.clock.Set(civil(2026, 2, 1))
+	e.clock.Set(schedule.Civil(2026, 2, 1))
 	w.Tick()
 	w.Tick()
 	expect(t, "overdue once", kinds(telegram), "due:2026-01-31,overdue:2026-01-31")
 
 	// Paid before the next day: no overdue message.
-	e.clock.Set(civil(2026, 2, 26))
+	e.clock.Set(schedule.Civil(2026, 2, 26))
 	w.Tick()
 	feb := admin.get("/api/v1/payment-occurrences?from_date=2026-02-28&to_date=2026-02-28").list(t)[0]
 	admin.patch("/api/v1/payment-occurrences/"+id(feb), map[string]any{"paid": true, "paid_at": "2026-02-26"})
-	e.clock.Set(civil(2026, 3, 1))
+	e.clock.Set(schedule.Civil(2026, 3, 1))
 	w.Tick()
 	expect(t, "paid stays quiet", kinds(telegram), "due:2026-01-31,overdue:2026-01-31,due:2026-02-28")
 
 	// Turned off: no overdue messages at all.
 	w.Settings.OverdueReminders = false
-	e.clock.Set(civil(2026, 4, 1))
+	e.clock.Set(schedule.Civil(2026, 4, 1))
 	w.Tick()
 	if strings.Contains(kinds(telegram), "overdue:2026-03-31") {
 		t.Fatalf("overdue sent while disabled: %s", kinds(telegram))
@@ -118,7 +97,7 @@ func TestOverdueWindowSkipsOldDebts(t *testing.T) {
 	admin.signIn()
 	admin.createPayment(map[string]any{"first_due_date": "2025-10-31"}) // months of old debts
 	telegram := &recorder{}
-	channelWorker(e, telegram, map[string]Sender{}).Tick()
+	channelWorker(e, telegram, map[string]notify.Sender{}).Tick()
 	if strings.Contains(kinds(telegram), "overdue:2025-") {
 		t.Fatalf("old debts flooded the chat: %s", kinds(telegram))
 	}
@@ -130,10 +109,10 @@ func TestExtraChannelsDeliverOnceAndRetrySafely(t *testing.T) {
 	admin.signIn()
 	admin.createPayment(nil)
 	email, webhook, flaky, broken := &recorder{}, &recorder{}, &recorder{}, &recorder{}
-	w := channelWorker(e, &recorder{}, map[string]Sender{
-		"email":   email.sender(SendResult{State: "sent"}),
-		"webhook": webhook.sender(SendResult{State: "sent"}),
-		"max":     flaky.sender(SendResult{State: "pending", Error: "нет связи"}),
+	w := channelWorker(e, &recorder{}, map[string]notify.Sender{
+		"email":   email.sender(notify.SendResult{State: "sent"}),
+		"webhook": webhook.sender(notify.SendResult{State: "sent"}),
+		"max":     flaky.sender(notify.SendResult{State: "pending", Error: "нет связи"}),
 	})
 	w.Tick()
 	w.Tick()
@@ -146,14 +125,14 @@ func TestExtraChannelsDeliverOnceAndRetrySafely(t *testing.T) {
 		e.db.Exec("UPDATE deliveries SET retry_after=0")
 		w.Tick()
 	}
-	expect(t, "stops after 5 attempts", flaky.count(), maxDeliveryAttempts)
+	expect(t, "stops after 5 attempts", flaky.count(), notify.MaxDeliveryAttempts)
 	var state string
 	e.db.QueryRow("SELECT state FROM deliveries WHERE channel='max'").Scan(&state)
 	expect(t, "failed", state, "failed")
 
 	// An unknown result is never retried.
-	w.Channels["max"] = broken.sender(SendResult{State: "uncertain", Error: "таймаут"})
-	e.clock.Set(civil(2026, 2, 1))
+	w.Channels["max"] = broken.sender(notify.SendResult{State: "uncertain", Error: "таймаут"})
+	e.clock.Set(schedule.Civil(2026, 2, 1))
 	w.Tick()
 	e.db.Exec("UPDATE deliveries SET retry_after=0")
 	w.Tick()
@@ -184,8 +163,8 @@ func TestPersonalOverdueReminder(t *testing.T) {
 	admin.createPayment(map[string]any{"assignee_id": users[0]["id"]})
 	e.db.Exec("INSERT INTO telegram_links(user_id,is_admin,telegram_user_id,chat_id,linked_at) VALUES(?,0,501,501,'x')", users[0]["id"])
 	telegram := &recorder{}
-	w := channelWorker(e, telegram, map[string]Sender{})
-	e.clock.Set(civil(2026, 2, 1))
+	w := channelWorker(e, telegram, map[string]notify.Sender{})
+	e.clock.Set(schedule.Civil(2026, 2, 1))
 	w.Tick()
 	var personal []string
 	for _, row := range telegram.rows {
@@ -196,39 +175,6 @@ func TestPersonalOverdueReminder(t *testing.T) {
 	expect(t, "team chat and the assignee", strings.Join(personal, ","), ",501")
 }
 
-func TestWebhookPayloadSignatureAndOutcomes(t *testing.T) {
-	var mu sync.Mutex
-	var got *http.Request
-	var body []byte
-	status := 204
-	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		got, body = r, must(io.ReadAll(r.Body))
-		w.WriteHeader(status)
-	}))
-	defer receiver.Close()
-	settings := &Settings{WebhookURL: receiver.URL, WebhookSecret: "s3cret"}
-	send := WebhookSender(settings, nil)
-	row := ReminderRow{Kind: "overdue", OccurrenceID: 7, Title: "Сервер", AmountCents: 2400, Currency: "USD", DueDate: "2026-01-31", PaymentURL: "https://pay.me"}
-	expect(t, "sent", send(row).State, "sent")
-	expect(t, "signature", got.Header.Get("X-Invoice-Keeper-Signature"), webhookSignature("s3cret", body))
-	expect(t, "event header", got.Header.Get("X-Invoice-Keeper-Event"), "reminder.overdue")
-	expect(t, "delivery id", got.Header.Get("X-Invoice-Keeper-Delivery"), "7-reminder.overdue")
-	var payload map[string]any
-	json.Unmarshal(body, &payload)
-	occurrence := payload["occurrence"].(map[string]any)
-	expect(t, "amount", occurrence["amount"], any("24.00"))
-	expect(t, "slack text", strings.Contains(payload["text"].(string), "Оплатить: https://pay.me"), true)
-
-	status = 503
-	expect(t, "server error retried", send(row).State, "pending")
-	status = 400
-	expect(t, "rejected not retried", send(row).State, "uncertain")
-	receiver.Close()
-	expect(t, "unreachable retried", send(row).State, "pending")
-}
-
 func must[T any](value T, err error) T {
 	if err != nil {
 		panic(err)
@@ -236,91 +182,12 @@ func must[T any](value T, err error) T {
 	return value
 }
 
-// fakeSMTP accepts one plain SMTP session and returns the DATA it received.
-func fakeSMTP(t *testing.T) (port int, data chan string) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { listener.Close() })
-	data = make(chan string, 1)
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		conn.SetDeadline(time.Now().Add(5 * time.Second))
-		reader := bufio.NewReader(conn)
-		reply := func(line string) { conn.Write([]byte(line + "\r\n")) }
-		reply("220 fake")
-		var message strings.Builder
-		for {
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				return
-			}
-			switch command := strings.ToUpper(strings.TrimSpace(line)); {
-			case strings.HasPrefix(command, "EHLO"), strings.HasPrefix(command, "HELO"):
-				reply("250 fake")
-			case strings.HasPrefix(command, "MAIL"), strings.HasPrefix(command, "RCPT"):
-				reply("250 ok")
-			case command == "DATA":
-				reply("354 go")
-				for {
-					line, err := reader.ReadString('\n')
-					if err != nil || line == ".\r\n" {
-						break
-					}
-					message.WriteString(line)
-				}
-				data <- message.String()
-				reply("250 queued")
-			case command == "QUIT":
-				reply("221 bye")
-				return
-			default:
-				reply("250 ok")
-			}
-		}
-	}()
-	return listener.Addr().(*net.TCPAddr).Port, data
-}
-
-func TestEmailReminder(t *testing.T) {
-	port, data := fakeSMTP(t)
-	settings := &Settings{SMTPHost: "127.0.0.1", SMTPPort: port, SMTPSecurity: "none", SMTPFrom: "Invoice Keeper <bot@team.ru>", SMTPTo: []string{"a@team.ru", "b@team.ru"}}
-	row := ReminderRow{OccurrenceID: 3, Title: "Аренда\r\nBcc: evil@x.ru", AmountCents: 150000, Currency: "RUB", DueDate: "2026-01-31", PaymentURL: "https://bank.ru/pay"}
-	expect(t, "sent", EmailSender(settings)(row).State, "sent")
-	message := <-data
-	headers, _, _ := strings.Cut(message, "\r\n\r\n")
-	if strings.Contains(headers, "\r\nBcc:") {
-		t.Fatalf("header injection: %s", headers)
-	}
-	var subject string
-	for _, line := range strings.Split(headers, "\r\n") {
-		if value, ok := strings.CutPrefix(line, "Subject: "); ok {
-			subject, _ = new(mime.WordDecoder).DecodeHeader(value)
-		}
-	}
-	expect(t, "subject", subject, "Напоминание об оплате: Аренда  Bcc: evil@x.ru — 1500.00 RUB до 31.01.2026")
-	if !strings.Contains(message, "To: a@team.ru, b@team.ru") || !strings.Contains(message, "https://bank.ru/pay") {
-		t.Fatalf("message: %s", message)
-	}
-
-	listener, _ := net.Listen("tcp", "127.0.0.1:0")
-	closed := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	settings.SMTPPort = closed
-	expect(t, "server down is retried", EmailSender(settings)(row).State, "pending")
-}
-
 // fakeMax serves the MAX Bot API: it records sent messages and answers, and returns queued updates.
 type fakeMax struct {
 	mu       sync.Mutex
 	messages []map[string]any
 	answers  []map[string]any
-	updates  []maxUpdate
+	updates  []bot.MaxUpdate
 	auth     string
 	server   *httptest.Server
 }
@@ -353,15 +220,15 @@ func newFakeMax(t *testing.T) *fakeMax {
 	return f
 }
 
-func maxPress(chat int64, payload string) maxUpdate {
-	u := maxUpdate{UpdateType: "message_callback", Message: &maxMessage{}}
+func maxPress(chat int64, payload string) bot.MaxUpdate {
+	u := bot.MaxUpdate{UpdateType: "message_callback", Message: &bot.MaxMessage{}}
 	u.Message.Recipient.ChatID = chat
 	u.Message.Body.Text = "🔔 Пора запланировать оплату"
 	u.Callback = &struct {
-		CallbackID string  `json:"callback_id"`
-		Payload    string  `json:"payload"`
-		User       maxUser `json:"user"`
-	}{CallbackID: "cb-1", Payload: payload, User: maxUser{UserID: 5, Name: "Алексей"}}
+		CallbackID string      `json:"callback_id"`
+		Payload    string      `json:"payload"`
+		User       bot.MaxUser `json:"user"`
+	}{CallbackID: "cb-1", Payload: payload, User: bot.MaxUser{UserID: 5, Name: "Алексей"}}
 	return u
 }
 
@@ -373,23 +240,23 @@ func TestMaxRemindersAndPaidButton(t *testing.T) {
 	max := newFakeMax(t)
 	e.settings.MaxBotToken, e.settings.MaxChatID, e.settings.MaxAPIURL = "max-token", "-7001", max.server.URL
 
-	send := MaxSender(e.settings, nil)
+	send := notify.MaxSender(e.settings, nil)
 	occurrence := admin.get("/api/v1/payment-occurrences").list(t)[0]
-	result := send(ReminderRow{OccurrenceID: int64(occurrence["id"].(float64)), Title: "Аренда", AmountCents: 100, Currency: "RUB", DueDate: "2026-01-31", PaymentURL: "https://pay.me"})
+	result := send(notify.ReminderRow{OccurrenceID: int64(occurrence["id"].(float64)), Title: "Аренда", AmountCents: 100, Currency: "RUB", DueDate: "2026-01-31", PaymentURL: "https://pay.me"})
 	expect(t, "sent", result.State, "sent")
 	expect(t, "token in header", max.auth, "max-token")
 	expect(t, "chat", max.messages[0]["chat_id"], any("-7001"))
 
-	bot := NewMaxBot(e.server, nil)
-	max.updates = []maxUpdate{maxPress(-9999, "paid:"+id(occurrence))}
-	if err := bot.pollOnce(0); err != nil {
+	tb := bot.NewMax(e.settings, e.db, e.server.BotBackend(), nil)
+	max.updates = []bot.MaxUpdate{maxPress(-9999, "paid:"+id(occurrence))}
+	if err := tb.PollOnce(0); err != nil {
 		t.Fatal(err)
 	}
 	expect(t, "foreign chat refused", max.answers[0]["notification"], any("Нет доступа"))
 	expect(t, "still unpaid", admin.get("/api/v1/payment-occurrences/" + id(occurrence)).object(t)["paid_at"], nil)
 
-	max.updates = []maxUpdate{maxPress(-7001, "paid:"+id(occurrence))}
-	if err := bot.pollOnce(0); err != nil {
+	max.updates = []bot.MaxUpdate{maxPress(-7001, "paid:"+id(occurrence))}
+	if err := tb.PollOnce(0); err != nil {
 		t.Fatal(err)
 	}
 	paid := admin.get("/api/v1/payment-occurrences/" + id(occurrence)).object(t)
@@ -401,10 +268,10 @@ func TestMaxRemindersAndPaidButton(t *testing.T) {
 	expect(t, "button removed", len(edited["attachments"].([]any)), 0)
 	expect(t, "marker stored", must(e.server.state("max_marker")), "9")
 
-	todo := maxUpdate{UpdateType: "message_created", Message: &maxMessage{}}
+	todo := bot.MaxUpdate{UpdateType: "message_created", Message: &bot.MaxMessage{}}
 	todo.Message.Recipient.ChatID = -7001
 	todo.Message.Body.Text = "/chatid"
-	max.updates = []maxUpdate{todo}
-	bot.pollOnce(0)
+	max.updates = []bot.MaxUpdate{todo}
+	tb.PollOnce(0)
 	expect(t, "chatid answered", strings.Contains(max.messages[len(max.messages)-1]["text"].(string), "-7001"), true)
 }

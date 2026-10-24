@@ -1,4 +1,6 @@
-package app
+// Package store opens the SQLite database, creates and upgrades the schema and runs writes
+// in immediate transactions.
+package store
 
 import (
 	"context"
@@ -7,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -100,18 +103,18 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"recurring_payments", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
 	{"recurring_payments", "payment_url", "TEXT"},
 	{"recurring_payments", "payment_details", "TEXT"},
-	// v4: session devices for «Аккаунт», API tokens for scripts (see sessions.go).
+	// v4: session devices for «Аккаунт», API tokens for scripts (see app/sessions.go).
 	{"sessions", "created_at", "INTEGER"},
 	{"sessions", "last_seen_at", "INTEGER"},
 	{"sessions", "user_agent", "TEXT"},
 	{"sessions", "ip", "TEXT"},
 	{"api_keys", "access", "TEXT NOT NULL DEFAULT 'extension' CHECK(access IN ('extension','read','write'))"},
 	{"api_keys", "expires_at", "INTEGER"},
-	// Payee crypto wallet, screened against the OFAC list (sanctions.go); wallet_key is the comparison form.
+	// Payee crypto wallet, screened against the OFAC list (package wallet); wallet_key is the comparison form.
 	{"recurring_payments", "wallet_network", "TEXT"},
 	{"recurring_payments", "wallet_address", "TEXT"},
 	{"recurring_payments", "wallet_key", "TEXT"},
-	// Tamper-evident journal (audit.go).
+	// Tamper-evident journal (package audit).
 	{"audit_log", "hash", "TEXT"},
 	{"audit_log", "chain", "TEXT"},
 }
@@ -172,7 +175,7 @@ func (db *DB) initialize() error {
 				}
 			}
 		}
-		_, err := tx.Exec("PRAGMA user_version=" + itoa(schemaVersion))
+		_, err := tx.Exec("PRAGMA user_version=" + strconv.Itoa(schemaVersion))
 		return err
 	})
 }
@@ -190,6 +193,29 @@ func (db *DB) Write(fn func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func isUniqueViolation(err error) bool {
+func IsUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+// Querier is a *sql.DB or a *sql.Tx: helpers that run inside or outside a transaction take it.
+type Querier interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// SetState stores a value in app_state (bot offsets, list dates, secrets already encrypted by the caller).
+func SetState(q Querier, key, value string) error {
+	_, err := q.Exec("INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value)
+	return err
+}
+
+// State reads a value from app_state; a missing key is "".
+func State(q Querier, key string) (string, error) {
+	var value string
+	err := q.QueryRow("SELECT value FROM app_state WHERE key=?", key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return value, err
 }

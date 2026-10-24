@@ -1,26 +1,25 @@
 package app
 
 import (
-	"encoding/json"
-	"errors"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"context"
 	"sync"
 	"testing"
 	"time"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/schedule"
 )
 
 type recorder struct {
 	mu   sync.Mutex
-	rows []ReminderRow
+	rows []notify.ReminderRow
 }
 
 func (r *recorder) count() int { r.mu.Lock(); defer r.mu.Unlock(); return len(r.rows) }
 
-func (r *recorder) sender(result SendResult) Sender {
-	return func(row ReminderRow) SendResult {
+func (r *recorder) sender(result notify.SendResult) notify.Sender {
+	return func(row notify.ReminderRow) notify.SendResult {
 		r.mu.Lock()
 		r.rows = append(r.rows, row)
 		r.mu.Unlock()
@@ -28,14 +27,14 @@ func (r *recorder) sender(result SendResult) Sender {
 	}
 }
 
-func enabledSettings(e *harness) *Settings {
+func enabledSettings(e *harness) *config.Settings {
 	s := *e.settings
 	s.TelegramEnabled, s.TelegramBotToken, s.TelegramChatID = true, "test-token", "test-chat"
 	return &s
 }
 
-func makeWorker(e *harness, sender Sender) *ReminderWorker {
-	return NewReminderWorker(e.db, enabledSettings(e), sender, e.clock.Today)
+func makeWorker(e *harness, sender notify.Sender) *notify.ReminderWorker {
+	return notify.NewReminderWorker(e.db, enabledSettings(e), sender, e.clock.Today)
 }
 
 func reminderState(t *testing.T, e *harness) string {
@@ -53,17 +52,17 @@ func TestDueMinusThreeImmediateLateEntryNoDuplicates(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil) // due 2026-01-31
 	sent := &recorder{}
-	sender := sent.sender(SendResult{State: "sent", MessageID: "123"})
+	sender := sent.sender(notify.SendResult{State: "sent", MessageID: "123"})
 	worker := makeWorker(e, sender)
-	e.clock.Set(civil(2026, 1, 27))
+	e.clock.Set(schedule.Civil(2026, 1, 27))
 	worker.Tick()
 	expect(t, "4 days before", sent.count(), 0)
-	e.clock.Set(civil(2026, 1, 28))
+	e.clock.Set(schedule.Civil(2026, 1, 28))
 	worker.Tick()
 	worker.Tick()
 	expect(t, "3 days before, once", sent.count(), 1)
 	expect(t, "due", sent.rows[0].DueDate, "2026-01-31")
-	e.clock.Set(civil(2026, 1, 30))
+	e.clock.Set(schedule.Civil(2026, 1, 30))
 	c.createPayment(map[string]any{"title": "Позднее добавление", "first_due_date": "2026-01-31"})
 	worker.Tick()
 	expect(t, "late entry", sent.count(), 2)
@@ -82,7 +81,7 @@ func TestPaidArchivedAndDisabledDoNotSend(t *testing.T) {
 	c.patch("/api/v1/payment-occurrences/"+id(item), map[string]any{"paid": true})
 	c.delete("/api/v1/recurring-payments/" + id(second))
 	sent := &recorder{}
-	worker := makeWorker(e, sent.sender(SendResult{State: "sent", MessageID: "1"}))
+	worker := makeWorker(e, sent.sender(notify.SendResult{State: "sent", MessageID: "1"}))
 	worker.Tick()
 	expect(t, "paid and archived", sent.count(), 0)
 	c.patch("/api/v1/payment-occurrences/"+id(item), map[string]any{"paid": false})
@@ -99,7 +98,7 @@ func TestAmbiguousDeliveryAndCrashAreNotRetried(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil)
 	calls := 0
-	broken := func(ReminderRow) SendResult { calls++; panic("network timeout") }
+	broken := func(notify.ReminderRow) notify.SendResult { calls++; panic("network timeout") }
 	worker := makeWorker(e, broken)
 	worker.Tick()
 	worker.Tick()
@@ -119,10 +118,10 @@ func TestSafeFailureIsRetried(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil)
 	sent := &recorder{}
-	makeWorker(e, sent.sender(SendResult{State: "pending", Error: "Соединение не установлено"})).Tick()
+	makeWorker(e, sent.sender(notify.SendResult{State: "pending", Error: "Соединение не установлено"})).Tick()
 	expect(t, "pending", reminderState(t, e), "pending")
 	e.db.Exec("UPDATE reminders SET retry_after=0")
-	makeWorker(e, sent.sender(SendResult{State: "sent", MessageID: "5"})).Tick()
+	makeWorker(e, sent.sender(notify.SendResult{State: "sent", MessageID: "5"})).Tick()
 	expect(t, "sent", reminderState(t, e), "sent")
 	expect(t, "attempts", sent.count(), 2)
 }
@@ -133,10 +132,10 @@ func TestTwoWorkersClaimOnce(t *testing.T) {
 	c.signIn()
 	c.createPayment(nil)
 	sent := &recorder{}
-	sender := sent.sender(SendResult{State: "sent", MessageID: "42"})
+	sender := sent.sender(notify.SendResult{State: "sent", MessageID: "42"})
 	a, b := makeWorker(e, sender), makeWorker(e, sender)
 	var wg sync.WaitGroup
-	for _, w := range []*ReminderWorker{a, b} {
+	for _, w := range []*notify.ReminderWorker{a, b} {
 		wg.Add(1)
 		go func() { defer wg.Done(); w.Tick() }()
 	}
@@ -150,83 +149,50 @@ func TestImmediateReminderAfterCreate(t *testing.T) {
 	c.signIn()
 	sent := &recorder{}
 	e.server.Worker.Settings = enabledSettings(e)
-	e.server.Worker.Sender = sent.sender(SendResult{State: "sent", MessageID: "1"})
+	e.server.Worker.Sender = sent.sender(notify.SendResult{State: "sent", MessageID: "1"})
 	c.createPayment(map[string]any{"first_due_date": "2026-01-29"})
 	expect(t, "sent right after create", sent.count(), 1)
 }
 
-func TestTelegramPayloadAndSafeRetry(t *testing.T) {
-	var mu sync.Mutex
-	var captured []map[string]any
-	reply := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		w.Write([]byte(`{"ok":true,"result":{"message_id":9}}`))
+func TestWorkerStopsBetweenMessages(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	for _, title := range []string{"A", "B", "C", "D", "E"} {
+		c.createPayment(map[string]any{"title": title})
 	}
-	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/botSECRET-TOKEN/sendMessage") {
-			t.Errorf("unexpected path %s", r.URL.Path)
-		}
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		mu.Lock()
-		captured = append(captured, body)
-		handler := reply
-		mu.Unlock()
-		handler(w, r)
-	}))
-	defer telegram.Close()
-	settings := &Settings{TelegramBotToken: "SECRET-TOKEN", TelegramChatID: "123"}
-	sender := TelegramSender(settings, telegram.URL)
-	row := ReminderRow{Title: "Аренда <офис>", AmountCents: 4500000, Currency: "RUB", DueDate: "2026-01-31"}
+	started := make(chan struct{}, 10)
+	release := make(chan struct{})
+	slow := func(row notify.ReminderRow) notify.SendResult {
+		started <- struct{}{}
+		<-release
+		return notify.SendResult{State: "sent", MessageID: "1"}
+	}
+	w := makeWorker(e, slow)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		w.Run(ctx)
+		close(done)
+	}()
+	<-started // the first message is being sent
+	cancel()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the worker did not stop")
+	}
+	var sent, sending, pending int
+	e.db.QueryRow("SELECT COUNT(*) FROM reminders WHERE state='sent'").Scan(&sent)
+	e.db.QueryRow("SELECT COUNT(*) FROM reminders WHERE state='sending'").Scan(&sending)
+	e.db.QueryRow("SELECT COUNT(*) FROM reminders WHERE state='pending'").Scan(&pending)
+	expect(t, "the message in progress is finished", sent, 1)
+	expect(t, "nothing left half-sent", sending, 0)
+	expect(t, "the rest wait for the next start", pending, 4)
 
-	result := sender(row)
-	expect(t, "sent", result.State, "sent")
-	expect(t, "message id", result.MessageID, "9")
-	text := captured[0]["text"].(string)
-	for _, part := range []string{"Аренда <офис>", "45000.00", "RUB", "2026-01-31"} {
-		if !strings.Contains(text, part) {
-			t.Fatalf("text lacks %q: %s", part, text)
-		}
-	}
-	if _, ok := captured[0]["parse_mode"]; ok {
-		t.Fatal("parse_mode must not be set")
-	}
-
-	mu.Lock()
-	reply = func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(429)
-		w.Write([]byte(`{"ok":false,"parameters":{"retry_after":12}}`))
-	}
-	mu.Unlock()
-	result = sender(row)
-	expect(t, "rate limited", result.State, "pending")
-	expect(t, "retry", result.RetryDelay, 12)
-
-	mu.Lock()
-	reply = func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(401)
-		w.Write([]byte(`{"ok":false,"description":"Unauthorized SECRET-TOKEN"}`))
-	}
-	mu.Unlock()
-	result = sender(row)
-	expect(t, "rejected", result.State, "uncertain")
-	if strings.Contains(result.Error, "SECRET-TOKEN") {
-		t.Fatal("token leaked into the error")
-	}
-
-	// Nothing listens on this port: the request certainly did not reach Telegram.
-	listener, _ := net.Listen("tcp", "127.0.0.1:0")
-	closed := "http://" + listener.Addr().String()
-	listener.Close()
-	result = TelegramSender(settings, closed)(row)
-	expect(t, "connect error", result.State, "pending")
-	if strings.Contains(result.Error, "SECRET-TOKEN") {
-		t.Fatal("token leaked into the error")
-	}
-}
-
-func TestConnectErrorClassification(t *testing.T) {
-	timeout := &net.OpError{Op: "read", Err: errors.New("i/o timeout")}
-	expect(t, "read failure is ambiguous", isConnectError(timeout), false)
-	expect(t, "dns", isConnectError(&net.DNSError{Err: "no such host"}), true)
+	w.Kick()
+	w.Wait()
+	e.db.QueryRow("SELECT COUNT(*) FROM reminders WHERE state='sent'").Scan(&sent)
+	expect(t, "no passes after shutdown", sent, 1)
 }

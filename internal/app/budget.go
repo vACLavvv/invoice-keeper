@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"invoice-keeper/internal/app/schedule"
 )
 
 type budgetLine struct {
@@ -20,7 +22,7 @@ type budgetLine struct {
 type budgetCell struct{ planned, paid int64 }
 
 func (c budgetCell) line() budgetLine {
-	return budgetLine{money(c.planned), money(c.paid), money(max(0, c.planned-c.paid))}
+	return budgetLine{schedule.Money(c.planned), schedule.Money(c.paid), schedule.Money(max(0, c.planned-c.paid))}
 }
 
 type budgetBook map[string]*budgetCell // by currency
@@ -59,7 +61,7 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 		}
 		year = parsed
 	}
-	from, to := civil(year, 1, 1), civil(year, 12, 31)
+	from, to := schedule.Civil(year, 1, 1), schedule.Civil(year, 12, 31)
 
 	type key struct {
 		payment int64
@@ -72,7 +74,7 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 	}
 	occurrences := map[key]recorded{}
 	rows, err := s.DB.Query("SELECT recurring_payment_id,due_date,amount_cents,currency,paid_at IS NOT NULL FROM payment_occurrences WHERE due_date>=? AND due_date<=?",
-		formatDate(from), formatDate(to))
+		schedule.FormatDate(from), schedule.FormatDate(to))
 	if err != nil {
 		return err
 	}
@@ -103,11 +105,11 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 	}
 	catRows.Close()
 
-	plans, err := loadPlans(s.DB, "active=1")
+	plans, err := schedule.LoadPlans(s.DB, "active=1")
 	if err != nil {
 		return err
 	}
-	pauses, err := loadPauses(s.DB)
+	pauses, err := schedule.LoadPauses(s.DB)
 	if err != nil {
 		return err
 	}
@@ -131,19 +133,19 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Active payments: every projected date; a recorded period supplies its own amount and payment.
 	for _, p := range plans {
-		for _, due := range projectedDates(p, pauses[p.id], from, to) {
-			k := key{p.id, formatDate(due)}
+		for _, due := range schedule.ProjectedDates(p, pauses[p.ID], from, to) {
+			k := key{p.ID, schedule.FormatDate(due)}
 			if o, ok := occurrences[k]; ok {
-				count(p.id, due, o.amount, o.currency, o.paid)
+				count(p.ID, due, o.amount, o.currency, o.paid)
 				delete(occurrences, k)
 			} else {
-				count(p.id, due, p.amount, p.currency, false)
+				count(p.ID, due, p.Amount, p.Currency, false)
 			}
 		}
 	}
 	// Whatever is left (archived payments, history) counts as recorded.
 	for k, o := range occurrences {
-		due, _ := parseDate(k.due)
+		due, _ := schedule.ParseDate(k.due)
 		count(k.payment, due, o.amount, o.currency, o.paid)
 	}
 
@@ -162,7 +164,7 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 		Categories []categoryOut         `json:"categories"`
 	}{Year: year, Currencies: total.lines(), Categories: []categoryOut{}} // [] even for a year without payments
 	for i, book := range months {
-		result.Months = append(result.Months, monthOut{civil(year, time.Month(i+1), 1).Format("2006-01"), book.lines()})
+		result.Months = append(result.Months, monthOut{schedule.Civil(year, time.Month(i+1), 1).Format("2006-01"), book.lines()})
 	}
 	names := make([]string, 0, len(byCategory))
 	for name := range byCategory {

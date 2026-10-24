@@ -1,4 +1,5 @@
-package app
+// Package security: password hashing and checks, random tokens, encryption at rest and TOTP.
+package security
 
 import (
 	"crypto/rand"
@@ -7,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -26,8 +26,9 @@ type argonCost struct {
 var argonParams = argonCost{memory: 64 * 1024, passes: 3, threads: 4}
 
 // hashSlots bounds concurrent hashing: each Argon2id run takes 64 MiB, so a burst of sign-ins
-// must queue instead of exhausting memory.
-var hashSlots = make(chan struct{}, max(2, runtime.NumCPU()))
+// queues instead of exhausting memory (the container gets 256 MiB). Two at a time keep a sign-in
+// well under a second even when several people log in together.
+var hashSlots = make(chan struct{}, 2)
 
 func argonKey(password string, salt []byte, cost argonCost) []byte {
 	hashSlots <- struct{}{}
@@ -35,15 +36,15 @@ func argonKey(password string, salt []byte, cost argonCost) []byte {
 	return argon2.IDKey([]byte(password), salt, cost.passes, cost.memory, cost.threads, 32)
 }
 
-func hashPassword(password string) string {
-	salt := randomBytes(16)
+func HashPassword(password string) string {
+	salt := RandomBytes(16)
 	key := argonKey(password, salt, argonParams)
 	b64 := base64.RawStdEncoding
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version, argonParams.memory, argonParams.passes, argonParams.threads,
 		b64.EncodeToString(salt), b64.EncodeToString(key))
 }
 
-func verifyPassword(password, encoded string) bool {
+func VerifyPassword(password, encoded string) bool {
 	if strings.HasPrefix(encoded, "$argon2id$") {
 		parts := strings.Split(encoded, "$") // "", argon2id, v=19, m=…,t=…,p=…, salt, key
 		var cost argonCost
@@ -74,18 +75,18 @@ func verifyPassword(password, encoded string) bool {
 	return subtle.ConstantTimeCompare([]byte(hex.EncodeToString(key)), []byte(parts[2])) == 1
 }
 
-// needsRehash reports a hash made by an older algorithm or with weaker parameters.
-func needsRehash(encoded string) bool {
+// NeedsRehash reports a hash made by an older algorithm or with weaker parameters.
+func NeedsRehash(encoded string) bool {
 	current := fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$", argon2.Version, argonParams.memory, argonParams.passes, argonParams.threads)
 	return !strings.HasPrefix(encoded, current)
 }
 
-func digest(value string) string {
+func Digest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
 }
 
-func randomBytes(n int) []byte {
+func RandomBytes(n int) []byte {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -93,8 +94,11 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-func randomHex(n int) string { return hex.EncodeToString(randomBytes(n)) }
+func RandomHex(n int) string { return hex.EncodeToString(RandomBytes(n)) }
 
-func randomToken(n int) string { return base64.RawURLEncoding.EncodeToString(randomBytes(n)) }
+func RandomToken(n int) string { return base64.RawURLEncoding.EncodeToString(RandomBytes(n)) }
 
-func constantEqual(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
+func Equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
+
+// UseFastHashing lowers the Argon2id cost; tests hash many passwords, the format stays the same.
+func UseFastHashing() { argonParams = argonCost{memory: 1024, passes: 1, threads: 1} }

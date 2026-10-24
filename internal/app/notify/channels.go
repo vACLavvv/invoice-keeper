@@ -1,4 +1,4 @@
-package app
+package notify
 
 // Transports for the extra reminder channels. Each returns the same three outcomes as Telegram:
 // sent; pending — certainly not delivered, safe to retry; uncertain — the result is unknown.
@@ -6,6 +6,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
@@ -25,13 +26,17 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
 )
 
 // --- MAX ---
 
-// maxClient trusts the system roots plus MAX_CA_FILE: the MAX API may use a certificate
+// MaxClient trusts the system roots plus MAX_CA_FILE: the MAX API may use a certificate
 // of the Russian national CA, which is missing from many systems.
-func maxClient(s *Settings, timeout time.Duration) *http.Client {
+func MaxClient(s *config.Settings, timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if s.MaxCAFile != "" {
 		pool, err := x509.SystemCertPool()
@@ -47,8 +52,8 @@ func maxClient(s *Settings, timeout time.Duration) *http.Client {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
-// maxCall invokes a MAX Bot API method; the token goes in the Authorization header, never in the URL.
-func maxCall(client *http.Client, s *Settings, method, path string, payload any) (*http.Response, error) {
+// MaxCall invokes a MAX Bot API method; the token goes in the Authorization header, never in the URL.
+func MaxCall(ctx context.Context, client *http.Client, s *config.Settings, method, path string, payload any) (*http.Response, error) {
 	var body *bytes.Reader
 	if payload != nil {
 		raw, _ := json.Marshal(payload)
@@ -56,7 +61,7 @@ func maxCall(client *http.Client, s *Settings, method, path string, payload any)
 	} else {
 		body = bytes.NewReader(nil)
 	}
-	request, err := http.NewRequest(method, s.MaxAPIURL+path, body)
+	request, err := http.NewRequestWithContext(ctx, method, s.MaxAPIURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -65,30 +70,30 @@ func maxCall(client *http.Client, s *Settings, method, path string, payload any)
 	return client.Do(request)
 }
 
-// maxKeyboard mirrors the Telegram buttons: «Оплачено» (callback) and «Оплатить» (link).
-func maxKeyboard(row ReminderRow) []map[string]any {
+// MaxKeyboard mirrors the Telegram buttons: «Оплачено» (callback) and «Оплатить» (link).
+func MaxKeyboard(row ReminderRow) []map[string]any {
 	buttons := [][]map[string]string{{{"type": "callback", "text": "✅ Оплачено", "payload": "paid:" + itoa(row.OccurrenceID)}}}
-	if link := row.payURL(); link != "" {
+	if link := row.PayURL(); link != "" {
 		buttons = append(buttons, []map[string]string{{"type": "link", "text": "💳 Оплатить", "url": link}})
 	}
 	return []map[string]any{{"type": "inline_keyboard", "payload": map[string]any{"buttons": buttons}}}
 }
 
 // MaxSender posts reminders to MAX_CHAT_ID; baseClient replaces the HTTP client in tests.
-func MaxSender(s *Settings, baseClient *http.Client) Sender {
+func MaxSender(s *config.Settings, baseClient *http.Client) Sender {
 	client := baseClient
 	if client == nil {
-		client = maxClient(s, 10*time.Second)
+		client = MaxClient(s, 10*time.Second)
 	}
 	return func(row ReminderRow) SendResult {
 		chat := s.MaxChatID
 		if row.ChatID != "" {
 			chat = row.ChatID
 		}
-		response, err := maxCall(client, s, "POST", "/messages?chat_id="+chat,
-			map[string]any{"text": reminderText(row), "attachments": maxKeyboard(row)})
+		response, err := MaxCall(context.Background(), client, s, "POST", "/messages?chat_id="+chat,
+			map[string]any{"text": ReminderText(row), "attachments": MaxKeyboard(row)})
 		if err != nil {
-			if isConnectError(err) {
+			if IsConnectError(err) {
 				return SendResult{State: "pending", Error: "Соединение с MAX не установлено", RetryDelay: 60}
 			}
 			return SendResult{State: "uncertain", Error: "Неизвестен результат отправки в MAX; автоматический повтор остановлен"}
@@ -116,7 +121,7 @@ func MaxSender(s *Settings, baseClient *http.Client) Sender {
 
 // --- email ---
 
-func emailSubject(row ReminderRow) string {
+func EmailSubject(row ReminderRow) string {
 	prefix := "Напоминание об оплате"
 	if row.overdue() {
 		prefix = "Просрочен платёж"
@@ -124,14 +129,14 @@ func emailSubject(row ReminderRow) string {
 	if row.sanctioned() {
 		prefix = "⛔ Санкционный кошелёк · " + prefix
 	}
-	subject := fmt.Sprintf("%s: %s — %s %s до %s", prefix, row.Title, money(row.AmountCents), row.Currency, shortDateFull(row.DueDate))
+	subject := fmt.Sprintf("%s: %s — %s %s до %s", prefix, row.Title, schedule.Money(row.AmountCents), row.Currency, schedule.FullDate(row.DueDate))
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(subject)
 }
 
-func emailMessage(s *Settings, row ReminderRow, now time.Time) []byte {
-	text := reminderText(row)
+func EmailMessage(s *config.Settings, row ReminderRow, now time.Time) []byte {
+	text := ReminderText(row)
 	text = strings.Replace(text, "нажмите «Оплачено» или отметьте в панели", "отметьте оплату в панели Invoice Keeper", 1)
-	if link := row.payURL(); link != "" {
+	if link := row.PayURL(); link != "" {
 		text += "\n\nОплатить: " + link
 	}
 	var body bytes.Buffer
@@ -141,9 +146,9 @@ func emailMessage(s *Settings, row ReminderRow, now time.Time) []byte {
 	headers := []string{
 		"From: " + s.SMTPFrom,
 		"To: " + strings.Join(s.SMTPTo, ", "),
-		"Subject: " + mime.BEncoding.Encode("UTF-8", emailSubject(row)),
+		"Subject: " + mime.BEncoding.Encode("UTF-8", EmailSubject(row)),
 		"Date: " + now.Format(time.RFC1123Z),
-		"Message-ID: <" + randomHex(12) + "@invoice-keeper>",
+		"Message-ID: <" + security.RandomHex(12) + "@invoice-keeper>",
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=UTF-8",
 		"Content-Transfer-Encoding: quoted-printable",
@@ -155,7 +160,7 @@ func emailMessage(s *Settings, row ReminderRow, now time.Time) []byte {
 // the letter was certainly not sent.
 var errBeforeData = errors.New("before data")
 
-func sendMail(s *Settings, message []byte) error {
+func sendMail(s *config.Settings, message []byte) error {
 	address := net.JoinHostPort(s.SMTPHost, strconv.Itoa(s.SMTPPort))
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	config := &tls.Config{ServerName: s.SMTPHost, MinVersion: tls.VersionTLS12}
@@ -225,15 +230,15 @@ func sendMail(s *Settings, message []byte) error {
 }
 
 // EmailSender sends one plain-text letter per reminder to all SMTP_TO addresses.
-func EmailSender(s *Settings) Sender {
+func EmailSender(s *config.Settings) Sender {
 	return func(row ReminderRow) SendResult {
-		err := sendMail(s, emailMessage(s, row, time.Now()))
+		err := sendMail(s, EmailMessage(s, row, time.Now()))
 		switch {
 		case err == nil:
 			return SendResult{State: "sent"}
 		case errors.Is(err, errBeforeData):
 			reason := "почтовый сервер отклонил письмо; проверьте настройки SMTP"
-			if isConnectError(err) {
+			if IsConnectError(err) {
 				reason = "почтовый сервер недоступен"
 			}
 			return SendResult{State: "pending", Error: "Письмо не отправлено: " + reason, RetryDelay: 300}
@@ -244,13 +249,13 @@ func EmailSender(s *Settings) Sender {
 
 // --- webhook ---
 
-func webhookPayload(row ReminderRow, now time.Time) map[string]any {
+func WebhookPayload(row ReminderRow, now time.Time) map[string]any {
 	event := "reminder.due"
 	if row.overdue() {
 		event = "reminder.overdue"
 	}
-	text := reminderText(row)
-	if link := row.payURL(); link != "" {
+	text := ReminderText(row)
+	if link := row.PayURL(); link != "" {
 		text += "\nОплатить: " + link
 	}
 	var wallet any
@@ -261,8 +266,8 @@ func webhookPayload(row ReminderRow, now time.Time) map[string]any {
 	return map[string]any{
 		"event": event,
 		"occurrence": map[string]any{
-			"id": row.OccurrenceID, "title": row.Title, "amount": money(row.AmountCents), "currency": row.Currency,
-			"due_date": row.DueDate, "payment_url": nullable(row.payURL()), "payment_details": nullable(row.PaymentDetails),
+			"id": row.OccurrenceID, "title": row.Title, "amount": schedule.Money(row.AmountCents), "currency": row.Currency,
+			"due_date": row.DueDate, "payment_url": nullable(row.PayURL()), "payment_details": nullable(row.PaymentDetails),
 			"wallet": wallet,
 		},
 		// text and content make the payload readable by Slack, Mattermost and Discord incoming webhooks.
@@ -271,7 +276,7 @@ func webhookPayload(row ReminderRow, now time.Time) map[string]any {
 	}
 }
 
-func webhookSignature(secret string, body []byte) string {
+func WebhookSignature(secret string, body []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
@@ -279,14 +284,14 @@ func webhookSignature(secret string, body []byte) string {
 
 // WebhookSender posts reminders as JSON. X-Invoice-Keeper-Delivery is stable per period and kind,
 // so a receiver can drop duplicates; X-Invoice-Keeper-Signature proves the sender when a secret is set.
-func WebhookSender(s *Settings, baseClient *http.Client) Sender {
+func WebhookSender(s *config.Settings, baseClient *http.Client) Sender {
 	client := baseClient
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	}
 	return func(row ReminderRow) SendResult {
-		payload := webhookPayload(row, time.Now())
+		payload := WebhookPayload(row, time.Now())
 		body, _ := json.Marshal(payload)
 		request, err := http.NewRequest("POST", s.WebhookURL, bytes.NewReader(body))
 		if err != nil {
@@ -297,11 +302,11 @@ func WebhookSender(s *Settings, baseClient *http.Client) Sender {
 		request.Header.Set("X-Invoice-Keeper-Event", payload["event"].(string))
 		request.Header.Set("X-Invoice-Keeper-Delivery", itoa(row.OccurrenceID)+"-"+payload["event"].(string))
 		if s.WebhookSecret != "" {
-			request.Header.Set("X-Invoice-Keeper-Signature", webhookSignature(s.WebhookSecret, body))
+			request.Header.Set("X-Invoice-Keeper-Signature", WebhookSignature(s.WebhookSecret, body))
 		}
 		response, err := client.Do(request)
 		if err != nil {
-			if isConnectError(err) {
+			if IsConnectError(err) {
 				return SendResult{State: "pending", Error: "Адрес webhook недоступен", RetryDelay: 60}
 			}
 			return SendResult{State: "uncertain", Error: "Неизвестен результат webhook; автоматический повтор остановлен"}

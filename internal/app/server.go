@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"invoice-keeper/internal/api"
 	"io/fs"
 	"log"
 	"net"
@@ -16,22 +15,31 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"invoice-keeper/internal/api"
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/wallet"
 )
 
 const cookieName = "invoice_session"
 
 type Options struct {
 	Today    func() time.Time
-	Sender   Sender
-	Channels map[string]Sender // replaces the channels from .env (tests)
-	Notifier Notifier          // security alerts; by default the Telegram bot, when configured
+	Sender   notify.Sender
+	Channels map[string]notify.Sender // replaces the channels from .env (tests)
+	Notifier notify.Notifier          // security alerts; by default the Telegram bot, when configured
 }
 
 type Server struct {
-	DB        *DB
-	Settings  *Settings
-	Worker    *ReminderWorker
-	Sanctions *Sanctions
+	DB        *store.DB
+	Settings  *config.Settings
+	Worker    *notify.ReminderWorker
+	Sanctions *wallet.Refresher
 	Today     func() time.Time
 	Now       func() time.Time // wall clock for one-time codes; replaceable in tests
 
@@ -40,7 +48,7 @@ type Server struct {
 	adminHash   string
 	handler     http.Handler
 	limiter     *rateLimiter
-	notifier    Notifier
+	notifier    notify.Notifier
 	alerts      sync.WaitGroup
 	botUsername atomic.Value // set by the Telegram bot after getMe
 }
@@ -53,28 +61,29 @@ func (s *Server) BotUsername() string {
 func (s *Server) SetBotUsername(name string) { s.botUsername.Store(name) }
 
 // NewServer prepares routes and materializes periods. The reminder loop is started separately.
-func NewServer(settings *Settings, db *DB, assets fs.FS, opts Options) (*Server, error) {
+func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Options) (*Server, error) {
 	today := opts.Today
 	if today == nil {
-		today = func() time.Time { return localToday(settings) }
+		today = func() time.Time { return schedule.Today(settings.Location()) }
 	}
 	s := &Server{
 		DB: db, Settings: settings, Today: today, Now: time.Now, assets: assets,
-		Worker:    NewReminderWorker(db, settings, opts.Sender, today),
-		adminHash: hashPassword(settings.AdminPassword),
+		Worker:    notify.NewReminderWorker(db, settings, opts.Sender, today),
+		adminHash: security.HashPassword(settings.AdminPassword),
 	}
 	if opts.Channels != nil {
 		s.Worker.Channels = opts.Channels
 	}
-	s.Sanctions = &Sanctions{DB: db, Settings: settings}
+	s.Worker.Maintenance = func(tx *sql.Tx) error { return cleanupKeys(tx, settings.KeyIdleDays, time.Now()) }
+	s.Sanctions = &wallet.Refresher{DB: db, Settings: settings}
 	s.notifier = opts.Notifier
 	if s.notifier == nil && settings.TelegramBotToken != "" {
-		s.notifier = TelegramNotifier(settings, "")
+		s.notifier = notify.TelegramNotifier(settings, "")
 	}
 	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
 		return nil, err
 	}
-	if err := db.Write(func(tx *sql.Tx) error { return materialize(tx, today()) }); err != nil {
+	if err := db.Write(func(tx *sql.Tx) error { return schedule.Materialize(tx, today()) }); err != nil {
 		return nil, err
 	}
 	app, err := fs.Sub(assets, "web/app")
@@ -218,7 +227,7 @@ type User struct {
 }
 
 func (s *Server) adminFingerprint() string {
-	return digest(s.Settings.AdminUsername + "\x00" + s.Settings.AdminPassword)
+	return security.Digest(s.Settings.AdminUsername + "\x00" + s.Settings.AdminPassword)
 }
 
 // currentUser authenticates a reading request: the panel session cookie or an API token (read or write).
@@ -234,7 +243,7 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	var isAdmin bool
 	var fingerprint sql.NullString
 	var csrf string
-	hash := digest(cookie.Value)
+	hash := security.Digest(cookie.Value)
 	now := time.Now().Unix()
 	err = s.DB.QueryRow("SELECT user_id,is_admin,admin_fingerprint,csrf_token,last_seen_at FROM sessions WHERE token_hash=? AND expires_at>?",
 		hash, now).Scan(&userID, &isAdmin, &fingerprint, &csrf, &lastSeen)
@@ -251,7 +260,7 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 		}
 	}
 	if isAdmin {
-		if !constantEqual(fingerprint.String, s.adminFingerprint()) {
+		if !security.Equal(fingerprint.String, s.adminFingerprint()) {
 			return nil, fail(401, "Настройки администратора изменены. Войдите снова")
 		}
 		return &User{ID: 0, Username: s.Settings.AdminUsername, DisplayName: "Администратор", Role: "admin", CSRFToken: csrf}, nil
@@ -294,7 +303,7 @@ func (s *Server) writeUser(r *http.Request) (*User, error) {
 		return nil, err
 	}
 	token := r.Header.Get("X-CSRF-Token")
-	if token == "" || !constantEqual(token, user.CSRFToken) {
+	if token == "" || !security.Equal(token, user.CSRFToken) {
 		return nil, fail(403, "Необходим X-CSRF-Token из /api/v1/auth/me")
 	}
 	return user, nil
@@ -380,7 +389,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	now := time.Now().Unix()
 	// Both buckets prevent changing the username or IP from trivially bypassing a limit.
-	keys := []string{digest("ip:" + clientIP(r)), digest("user:" + strings.ToLower(*username))}
+	keys := []string{security.Digest("ip:" + clientIP(r)), security.Digest("user:" + strings.ToLower(*username))}
 	var storedID int64
 	var storedName, storedDisplay, storedHash string
 	found := false
@@ -405,7 +414,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if !isAdmin && found {
 		encoded = storedHash
 	}
-	if !verifyPassword(*password, encoded) || !(isAdmin || found) {
+	if !security.VerifyPassword(*password, encoded) || !(isAdmin || found) {
 		s.alertLockout(r, strings.ToLower(*username), keys[1])
 		return fail(401, "Неверный логин или пароль")
 	}
@@ -413,13 +422,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 		if err := s.checkSecondFactor(code); err != nil {
 			return err
 		}
-	} else if needsRehash(storedHash) {
+	} else if security.NeedsRehash(storedHash) {
 		// Upgrade a scrypt (or weaker Argon2id) hash now that the password is known.
-		if _, err := s.DB.Exec("UPDATE users SET password_hash=? WHERE id=? AND password_hash=?", hashPassword(*password), storedID, storedHash); err != nil {
+		if _, err := s.DB.Exec("UPDATE users SET password_hash=? WHERE id=? AND password_hash=?", security.HashPassword(*password), storedID, storedHash); err != nil {
 			return err
 		}
 	}
-	token, csrf := randomToken(32), randomToken(32)
+	token, csrf := security.RandomToken(32), security.RandomToken(32)
 	user := User{ID: storedID, Username: storedName, DisplayName: storedDisplay, Role: "user", CSRFToken: csrf}
 	var sessionUser, fingerprint any = storedID, nil
 	if isAdmin {
@@ -436,11 +445,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		if _, err := tx.Exec(`INSERT INTO sessions(token_hash,user_id,is_admin,admin_fingerprint,csrf_token,expires_at,created_at,last_seen_at,user_agent,ip)
-			VALUES(?,?,?,?,?,?,?,?,?,?)`, digest(token), sessionUser, isAdmin, fingerprint, csrf, now+int64(maxAge), now, now,
+			VALUES(?,?,?,?,?,?,?,?,?,?)`, security.Digest(token), sessionUser, isAdmin, fingerprint, csrf, now+int64(maxAge), now, now,
 			nullable(userAgent(r)), clientIP(r)); err != nil {
 			return err
 		}
-		return audit(tx, *username, "login", "session")
+		return audit.Record(tx, *username, "login", "session")
 	})
 	if err != nil {
 		return err
@@ -488,7 +497,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	cookie, _ := r.Cookie(cookieName)
-	if _, err := s.DB.Exec("DELETE FROM sessions WHERE token_hash=?", digest(cookie.Value)); err != nil {
+	if _, err := s.DB.Exec("DELETE FROM sessions WHERE token_hash=?", security.Digest(cookie.Value)); err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", MaxAge: -1, Path: "/", HttpOnly: true, // #nosec G124 -- Secure follows COOKIE_SECURE: false only for local HTTP
@@ -501,12 +510,12 @@ func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return writeJSON(w, 200, map[string]any{
-		"timezone": s.Settings.Timezone, "today": formatDate(s.Today()), "telegram_enabled": s.Settings.TelegramEnabled,
+		"timezone": s.Settings.Timezone, "today": schedule.FormatDate(s.Today()), "telegram_enabled": s.Settings.TelegramEnabled,
 		"team_chat": s.Settings.TelegramEnabled && s.Settings.TelegramChatID != "", "bot_username": s.BotUsername(),
 		"reminder_days": 3, "reminder_interval_seconds": s.Settings.ReminderInterval,
 		"support_telegram": s.Settings.SupportTelegram, "support_email": s.Settings.SupportEmail,
 		"channels": s.channelNames(), "overdue_reminders": s.Settings.OverdueReminders, "sanctions_screening": s.Settings.OFACEnabled, "key_idle_days": s.Settings.KeyIdleDays,
-		"security": map[string]bool{"encryption": dataKey != nil, "login_alerts": s.Settings.LoginAlerts && s.notifier != nil,
+		"security": map[string]bool{"encryption": security.Enabled(), "login_alerts": s.Settings.LoginAlerts && s.notifier != nil,
 			"paid_linked_only": s.Settings.PaidLinkedOnly},
 	})
 }

@@ -1,4 +1,4 @@
-package app
+package notify
 
 // Deliveries: a second persistent outbox for the overdue reminder and the extra channels
 // (MAX, email, webhook). The Telegram «due» reminders keep their own table (reminders.go);
@@ -8,25 +8,15 @@ package app
 import (
 	"database/sql"
 	"errors"
-	"net/http"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/schedule"
 )
 
-const deliverySchema = `
-CREATE TABLE IF NOT EXISTS deliveries (
-    occurrence_id INTEGER NOT NULL REFERENCES payment_occurrences(id),
-    kind TEXT NOT NULL CHECK(kind IN ('due','overdue')),
-    channel TEXT NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('pending','sending','sent','uncertain','failed','cancelled')),
-    attempts INTEGER NOT NULL DEFAULT 0, attempted_at INTEGER, retry_after INTEGER NOT NULL DEFAULT 0,
-    sent_at TEXT, error TEXT,
-    PRIMARY KEY(occurrence_id, kind, channel)
-);
-`
-
-// maxDeliveryAttempts stops retrying a certainly-undelivered message (no connection, server busy).
-const maxDeliveryAttempts = 5
+// MaxDeliveryAttempts stops retrying a certainly-undelivered message (no connection, server busy).
+const MaxDeliveryAttempts = 5
 
 // overdueWindow: an overdue reminder is sent for periods that became overdue within the last week,
 // so enabling the feature (or a payment entered backdated) does not flood the chat with old debts.
@@ -55,8 +45,8 @@ func (w *ReminderWorker) broadcastChannels() map[string][]string {
 
 func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 	windows := map[string][]any{
-		"due":     {"o.due_date>=? AND o.due_date<=?", formatDate(today), formatDate(today.AddDate(0, 0, 3))},
-		"overdue": {"o.due_date>=? AND o.due_date<?", formatDate(today.AddDate(0, 0, -overdueWindow)), formatDate(today)},
+		"due":     {"o.due_date>=? AND o.due_date<=?", schedule.FormatDate(today), schedule.FormatDate(today.AddDate(0, 0, 3))},
+		"overdue": {"o.due_date>=? AND o.due_date<?", schedule.FormatDate(today.AddDate(0, 0, -overdueWindow)), schedule.FormatDate(today)},
 	}
 	for channel, kinds := range w.broadcastChannels() {
 		for _, kind := range kinds {
@@ -123,6 +113,9 @@ func (w *ReminderWorker) deliver() error {
 		args = append(args, channel)
 	}
 	for range 50 {
+		if w.stopped() {
+			return nil
+		}
 		var row ReminderRow
 		var channel string
 		found := false
@@ -166,8 +159,8 @@ func (w *ReminderWorker) deliver() error {
 			state, sentAt, delay := result.State, any(nil), int64(result.RetryDelay)
 			switch {
 			case state == "sent":
-				sentAt = timestamp()
-			case state == "pending" && attempts >= maxDeliveryAttempts:
+				sentAt = schedule.Timestamp()
+			case state == "pending" && attempts >= MaxDeliveryAttempts:
 				state = "failed"
 			case state == "pending":
 				delay = max(delay, 60) // never again in the same pass
@@ -198,8 +191,8 @@ func (w *ReminderWorker) sendWith(sender Sender, row ReminderRow) (result SendRe
 	return SendResult{State: "uncertain", Error: "Ошибка отправки; автоматический повтор остановлен"}
 }
 
-// defaultChannels builds the transports configured in .env.
-func defaultChannels(s *Settings) map[string]Sender {
+// DefaultChannels builds the transports configured in .env.
+func DefaultChannels(s *config.Settings) map[string]Sender {
 	channels := map[string]Sender{}
 	if s.MaxBotToken != "" {
 		channels["max"] = MaxSender(s, nil)
@@ -211,53 +204,4 @@ func defaultChannels(s *Settings) map[string]Sender {
 		channels["webhook"] = WebhookSender(s, nil)
 	}
 	return channels
-}
-
-// channelNames is what the panel shows in «Помощь» and the journal.
-func (s *Server) channelNames() map[string]bool {
-	return map[string]bool{
-		"telegram": s.Settings.TelegramEnabled, "max": s.Worker.Channels["max"] != nil,
-		"email": s.Worker.Channels["email"] != nil, "webhook": s.Worker.Channels["webhook"] != nil,
-	}
-}
-
-func (s *Server) deliveriesList(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.adminUser(r); err != nil {
-		return err
-	}
-	rows, err := s.DB.Query(`SELECT d.occurrence_id,d.kind,d.channel,d.state,d.attempts,d.attempted_at,d.sent_at,d.error,r.title,o.due_date
-		FROM deliveries d JOIN payment_occurrences o ON o.id=d.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id
-		ORDER BY COALESCE(d.attempted_at,0) DESC, o.due_date DESC LIMIT 200`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	type delivery struct {
-		OccurrenceID int64   `json:"occurrence_id"`
-		Kind         string  `json:"kind"`
-		Channel      string  `json:"channel"`
-		State        string  `json:"state"`
-		Attempts     int     `json:"attempts"`
-		AttemptedAt  *int64  `json:"attempted_at"`
-		SentAt       *string `json:"sent_at"`
-		Error        *string `json:"error"`
-		Title        string  `json:"title"`
-		DueDate      string  `json:"due_date"`
-	}
-	items := []delivery{}
-	for rows.Next() {
-		var d delivery
-		if err := rows.Scan(&d.OccurrenceID, &d.Kind, &d.Channel, &d.State, &d.Attempts, &d.AttemptedAt, &d.SentAt, &d.Error, &d.Title, &d.DueDate); err != nil {
-			return err
-		}
-		// A personal chat id is nobody else's business: the journal shows only that it was a private chat.
-		if strings.HasPrefix(d.Channel, "telegram:") {
-			d.Channel = "telegram_personal"
-		}
-		items = append(items, d)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	return writeJSON(w, 200, items)
 }

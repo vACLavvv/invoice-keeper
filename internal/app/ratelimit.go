@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"invoice-keeper/internal/app/security"
 )
 
 type bucket struct {
@@ -66,7 +68,7 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 		}
 		key := "ip:" + clientIP(r)
 		if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-			key = "token:" + digest(token)
+			key = "token:" + security.Digest(token)
 		}
 		if ok, wait := s.limiter.allow(key); !ok {
 			seconds := strconv.Itoa(int(wait.Seconds()) + 1)

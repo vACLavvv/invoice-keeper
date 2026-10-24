@@ -15,14 +15,11 @@ import (
 	"net/http"
 	"regexp"
 	"time"
-)
 
-const pairingSchema = `
-CREATE TABLE IF NOT EXISTS extension_pairings (
-    code_hash TEXT PRIMARY KEY, key_id INTEGER NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
-    token TEXT NOT NULL, expires_at INTEGER NOT NULL
-);
-`
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+)
 
 const (
 	pairingTTL           = 10 * time.Minute
@@ -33,8 +30,8 @@ var pairingCode = regexp.MustCompile(`^[A-Za-z0-9_-]{40,128}$`)
 
 // issueKey stores a new key for the user and returns its id and token (shown or handed over once).
 func (s *Server) issueKey(tx *sql.Tx, user *User, name, access string, days *int64) (apiKey, string, error) {
-	token := keyPrefix + randomToken(24)
-	created := apiKey{Name: name, Prefix: token[:len(keyPrefix)+6], Access: access, CreatedAt: timestamp()}
+	token := keyPrefix + security.RandomToken(24)
+	created := apiKey{Name: name, Prefix: token[:len(keyPrefix)+6], Access: access, CreatedAt: schedule.Timestamp()}
 	var expires any
 	if days != nil {
 		at := time.Now().Add(time.Duration(*days) * 24 * time.Hour).Unix()
@@ -55,14 +52,14 @@ func (s *Server) issueKey(tx *sql.Tx, user *User, name, access string, days *int
 		userID = user.ID
 	}
 	result, err := tx.Exec("INSERT INTO api_keys(token_hash,prefix,name,user_id,is_admin,admin_fingerprint,access,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-		digest(token), created.Prefix, created.Name, userID, user.Role == "admin", fingerprint, created.Access, expires, created.CreatedAt)
+		security.Digest(token), created.Prefix, created.Name, userID, user.Role == "admin", fingerprint, created.Access, expires, created.CreatedAt)
 	if err != nil {
 		return created, "", err
 	}
 	if created.ID, err = result.LastInsertId(); err != nil {
 		return created, "", err
 	}
-	return created, token, audit(tx, user.Username, "api_key.create", created.ID)
+	return created, token, audit.Record(tx, user.Username, "api_key.create", created.ID)
 }
 
 // pairingsCreate: the signed-in user confirms connecting an extension that showed this code.
@@ -89,7 +86,7 @@ func (s *Server) pairingsCreate(w http.ResponseWriter, r *http.Request) error {
 	var created apiKey
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		var exists int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM extension_pairings WHERE code_hash=?", digest(*code)).Scan(&exists); err != nil {
+		if err := tx.QueryRow("SELECT COUNT(*) FROM extension_pairings WHERE code_hash=?", security.Digest(*code)).Scan(&exists); err != nil {
 			return err
 		}
 		if exists > 0 {
@@ -101,7 +98,7 @@ func (s *Server) pairingsCreate(w http.ResponseWriter, r *http.Request) error {
 		}
 		created = key
 		_, err = tx.Exec("INSERT INTO extension_pairings(code_hash,key_id,token,expires_at) VALUES(?,?,?,?)",
-			digest(*code), key.ID, encryptText("extension_pairings.token", token), time.Now().Add(pairingTTL).Unix())
+			security.Digest(*code), key.ID, security.EncryptText("extension_pairings.token", token), time.Now().Add(pairingTTL).Unix())
 		return err
 	})
 	if err != nil {
@@ -125,11 +122,11 @@ func (s *Server) pairingsClaim(w http.ResponseWriter, r *http.Request) error {
 	var sealed string
 	var keyID int64
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		err := tx.QueryRow("SELECT key_id,token FROM extension_pairings WHERE code_hash=? AND expires_at>?", digest(*code), time.Now().Unix()).Scan(&keyID, &sealed)
+		err := tx.QueryRow("SELECT key_id,token FROM extension_pairings WHERE code_hash=? AND expires_at>?", security.Digest(*code), time.Now().Unix()).Scan(&keyID, &sealed)
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec("DELETE FROM extension_pairings WHERE code_hash=?", digest(*code))
+		_, err = tx.Exec("DELETE FROM extension_pairings WHERE code_hash=?", security.Digest(*code))
 		return err
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -138,7 +135,7 @@ func (s *Server) pairingsClaim(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	token, err := decryptText("extension_pairings.token", sealed)
+	token, err := security.DecryptText("extension_pairings.token", sealed)
 	if err != nil {
 		return err
 	}
@@ -176,10 +173,15 @@ func cleanupKeys(tx *sql.Tx, idleDays int, now time.Time) error {
 	if removed == 0 {
 		return nil
 	}
-	return audit(tx, "server", "api_key.expire", removed)
+	return audit.Record(tx, "server", "api_key.expire", removed)
 }
 
 // idleCutoff is the oldest last use still allowed, in the timestamp() format (sortable as text).
 func idleCutoff(idleDays int, now time.Time) string {
 	return now.UTC().AddDate(0, 0, -idleDays).Format("2006-01-02T15:04:05.000000-07:00")
+}
+
+type stmt struct {
+	query string
+	args  []any
 }

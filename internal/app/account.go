@@ -4,18 +4,17 @@ package app
 // The admin password lives in .env, so it cannot be changed here; its second factor can.
 
 import (
-	"crypto/hmac"
-	"crypto/sha1" // #nosec G505 -- TOTP (RFC 6238) is HMAC-SHA1: authenticator apps require it
 	"database/sql"
-	"encoding/base32"
-	"encoding/binary"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
@@ -41,7 +40,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 		return &apiError{Status: 422, Detail: []fieldError{{Loc: []any{"body", "new_password"}, Msg: "Новый пароль совпадает с текущим", Type: "value_error"}}}
 	}
 	now := time.Now().Unix()
-	keys := []string{digest("ip:" + clientIP(r)), digest("user:" + strings.ToLower(user.Username))}
+	keys := []string{security.Digest("ip:" + clientIP(r)), security.Digest("user:" + strings.ToLower(user.Username))}
 	var stored string
 	// A wrong current password counts as a failed sign-in, so this form cannot be used for guessing.
 	err = s.DB.Write(func(tx *sql.Tx) error {
@@ -53,23 +52,23 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !verifyPassword(*current, stored) {
+	if !security.VerifyPassword(*current, stored) {
 		return &apiError{Status: 422, Detail: []fieldError{{Loc: []any{"body", "current_password"}, Msg: "Неверный текущий пароль", Type: "value_error"}}}
 	}
-	encoded := hashPassword(*next)
+	encoded := security.HashPassword(*next)
 	cookie, _ := r.Cookie(cookieName)
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		if _, err := tx.Exec("UPDATE users SET password_hash=? WHERE id=?", encoded, user.ID); err != nil {
 			return err
 		}
 		// Other devices are signed out; this session stays.
-		if _, err := tx.Exec("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", user.ID, digest(cookie.Value)); err != nil {
+		if _, err := tx.Exec("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", user.ID, security.Digest(cookie.Value)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM auth_attempts WHERE key=?", keys[1]); err != nil {
 			return err
 		}
-		return audit(tx, user.Username, "password.change", user.ID)
+		return audit.Record(tx, user.Username, "password.change", user.ID)
 	})
 	if err != nil {
 		return err
@@ -78,33 +77,6 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) error {
 }
 
 // --- TOTP (RFC 6238: HMAC-SHA1, 30 s, 6 digits) ---
-
-var totpEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
-
-func totpCode(secret []byte, step int64) string {
-	mac := hmac.New(sha1.New, secret)
-	binary.Write(mac, binary.BigEndian, step)
-	sum := mac.Sum(nil)
-	offset := sum[len(sum)-1] & 0x0f
-	value := binary.BigEndian.Uint32(sum[offset:offset+4]) & 0x7fffffff
-	return fmt.Sprintf("%06d", value%1_000_000)
-}
-
-// totpStep returns the matched time step (±1 for clock drift) or -1.
-func totpStep(secretB32, code string, now time.Time) int64 {
-	secret, err := totpEncoding.DecodeString(strings.ToUpper(secretB32))
-	code = strings.ReplaceAll(code, " ", "")
-	if err != nil || len(code) != 6 {
-		return -1
-	}
-	current := now.Unix() / 30
-	for _, step := range []int64{current - 1, current, current + 1} {
-		if hmac.Equal([]byte(totpCode(secret, step)), []byte(code)) {
-			return step
-		}
-	}
-	return -1
-}
 
 func (s *Server) state(key string) (string, error) {
 	var value string
@@ -115,22 +87,17 @@ func (s *Server) state(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return decryptText("app_state."+key, value)
+	return security.DecryptText("app_state."+key, value)
 }
 
 // setSecretState stores a secret (the TOTP keys) encrypted when DATA_ENCRYPTION_KEY is set.
-func setSecretState(q querier, key, value string) error {
-	return setState(q, key, encryptText("app_state."+key, value))
-}
-
-func setState(q querier, key, value string) error {
-	_, err := q.Exec("INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value)
-	return err
+func setSecretState(q store.Querier, key, value string) error {
+	return store.SetState(q, key, security.EncryptText("app_state."+key, value))
 }
 
 // useTOTP accepts each code once: a step not newer than the last used one is a replay.
 func (s *Server) useTOTP(secret, code string) (bool, error) {
-	step := totpStep(secret, code, s.Now())
+	step := security.TOTPStep(secret, code, s.Now())
 	if step < 0 {
 		return false, nil
 	}
@@ -144,7 +111,7 @@ func (s *Server) useTOTP(secret, code string) (bool, error) {
 			return nil
 		}
 		ok = true
-		return setState(tx, "admin_totp_last_step", itoa(step))
+		return store.SetState(tx, "admin_totp_last_step", itoa(step))
 	})
 	return ok, err
 }
@@ -190,7 +157,7 @@ func (s *Server) twoFactorSetup(w http.ResponseWriter, r *http.Request) error {
 		}
 		return fail(409, "Двухфакторный вход уже включён")
 	}
-	secret := totpEncoding.EncodeToString(randomBytes(20))
+	secret := security.TOTPEncoding.EncodeToString(security.RandomBytes(20))
 	if err := setSecretState(s.DB, "admin_totp_pending", secret); err != nil {
 		return err
 	}
@@ -220,7 +187,7 @@ func (s *Server) twoFactorEnable(w http.ResponseWriter, r *http.Request) error {
 	if pending == "" {
 		return fail(409, "Сначала получите QR-код")
 	}
-	step := totpStep(pending, *code, s.Now())
+	step := security.TOTPStep(pending, *code, s.Now())
 	if step < 0 {
 		return &apiError{Status: 422, Detail: []fieldError{{Loc: []any{"body", "code"}, Msg: "Код не подходит. Проверьте время на телефоне", Type: "value_error"}}}
 	}
@@ -229,17 +196,17 @@ func (s *Server) twoFactorEnable(w http.ResponseWriter, r *http.Request) error {
 		if err := setSecretState(tx, "admin_totp_secret", pending); err != nil {
 			return err
 		}
-		if err := setState(tx, "admin_totp_last_step", itoa(step)); err != nil {
+		if err := store.SetState(tx, "admin_totp_last_step", itoa(step)); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("DELETE FROM app_state WHERE key='admin_totp_pending'"); err != nil {
 			return err
 		}
 		// Sessions opened without the second factor end, except this one.
-		if _, err := tx.Exec("DELETE FROM sessions WHERE is_admin=1 AND token_hash<>?", digest(cookie.Value)); err != nil {
+		if _, err := tx.Exec("DELETE FROM sessions WHERE is_admin=1 AND token_hash<>?", security.Digest(cookie.Value)); err != nil {
 			return err
 		}
-		return audit(tx, admin.Username, "2fa.enable", "admin")
+		return audit.Record(tx, admin.Username, "2fa.enable", "admin")
 	})
 	if err != nil {
 		return err
@@ -262,7 +229,7 @@ func (s *Server) twoFactorDisable(w http.ResponseWriter, r *http.Request) error 
 	if err := f.err(); err != nil {
 		return err
 	}
-	if !verifyPassword(*password, s.adminHash) {
+	if !security.VerifyPassword(*password, s.adminHash) {
 		return &apiError{Status: 422, Detail: []fieldError{{Loc: []any{"body", "password"}, Msg: "Неверный пароль", Type: "value_error"}}}
 	}
 	secret, err := s.state("admin_totp_secret")
@@ -282,7 +249,7 @@ func (s *Server) twoFactorDisable(w http.ResponseWriter, r *http.Request) error 
 		if _, err := tx.Exec("DELETE FROM app_state WHERE key IN ('admin_totp_secret','admin_totp_pending')"); err != nil {
 			return err
 		}
-		return audit(tx, admin.Username, "2fa.disable", "admin")
+		return audit.Record(tx, admin.Username, "2fa.disable", "admin")
 	})
 	if err != nil {
 		return err
@@ -291,11 +258,11 @@ func (s *Server) twoFactorDisable(w http.ResponseWriter, r *http.Request) error 
 }
 
 // DisableTwoFactor is the recovery path for a lost phone: `invoice-keeper 2fa-off` on the server.
-func DisableTwoFactor(db *DB) error {
+func DisableTwoFactor(db *store.DB) error {
 	return db.Write(func(tx *sql.Tx) error {
 		if _, err := tx.Exec("DELETE FROM app_state WHERE key IN ('admin_totp_secret','admin_totp_pending')"); err != nil {
 			return err
 		}
-		return audit(tx, "server", "2fa.disable", "admin")
+		return audit.Record(tx, "server", "2fa.disable", "admin")
 	})
 }

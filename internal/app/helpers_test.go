@@ -13,12 +13,16 @@ import (
 	"time"
 
 	invoicekeeper "invoice-keeper"
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 const testPassword = "Test-Owner-Only123!"
 
 // Tests hash many passwords; production cost would only make them slow, the format is the same.
-func init() { argonParams = argonCost{memory: 1024, passes: 1, threads: 1} }
+func init() { security.UseFastHashing() }
 
 type clock struct {
 	mu  sync.Mutex
@@ -30,8 +34,8 @@ func (c *clock) Set(t time.Time)  { c.mu.Lock(); defer c.mu.Unlock(); c.now = t 
 
 type harness struct {
 	t        *testing.T
-	settings *Settings
-	db       *DB
+	settings *config.Settings
+	db       *store.DB
 	server   *Server
 	http     *httptest.Server
 	clock    *clock
@@ -39,11 +43,11 @@ type harness struct {
 
 func setup(t *testing.T) *harness {
 	t.Helper()
-	settings := &Settings{DatabasePath: filepath.Join(t.TempDir(), "test.sqlite3"), AdminUsername: "admin", AdminPassword: testPassword}
+	settings := &config.Settings{DatabasePath: filepath.Join(t.TempDir(), "test.sqlite3"), AdminUsername: "admin", AdminPassword: testPassword}
 	if err := settings.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	e := &harness{t: t, settings: settings, clock: &clock{now: civil(2026, 1, 28)}}
+	e := &harness{t: t, settings: settings, clock: &clock{now: schedule.Civil(2026, 1, 28)}}
 	e.start()
 	return e
 }
@@ -51,7 +55,7 @@ func setup(t *testing.T) *harness {
 // start opens the database and serves it; calling it again simulates a restart.
 func (e *harness) start() {
 	e.t.Helper()
-	db, err := OpenDB(e.settings.DatabasePath)
+	db, err := store.OpenDB(e.settings.DatabasePath)
 	if err != nil {
 		e.t.Fatal(err)
 	}

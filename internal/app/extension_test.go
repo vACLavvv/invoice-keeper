@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/security"
 )
 
 // keyClient sends requests with an API key and no cookies, the way the extension popup does.
@@ -54,7 +57,7 @@ func TestAPIKeysAreOwnedAndShownOnce(t *testing.T) {
 	expect(t, "admin cannot delete user's key", admin.delete("/api/v1/api-keys/"+id(keys[0])).status, 404)
 	var stored string
 	e.db.QueryRow("SELECT token_hash FROM api_keys").Scan(&stored)
-	expect(t, "only the hash is stored", stored, digest(token))
+	expect(t, "only the hash is stored", stored, security.Digest(token))
 
 	user.csrf = ""
 	expect(t, "csrf required", user.post("/api/v1/api-keys", map[string]any{"name": "x"}).status, 403)
@@ -143,7 +146,7 @@ func TestAcceptedSuggestionBecomesPaymentAndReminds(t *testing.T) {
 	ext := e.keyClient(admin.createKey("Edge"))
 	sent := &recorder{}
 	e.server.Worker.Settings = enabledSettings(e)
-	e.server.Worker.Sender = sent.sender(SendResult{State: "sent", MessageID: "1"})
+	e.server.Worker.Sender = sent.sender(notify.SendResult{State: "sent", MessageID: "1"})
 
 	created := ext.post("/api/v1/payment-suggestions", suggestionBody(map[string]any{"next_due_date": "2026-01-30"})).object(t)
 	sg := created["suggestion"].(map[string]any)

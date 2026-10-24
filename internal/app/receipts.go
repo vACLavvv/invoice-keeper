@@ -13,6 +13,10 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
 )
 
 const (
@@ -56,7 +60,7 @@ func (s *Server) receiptsList(w http.ResponseWriter, r *http.Request) error {
 		if err := rows.Scan(&item.ID, &item.Kind, &item.URL, &item.FileName, &item.ContentType, &item.Size, &item.CreatedBy, &item.CreatedAt); err != nil {
 			return err
 		}
-		if err := decryptNullable("receipts.url", &item.URL); err != nil {
+		if err := security.DecryptNullable("receipts.url", &item.URL); err != nil {
 			return err
 		}
 		if item.Kind == "file" {
@@ -159,18 +163,18 @@ func (s *Server) receiptsAdd(w http.ResponseWriter, r *http.Request) error {
 		}
 		var blob any
 		if data != nil {
-			blob = encryptBlob("receipts.data", data)
+			blob = security.EncryptBlob("receipts.data", data)
 		}
 		if text, ok := link.(string); ok {
-			link = encryptText("receipts.url", text)
+			link = security.EncryptText("receipts.url", text)
 		}
 		result, err := tx.Exec(`INSERT INTO receipts(occurrence_id,kind,url,file_name,content_type,size,data,created_by,author_user_id,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?)`, id, kind, link, name, contentType, size, blob, user.Username, authorID, timestamp())
+			VALUES(?,?,?,?,?,?,?,?,?,?)`, id, kind, link, name, contentType, size, blob, user.Username, authorID, schedule.Timestamp())
 		if err != nil {
 			return err
 		}
 		receiptID, _ = result.LastInsertId()
-		return audit(tx, user.Username, "receipt.add", id)
+		return audit.Record(tx, user.Username, "receipt.add", id)
 	})
 	if err != nil {
 		return err
@@ -195,7 +199,7 @@ func (s *Server) receiptFile(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if data, err = decryptBlob("receipts.data", data); err != nil {
+	if data, err = security.DecryptBlob("receipts.data", data); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", contentType.String)
@@ -231,7 +235,7 @@ func (s *Server) receiptsDelete(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec("DELETE FROM receipts WHERE id=?", id); err != nil {
 			return err
 		}
-		return audit(tx, user.Username, "receipt.delete", occurrenceID)
+		return audit.Record(tx, user.Username, "receipt.delete", occurrenceID)
 	})
 	if err != nil {
 		return err

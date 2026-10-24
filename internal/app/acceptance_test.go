@@ -2,12 +2,14 @@ package app
 
 import (
 	"fmt"
-	"invoice-keeper/internal/api"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
+
+	"invoice-keeper/internal/api"
+	"invoice-keeper/internal/app/schedule"
 )
 
 func TestDataRequiresAuthorization(t *testing.T) {
@@ -141,7 +143,7 @@ func TestMonthEndAnchorAndUnpaidIndependentPeriods(t *testing.T) {
 	c := e.client()
 	c.signIn()
 	c.createPayment(nil)
-	e.clock.Set(civil(2026, 3, 31))
+	e.clock.Set(schedule.Civil(2026, 3, 31))
 	items := c.get("/api/v1/payment-occurrences").list(t)
 	expect(t, "dates", dueDates(items), "2026-01-31,2026-02-28,2026-03-31,2026-04-30")
 	var statuses []string
@@ -153,8 +155,8 @@ func TestMonthEndAnchorAndUnpaidIndependentPeriods(t *testing.T) {
 	items = c.get("/api/v1/payment-occurrences").list(t)
 	expect(t, "first paid", items[0]["status"], any("paid"))
 	expect(t, "second still overdue", items[1]["status"], any("overdue"))
-	expect(t, "leap year", formatDate(monthlyDate(civil(2028, 1, 31), 1, 0)), "2028-02-29")
-	expect(t, "year wrap", formatDate(monthlyDate(civil(2026, 12, 31), 1, 0)), "2027-01-31")
+	expect(t, "leap year", schedule.FormatDate(schedule.MonthlyDate(schedule.Civil(2028, 1, 31), 1, 0)), "2028-02-29")
+	expect(t, "year wrap", schedule.FormatDate(schedule.MonthlyDate(schedule.Civil(2026, 12, 31), 1, 0)), "2027-01-31")
 }
 
 func TestPaymentDateCorrectionUndoAndDueDay(t *testing.T) {
@@ -165,7 +167,7 @@ func TestPaymentDateCorrectionUndoAndDueDay(t *testing.T) {
 	item := c.get("/api/v1/payment-occurrences").list(t)[0]
 	expect(t, "due today is not overdue", item["status"], any("unpaid"))
 	expect(t, "days", item["days_overdue"], any(0.0))
-	e.clock.Set(civil(2026, 2, 2))
+	e.clock.Set(schedule.Civil(2026, 2, 2))
 	path := "/api/v1/payment-occurrences/" + id(item)
 	late := c.patch(path, map[string]any{"paid": true, "paid_at": "2026-01-30"}).object(t)
 	expect(t, "late", late["is_late"], any(true))
@@ -193,7 +195,7 @@ func TestNextMonthIsCompleteEvenWhenDueAfterToday(t *testing.T) {
 	e := setup(t)
 	c := e.client()
 	c.signIn()
-	e.clock.Set(civil(2026, 10, 23))
+	e.clock.Set(schedule.Civil(2026, 10, 23))
 	c.createPayment(map[string]any{"first_due_date": "2026-10-26"})
 	items := c.get("/api/v1/payment-occurrences").list(t)
 	expect(t, "dates", dueDates(items), "2026-10-26,2026-11-26")
@@ -224,7 +226,7 @@ func TestCurrencySummaryExactAndDateFilters(t *testing.T) {
 	expect(t, "EUR unpaid", s["EUR"]["unpaid"], any("17.99"))
 	expect(t, "RUB overdue", s["RUB"]["overdue"], any("0.00"))
 	expect(t, "RUB count", s["RUB"]["count"], any(2.0))
-	e.clock.Set(civil(2026, 2, 1))
+	e.clock.Set(schedule.Civil(2026, 2, 1))
 	expect(t, "RUB overdue later", summary()["RUB"]["overdue"], any("0.30"))
 	usd := c.get("/api/v1/payment-occurrences?" + params + "&currency=USD").list(t)
 	expect(t, "usd filter", len(usd), 1)
@@ -270,7 +272,7 @@ func TestArchiveAndRestartPreserveHistory(t *testing.T) {
 	expect(t, "archive", c.delete("/api/v1/recurring-payments/"+id(payment)).status, 204)
 	expect(t, "archive is idempotent", c.delete("/api/v1/recurring-payments/"+id(payment)).status, 204)
 	expect(t, "missing", c.delete("/api/v1/recurring-payments/999").status, 404)
-	e.clock.Set(civil(2027, 1, 1))
+	e.clock.Set(schedule.Civil(2027, 1, 1))
 	e.start()
 	restarted := e.client()
 	restarted.signIn()
@@ -349,7 +351,7 @@ func TestConcurrentReadsCreateNoDuplicatePeriods(t *testing.T) {
 	c := e.client()
 	c.signIn()
 	c.createPayment(nil)
-	e.clock.Set(civil(2026, 5, 1))
+	e.clock.Set(schedule.Civil(2026, 5, 1))
 	var wg sync.WaitGroup
 	results := make([]response, 12)
 	for i := range results {
@@ -370,14 +372,6 @@ func TestConcurrentReadsCreateNoDuplicatePeriods(t *testing.T) {
 	}
 	expect(t, "unique periods", len(seen), len(rows))
 	expect(t, "count", len(rows), 6) // Jan..Jun: through the end of next month
-}
-
-func TestPasswordHashFormatIsStable(t *testing.T) {
-	// A hash stored by an earlier release must keep verifying after upgrades.
-	legacy := "scrypt$00112233445566778899aabbccddeeff$deeacfbd6fcad6b2e04266a871985b33ad33f3912581d90869f86daf8ae5c4ddc6af25827122b9bc3e2c08c64f29165400b9a4842b621d86e66f738ae51bc787"
-	expect(t, "legacy hash", verifyPassword("Stored-earlier-1!", legacy), true)
-	expect(t, "wrong password", verifyPassword("other", legacy), false)
-	expect(t, "round trip", verifyPassword("Fresh-pass-123!", hashPassword("Fresh-pass-123!")), true)
 }
 
 func TestPanelPagesAndAssets(t *testing.T) {

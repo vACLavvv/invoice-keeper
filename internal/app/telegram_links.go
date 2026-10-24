@@ -10,6 +10,11 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/bot"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
 )
 
 type telegramLink struct {
@@ -58,14 +63,14 @@ func (s *Server) myTelegramLinkCode(w http.ResponseWriter, r *http.Request) erro
 	if s.Settings.TelegramBotToken == "" || bot == "" {
 		return fail(409, "Telegram-бот не настроен на сервере")
 	}
-	code := randomToken(16)
+	code := security.RandomToken(16)
 	expires := time.Now().Add(10 * time.Minute)
 	userID, isAdmin := ownerArgs(user)
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		if _, err := tx.Exec("DELETE FROM telegram_link_codes WHERE expires_at<=?", time.Now().Unix()); err != nil {
 			return err
 		}
-		_, err := tx.Exec("INSERT INTO telegram_link_codes(code_hash,user_id,is_admin,expires_at) VALUES(?,?,?,?)", digest(code), userID, isAdmin, expires.Unix())
+		_, err := tx.Exec("INSERT INTO telegram_link_codes(code_hash,user_id,is_admin,expires_at) VALUES(?,?,?,?)", security.Digest(code), userID, isAdmin, expires.Unix())
 		return err
 	})
 	if err != nil {
@@ -90,7 +95,7 @@ func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error 
 		if n, _ := result.RowsAffected(); n == 0 {
 			return fail(404, "Telegram не привязан")
 		}
-		return audit(tx, user.Username, "telegram.unlink", user.Username)
+		return audit.Record(tx, user.Username, "telegram.unlink", user.Username)
 	})
 	if err != nil {
 		return err
@@ -99,12 +104,12 @@ func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error 
 }
 
 // linkTelegram consumes a /start code; it returns the panel name the chat now belongs to.
-func (s *Server) linkTelegram(code string, from tgUser, chatID int64) (string, error) {
+func (s *Server) linkTelegram(code string, from bot.User, chatID int64) (string, error) {
 	var name string
 	err := s.DB.Write(func(tx *sql.Tx) error {
 		var userID sql.NullInt64
 		var isAdmin bool
-		err := tx.QueryRow("SELECT user_id,is_admin FROM telegram_link_codes WHERE code_hash=? AND expires_at>?", digest(code), time.Now().Unix()).
+		err := tx.QueryRow("SELECT user_id,is_admin FROM telegram_link_codes WHERE code_hash=? AND expires_at>?", security.Digest(code), time.Now().Unix()).
 			Scan(&userID, &isAdmin)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fail(404, "Ссылка устарела или уже использована. Получите новую в панели")
@@ -112,7 +117,7 @@ func (s *Server) linkTelegram(code string, from tgUser, chatID int64) (string, e
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec("DELETE FROM telegram_link_codes WHERE code_hash=?", digest(code)); err != nil {
+		if _, err := tx.Exec("DELETE FROM telegram_link_codes WHERE code_hash=?", security.Digest(code)); err != nil {
 			return err
 		}
 		owner := "is_admin=1"
@@ -134,10 +139,10 @@ func (s *Server) linkTelegram(code string, from tgUser, chatID int64) (string, e
 			dbUser = userID.Int64
 		}
 		if _, err := tx.Exec("INSERT INTO telegram_links(user_id,is_admin,telegram_user_id,chat_id,username,linked_at) VALUES(?,?,?,?,?,?)",
-			dbUser, isAdmin, from.ID, chatID, nullable(from.Username), timestamp()); err != nil {
+			dbUser, isAdmin, from.ID, chatID, nullable(from.Username), schedule.Timestamp()); err != nil {
 			return err
 		}
-		return audit(tx, name, "telegram.link", "@"+from.Username)
+		return audit.Record(tx, name, "telegram.link", "@"+from.Username)
 	})
 	return name, err
 }

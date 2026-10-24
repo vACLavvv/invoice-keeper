@@ -16,6 +16,9 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/charmap"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
 )
 
 var statusLabels = map[string]string{"paid": "Оплачено", "unpaid": "К оплате", "overdue": "Просрочено"}
@@ -69,19 +72,12 @@ func (s *Server) occurrencesExport(w http.ResponseWriter, r *http.Request) error
 			assignee = o.Assignee.DisplayName
 		}
 		if o.PaidAt != nil {
-			paid = shortDateFull(*o.PaidAt)
+			paid = schedule.FullDate(*o.PaidAt)
 		}
-		rows = append(rows, []string{cell(o.Title), cell(category), cell(assignee), excelMoney(o.Amount), o.Currency, shortDateFull(o.DueDate),
+		rows = append(rows, []string{cell(o.Title), cell(category), cell(assignee), excelMoney(o.Amount), o.Currency, schedule.FullDate(o.DueDate),
 			statusLabels[o.Status], paid, itoa(int64(o.DaysOverdue)), frequencyLabels[o.Frequency]})
 	}
-	return writeCSV(w, "invoice-keeper-"+formatDate(s.Today())+".csv", rows)
-}
-
-func shortDateFull(iso string) string {
-	if d, err := parseDate(iso); err == nil {
-		return d.Format("02.01.2006")
-	}
-	return iso
+	return writeCSV(w, "invoice-keeper-"+schedule.FormatDate(s.Today())+".csv", rows)
 }
 
 func (s *Server) importTemplate(w http.ResponseWriter, r *http.Request) error {
@@ -141,9 +137,9 @@ func importFrequency(value string) string {
 
 func importDate(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
-	for _, layout := range []string{"02.01.2006", "2.1.2006", dateLayout} {
+	for _, layout := range []string{"02.01.2006", "2.1.2006", schedule.DateLayout} {
 		if d, err := time.Parse(layout, value); err == nil {
-			return d, !d.Before(civil(2000, 1, 1)) && !d.After(civil(2100, 12, 31))
+			return d, !d.Before(schedule.Civil(2000, 1, 1)) && !d.After(schedule.Civil(2100, 12, 31))
 		}
 	}
 	return time.Time{}, false
@@ -282,14 +278,14 @@ func (s *Server) recurringImport(w http.ResponseWriter, r *http.Request) error {
 		if !ok || cents == 0 {
 			row.Errors = append(row.Errors, "Сумма должна быть положительным числом, до 2 знаков после запятой")
 		} else {
-			row.Amount = money(cents)
+			row.Amount = schedule.Money(cents)
 		}
 		if row.Currency = importCurrency(value("currency")); row.Currency == "" {
 			row.Errors = append(row.Errors, "Валюта: RUB, USD или EUR")
 		}
 		due, ok := importDate(value("first_due_date"))
 		if ok {
-			row.FirstDueDate = formatDate(due)
+			row.FirstDueDate = schedule.FormatDate(due)
 		} else {
 			row.Errors = append(row.Errors, "Дата: ДД.ММ.ГГГГ или ГГГГ-ММ-ДД, с 2000 по 2100 год")
 		}
@@ -328,7 +324,7 @@ func (s *Server) recurringImport(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		return audit(tx, admin.Username, "recurring.import", itoa(int64(len(rows))))
+		return audit.Record(tx, admin.Username, "recurring.import", itoa(int64(len(rows))))
 	})
 	if err != nil {
 		return err

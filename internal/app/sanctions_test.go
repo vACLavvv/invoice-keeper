@@ -1,62 +1,21 @@
 package app
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
+
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/wallet"
 )
-
-func TestWalletAddressValidation(t *testing.T) {
-	for _, c := range []struct {
-		network, address string
-		valid            bool
-	}{
-		{"BTC", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", true},
-		{"BTC", "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy", true},
-		{"BTC", "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", true},
-		{"BTC", "BC1QAR0SRRR7XFKVY5L643LYDNW9RE59GTZZWF5MDQ", true},
-		{"BTC", "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297", true},
-		{"BTC", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb", false},         // checksum
-		{"BTC", "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdx", false}, // checksum
-		{"BTC", "bc1qAr0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", false}, // mixed case
-		{"BTC", "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz", false},         // a TRON address
-		{"ETH", "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", true},  // EIP-55
-		{"ETH", "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", true},  // lowercase
-		{"ETH", "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD", false}, // broken checksum
-		{"ETH", "0x5aaeb6053f3e94c9b9a09f33669435e7ef1bea", false},
-		{"TRON", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", true},
-		{"TRON", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6u", false},
-		{"TRON", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", false},
-		{"XRP", "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh", false},
-	} {
-		if got := validWallet(c.network, c.address); got != c.valid {
-			t.Errorf("%s %s: got %v, want %v", c.network, c.address, got, c.valid)
-		}
-	}
-}
-
-func TestParseSDN(t *testing.T) {
-	file, _ := os.Open("testdata/sdn_sample.xml")
-	defer file.Close()
-	list, published, err := parseSDN(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expect(t, "published", published, "10/21/2026")
-	expect(t, "only digital currency ids", len(list), 3)
-	expect(t, "person name", list[0].Name, "Ivan SAMPLE")
-	expect(t, "hex is case-insensitive", list[1].Key, "0x252a8bd2319d8a555b872990601221b3a2053bce")
-	expect(t, "currency", list[2].Currency, "USDT")
-}
 
 // ofacServer serves the sample list the way OFAC does: through a redirect to the file.
 func ofacServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
-	sample, err := os.ReadFile("testdata/sdn_sample.xml")
+	sample, err := os.ReadFile("wallet/testdata/sdn_sample.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,16 +41,16 @@ func TestSanctionsScreening(t *testing.T) {
 	admin.signIn()
 
 	// Nobody uses wallets: the list is never downloaded.
-	e.server.Sanctions.tick()
+	e.server.Sanctions.Tick(context.Background())
 	expect(t, "no wallets, no download", downloads.Load(), int32(0))
 
 	clean := admin.createPayment(map[string]any{"title": "Хостинг", "wallet_network": "TRON", "wallet_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"})
 	wallet := clean["wallet"].(map[string]any)
 	expect(t, "not screened before the list", wallet["sanctioned"], nil)
 
-	e.server.Sanctions.tick()
+	e.server.Sanctions.Tick(context.Background())
 	expect(t, "downloaded for the first wallet", downloads.Load(), int32(1))
-	e.server.Sanctions.tick()
+	e.server.Sanctions.Tick(context.Background())
 	expect(t, "fresh list is not downloaded again", downloads.Load(), int32(1))
 
 	status := admin.get("/api/v1/sanctions").object(t)
@@ -134,34 +93,17 @@ func TestSanctionsScreening(t *testing.T) {
 	expect(t, "wallet cleared", cleared.object(t)["wallet"], nil)
 }
 
-func TestSanctionsReminderBlocksPayButton(t *testing.T) {
-	row := ReminderRow{OccurrenceID: 5, Title: "Подрядчик", AmountCents: 100, Currency: "USD", DueDate: "2026-01-31",
-		PaymentURL: "https://pay.me", WalletNetwork: "TRON", WalletAddress: "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz", SanctionsMatch: "SAMPLE EXCHANGE LLC"}
-	text := reminderText(row)
-	if !strings.Contains(text, "⛔ Кошелёк получателя в санкционном списке OFAC (SAMPLE EXCHANGE LLC)") || !strings.Contains(text, "Кошелёк (TRON)") {
-		t.Fatalf("text: %s", text)
-	}
-	for name, keyboard := range map[string]any{"telegram": paidKeyboard(row), "max": maxKeyboard(row)} {
-		if strings.Contains(must(jsonString(keyboard)), "pay.me") {
-			t.Fatalf("%s keeps the pay button for a sanctioned wallet", name)
-		}
-	}
-	if strings.Contains(string(emailMessage(&Settings{SMTPFrom: "a@b.c", SMTPTo: []string{"d@e.f"}}, row, nowForTest())), "pay.me") {
-		t.Fatal("email keeps the pay link")
-	}
-}
-
 func TestSanctionsBadListKeepsTheOldOne(t *testing.T) {
 	e := setup(t)
 	server, _ := ofacServer(t)
-	if _, err := ImportSanctions(e.db, server.URL+"/SDN.XML", nil); err != nil {
+	if _, err := wallet.Import(context.Background(), e.db, server.URL+"/SDN.XML", nil); err != nil {
 		t.Fatal(err)
 	}
 	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<?xml version="1.0"?><sdnList><sdnEntry><uid>1</uid></sdnEntry></sdnList>`))
 	}))
 	defer broken.Close()
-	if _, err := ImportSanctions(e.db, broken.URL, nil); err == nil {
+	if _, err := wallet.Import(context.Background(), e.db, broken.URL, nil); err == nil {
 		t.Fatal("an empty list must be refused")
 	}
 	var n int
@@ -169,17 +111,29 @@ func TestSanctionsBadListKeepsTheOldOne(t *testing.T) {
 	expect(t, "old list kept", n, 3)
 }
 
-func jsonString(v any) (string, error) {
-	raw, err := json.Marshal(v)
-	return string(raw), err
+func TestSanctionedWalletReachesReminders(t *testing.T) {
+	e := setup(t)
+	server, _ := ofacServer(t)
+	if _, err := wallet.Import(context.Background(), e.db, server.URL+"/SDN.XML", nil); err != nil {
+		t.Fatal(err)
+	}
+	admin := e.client()
+	admin.signIn()
+	admin.createPayment(map[string]any{"wallet_network": "TRON", "wallet_address": "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz", "payment_url": "https://pay.me"})
+	telegram, email := &recorder{}, &recorder{}
+	w := channelWorker(e, telegram, map[string]notify.Sender{"email": email.sender(notify.SendResult{State: "sent"})})
+	w.Tick()
+	for name, r := range map[string]*recorder{"telegram": telegram, "email": email} {
+		expect(t, name+" reminded", r.count(), 1)
+		expect(t, name+" knows the match", r.rows[0].SanctionsMatch, "SAMPLE EXCHANGE LLC")
+		expect(t, name+" has no pay link", r.rows[0].PayURL(), "")
+	}
 }
-
-func nowForTest() time.Time { return time.Date(2026, 1, 28, 9, 0, 0, 0, time.UTC) }
 
 // eip55 writes an address in its checksummed mixed case.
 func eip55(address string) string {
 	digits := strings.ToLower(address[2:])
-	hash := keccakHex(digits)
+	hash := wallet.KeccakHex(digits)
 	out := []byte(digits)
 	for i, c := range out {
 		if c >= 'a' && c <= 'f' && hash[i] >= '8' {
@@ -187,23 +141,4 @@ func eip55(address string) string {
 		}
 	}
 	return "0x" + string(out)
-}
-
-func TestSanctionedWalletReachesReminders(t *testing.T) {
-	e := setup(t)
-	server, _ := ofacServer(t)
-	if _, err := ImportSanctions(e.db, server.URL+"/SDN.XML", nil); err != nil {
-		t.Fatal(err)
-	}
-	admin := e.client()
-	admin.signIn()
-	admin.createPayment(map[string]any{"wallet_network": "TRON", "wallet_address": "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz", "payment_url": "https://pay.me"})
-	telegram, email := &recorder{}, &recorder{}
-	w := channelWorker(e, telegram, map[string]Sender{"email": email.sender(SendResult{State: "sent"})})
-	w.Tick()
-	for name, r := range map[string]*recorder{"telegram": telegram, "email": email} {
-		expect(t, name+" reminded", r.count(), 1)
-		expect(t, name+" knows the match", r.rows[0].SanctionsMatch, "SAMPLE EXCHANGE LLC")
-		expect(t, name+" has no pay link", r.rows[0].payURL(), "")
-	}
 }

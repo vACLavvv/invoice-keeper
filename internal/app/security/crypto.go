@@ -1,4 +1,4 @@
-package app
+package security
 
 // Encryption at rest for the most sensitive values: the admin TOTP secret, receipt files and links,
 // payment details (bank requisites). XChaCha20-Poly1305 with a random 24-byte nonce; the field name
@@ -18,11 +18,13 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
+
+	"invoice-keeper/internal/app/store"
 )
 
 const (
-	textPrefix  = "enc:v1:"
-	blobPrefix  = "IKENC1"
+	TextPrefix  = "enc:v1:"
+	BlobPrefix  = "IKENC1"
 	canaryState = "encryption_check"
 	canaryValue = "invoice-keeper"
 )
@@ -45,11 +47,11 @@ func ParseEncryptionKey(value string) ([]byte, error) {
 
 // NewEncryptionKey returns a random key in the DATA_ENCRYPTION_KEY format.
 func NewEncryptionKey() string {
-	return base64.StdEncoding.EncodeToString(randomBytes(chacha20poly1305.KeySize))
+	return base64.StdEncoding.EncodeToString(RandomBytes(chacha20poly1305.KeySize))
 }
 
-// subkey derives a separate key for another purpose (the audit chain), so one key is never used twice.
-func subkey(purpose string) []byte {
+// Subkey derives a separate key for another purpose (the audit chain), so one key is never used twice.
+func Subkey(purpose string) []byte {
 	out := make([]byte, 32)
 	io.ReadFull(hkdf.New(sha256.New, dataKey, nil, []byte("invoice-keeper/"+purpose)), out)
 	return out
@@ -57,7 +59,7 @@ func subkey(purpose string) []byte {
 
 func seal(field string, plain []byte) []byte {
 	aead, _ := chacha20poly1305.NewX(dataKey)
-	nonce := randomBytes(chacha20poly1305.NonceSizeX)
+	nonce := RandomBytes(chacha20poly1305.NonceSizeX)
 	return append(nonce, aead.Seal(nil, nonce, plain, []byte(field))...)
 }
 
@@ -74,27 +76,27 @@ func unseal(field string, sealed []byte) ([]byte, error) {
 	return plain, nil
 }
 
-// encryptText returns the stored form of a text value; empty stays empty.
-func encryptText(field, value string) string {
-	if dataKey == nil || value == "" || isSealedText(value) {
+// EncryptText returns the stored form of a text value; empty stays empty.
+func EncryptText(field, value string) string {
+	if dataKey == nil || value == "" || IsSealedText(value) {
 		return value
 	}
-	return textPrefix + base64.RawURLEncoding.EncodeToString(seal(field, []byte(value)))
+	return TextPrefix + base64.RawURLEncoding.EncodeToString(seal(field, []byte(value)))
 }
 
-func isSealedText(value string) bool {
-	return len(value) > len(textPrefix) && value[:len(textPrefix)] == textPrefix
+func IsSealedText(value string) bool {
+	return len(value) > len(TextPrefix) && value[:len(TextPrefix)] == TextPrefix
 }
 
-// decryptText reverses encryptText; plain values (stored before the key was set) pass through.
-func decryptText(field, value string) (string, error) {
-	if !isSealedText(value) {
+// DecryptText reverses EncryptText; plain values (stored before the key was set) pass through.
+func DecryptText(field, value string) (string, error) {
+	if !IsSealedText(value) {
 		return value, nil
 	}
 	if dataKey == nil {
 		return "", errors.New("в базе есть зашифрованные данные, но DATA_ENCRYPTION_KEY не задан")
 	}
-	sealed, err := base64.RawURLEncoding.DecodeString(value[len(textPrefix):])
+	sealed, err := base64.RawURLEncoding.DecodeString(value[len(TextPrefix):])
 	if err != nil {
 		return "", errors.New("зашифрованное значение повреждено")
 	}
@@ -102,29 +104,29 @@ func decryptText(field, value string) (string, error) {
 	return string(plain), err
 }
 
-func encryptBlob(field string, data []byte) []byte {
-	if dataKey == nil || len(data) == 0 || bytes.HasPrefix(data, []byte(blobPrefix)) {
+func EncryptBlob(field string, data []byte) []byte {
+	if dataKey == nil || len(data) == 0 || bytes.HasPrefix(data, []byte(BlobPrefix)) {
 		return data
 	}
-	return append([]byte(blobPrefix), seal(field, data)...)
+	return append([]byte(BlobPrefix), seal(field, data)...)
 }
 
-func decryptBlob(field string, data []byte) ([]byte, error) {
-	if !bytes.HasPrefix(data, []byte(blobPrefix)) {
+func DecryptBlob(field string, data []byte) ([]byte, error) {
+	if !bytes.HasPrefix(data, []byte(BlobPrefix)) {
 		return data, nil
 	}
 	if dataKey == nil {
 		return nil, errors.New("в базе есть зашифрованные данные, но DATA_ENCRYPTION_KEY не задан")
 	}
-	return unseal(field, data[len(blobPrefix):])
+	return unseal(field, data[len(BlobPrefix):])
 }
 
-// decryptNullable decrypts a nullable column in place.
-func decryptNullable(field string, value **string) error {
+// DecryptNullable decrypts a nullable column in place.
+func DecryptNullable(field string, value **string) error {
 	if *value == nil {
 		return nil
 	}
-	plain, err := decryptText(field, **value)
+	plain, err := DecryptText(field, **value)
 	if err != nil {
 		return err
 	}
@@ -132,18 +134,10 @@ func decryptNullable(field string, value **string) error {
 	return nil
 }
 
-// ConfigureEncryption sets the key for this process, checks it against the database and encrypts
-// values stored before the key existed. Without a key it refuses a database that holds encrypted data.
-// It also chains journal entries left from before the tamper-evident journal (audit.go).
-func ConfigureEncryption(db *DB, key []byte) error {
+// ConfigureKey sets the key for this process, checks it against the database and encrypts values
+// stored before the key existed. Without a key it refuses a database that holds encrypted data.
+func ConfigureKey(db *store.DB, key []byte) error {
 	dataKey = key
-	if err := configureKey(db, key); err != nil {
-		return err
-	}
-	return sealAuditLog(db)
-}
-
-func configureKey(db *DB, key []byte) error {
 	return db.Write(func(tx *sql.Tx) error {
 		var canary string
 		err := tx.QueryRow("SELECT value FROM app_state WHERE key=?", canaryState).Scan(&canary)
@@ -152,7 +146,7 @@ func configureKey(db *DB, key []byte) error {
 			if key == nil {
 				return nil
 			}
-			if err := setState(tx, canaryState, encryptText(canaryState, canaryValue)); err != nil {
+			if err := store.SetState(tx, canaryState, EncryptText(canaryState, canaryValue)); err != nil {
 				return err
 			}
 		case err != nil:
@@ -160,7 +154,7 @@ func configureKey(db *DB, key []byte) error {
 		case key == nil:
 			return errors.New("база зашифрована: задайте прежний DATA_ENCRYPTION_KEY в .env")
 		default:
-			plain, err := decryptText(canaryState, canary)
+			plain, err := DecryptText(canaryState, canary)
 			if err != nil || !hmac.Equal([]byte(plain), []byte(canaryValue)) {
 				return errors.New("DATA_ENCRYPTION_KEY не подходит к этой базе. Верните прежний ключ")
 			}
@@ -173,8 +167,8 @@ func configureKey(db *DB, key []byte) error {
 func encryptExisting(tx *sql.Tx) error {
 	for _, key := range []string{"admin_totp_secret", "admin_totp_pending"} {
 		var value string
-		if err := tx.QueryRow("SELECT value FROM app_state WHERE key=?", key).Scan(&value); err == nil && !isSealedText(value) {
-			if err := setState(tx, key, encryptText("app_state."+key, value)); err != nil {
+		if err := tx.QueryRow("SELECT value FROM app_state WHERE key=?", key).Scan(&value); err == nil && !IsSealedText(value) {
+			if err := store.SetState(tx, key, EncryptText("app_state."+key, value)); err != nil {
 				return err
 			}
 		}
@@ -200,12 +194,12 @@ func encryptExisting(tx *sql.Tx) error {
 		}
 		rows.Close()
 		for _, p := range todo {
-			if _, err := tx.Exec("UPDATE "+c.table+" SET "+c.column+"=? WHERE id=?", encryptText(c.table+"."+c.column, p.value), p.id); err != nil { // #nosec G202 -- constant names
+			if _, err := tx.Exec("UPDATE "+c.table+" SET "+c.column+"=? WHERE id=?", EncryptText(c.table+"."+c.column, p.value), p.id); err != nil { // #nosec G202 -- constant names
 				return err
 			}
 		}
 	}
-	rows, err := tx.Query("SELECT id,data FROM receipts WHERE data IS NOT NULL AND substr(data,1,6)<>CAST(? AS BLOB)", blobPrefix)
+	rows, err := tx.Query("SELECT id,data FROM receipts WHERE data IS NOT NULL AND substr(data,1,6)<>CAST(? AS BLOB)", BlobPrefix)
 	if err != nil {
 		return err
 	}
@@ -226,9 +220,15 @@ func encryptExisting(tx *sql.Tx) error {
 	}
 	rows.Close()
 	for _, f := range files {
-		if _, err := tx.Exec("UPDATE receipts SET data=? WHERE id=?", encryptBlob("receipts.data", f.data), f.id); err != nil {
+		if _, err := tx.Exec("UPDATE receipts SET data=? WHERE id=?", EncryptBlob("receipts.data", f.data), f.id); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// Enabled reports whether values are encrypted (DATA_ENCRYPTION_KEY is set).
+func Enabled() bool { return dataKey != nil }
+
+// SetKey replaces the process key without touching the database (tests).
+func SetKey(key []byte) { dataKey = key }

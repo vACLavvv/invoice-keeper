@@ -1,9 +1,11 @@
-package app
-
-// Persistent outbox. Ambiguous delivery is never automatically retried.
+// Package notify sends reminders: the persistent outboxes (Telegram «due» reminders, overdue
+// reminders and the extra channels) and the transports — Telegram, MAX, email, webhook.
+// Ambiguous delivery is never automatically retried.
+package notify
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,7 +14,13 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 type ReminderRow struct {
@@ -34,13 +42,13 @@ func (row ReminderRow) sanctioned() bool { return row.SanctionsMatch != "" }
 
 // openDetails decrypts the payment details read with reminderColumns.
 func (row *ReminderRow) openDetails() error {
-	details, err := decryptText("recurring_payments.payment_details", row.PaymentDetails)
+	details, err := security.DecryptText("recurring_payments.payment_details", row.PaymentDetails)
 	row.PaymentDetails = details
 	return err
 }
 
-// payURL is the «Оплатить» link; a payee from the sanctions list gets none.
-func (row ReminderRow) payURL() string {
+// PayURL is the «Оплатить» link; a payee from the sanctions list gets none.
+func (row ReminderRow) PayURL() string {
 	if row.sanctioned() {
 		return ""
 	}
@@ -63,12 +71,12 @@ type SendResult struct {
 
 type Sender func(ReminderRow) SendResult
 
-func reminderText(row ReminderRow) string {
+func ReminderText(row ReminderRow) string {
 	heading := "🔔 Пора запланировать оплату"
 	if row.overdue() {
 		heading = "⚠️ Платёж просрочен"
 	}
-	text := fmt.Sprintf("%s\n\n%s\nСумма: %s %s\nСрок: %s", heading, row.Title, money(row.AmountCents), row.Currency, row.DueDate)
+	text := fmt.Sprintf("%s\n\n%s\nСумма: %s %s\nСрок: %s", heading, row.Title, schedule.Money(row.AmountCents), row.Currency, row.DueDate)
 	if row.PaymentDetails != "" {
 		text += "\nРеквизиты: " + row.PaymentDetails
 	}
@@ -81,18 +89,18 @@ func reminderText(row ReminderRow) string {
 	return text + "\n\nОплатили — нажмите «Оплачено» или отметьте в панели"
 }
 
-// paidKeyboard is the inline button under a reminder (the bot handles its callback, see bot.go)
+// PaidKeyboard is the inline button under a reminder (the bot handles its callback, see package bot)
 // and, when the payment has a link, a «💳 Оплатить» button that opens it.
-func paidKeyboard(row ReminderRow) map[string]any {
+func PaidKeyboard(row ReminderRow) map[string]any {
 	buttons := [][]map[string]string{{{"text": "✅ Оплачено", "callback_data": "paid:" + itoa(row.OccurrenceID)}}}
-	if link := row.payURL(); link != "" {
+	if link := row.PayURL(); link != "" {
 		buttons = append(buttons, []map[string]string{{"text": "💳 Оплатить", "url": link}})
 	}
 	return map[string]any{"inline_keyboard": buttons}
 }
 
 // TelegramSender posts plain text (no parse_mode, so titles cannot inject markup).
-func TelegramSender(s *Settings, baseURL string) Sender {
+func TelegramSender(s *config.Settings, baseURL string) Sender {
 	if baseURL == "" {
 		baseURL = "https://api.telegram.org"
 	}
@@ -105,11 +113,11 @@ func TelegramSender(s *Settings, baseURL string) Sender {
 		if row.ChatID != "" {
 			chat = row.ChatID
 		}
-		body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": reminderText(row), "reply_markup": paidKeyboard(row)})
+		body, _ := json.Marshal(map[string]any{"chat_id": chat, "text": ReminderText(row), "reply_markup": PaidKeyboard(row)})
 		response, err := client.Post(baseURL+"/bot"+s.TelegramBotToken+"/sendMessage", "application/json", bytes.NewReader(body))
 		// Never persist err, the response or the URL: each can expose the bot token.
 		if err != nil {
-			if isConnectError(err) {
+			if IsConnectError(err) {
 				return SendResult{State: "pending", Error: "Соединение не установлено", RetryDelay: 60}
 			}
 			return SendResult{State: "uncertain", Error: "Неизвестен результат отправки; автоматический повтор остановлен"}
@@ -141,8 +149,8 @@ func TelegramSender(s *Settings, baseURL string) Sender {
 	}
 }
 
-// isConnectError reports failures where the request certainly never reached Telegram.
-func isConnectError(err error) bool {
+// IsConnectError reports failures where the request certainly never reached Telegram.
+func IsConnectError(err error) bool {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
 		return true
@@ -152,28 +160,29 @@ func isConnectError(err error) bool {
 }
 
 type ReminderWorker struct {
-	DB       *DB
-	Settings *Settings
+	DB       *store.DB
+	Settings *config.Settings
 	Sender   Sender            // Telegram
-	Channels map[string]Sender // max, email, webhook (see notify.go)
-	Today    func() time.Time
+	Channels map[string]Sender // max, email, webhook (see deliveries.go)
+	// Maintenance runs in the pass's transaction: the server removes expired keys and pairings there.
+	Maintenance func(tx *sql.Tx) error
+	Today       func() time.Time
 
-	mu      sync.Mutex
-	running bool
-	rerun   bool
-	kicks   sync.WaitGroup
-	stop    chan struct{}
-	done    chan struct{}
+	mu       sync.Mutex
+	running  bool
+	rerun    bool
+	kicks    sync.WaitGroup
+	stopping atomic.Bool // set on shutdown: no new passes, the current one ends between messages
 }
 
-func NewReminderWorker(db *DB, s *Settings, sender Sender, today func() time.Time) *ReminderWorker {
+func NewReminderWorker(db *store.DB, s *config.Settings, sender Sender, today func() time.Time) *ReminderWorker {
 	if sender == nil {
 		sender = TelegramSender(s, "")
 	}
 	if today == nil {
-		today = func() time.Time { return localToday(s) }
+		today = func() time.Time { return schedule.Today(s.Location()) }
 	}
-	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: defaultChannels(s), Today: today}
+	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: DefaultChannels(s), Today: today}
 }
 
 // Tick runs one pass. A request that arrives while a pass is running schedules one more pass
@@ -204,6 +213,9 @@ func (w *ReminderWorker) Tick() {
 
 // Kick starts a pass in the background (after a payment is created or changed).
 func (w *ReminderWorker) Kick() {
+	if w.stopped() {
+		return
+	}
 	w.kicks.Add(1)
 	go func() {
 		defer w.kicks.Done()
@@ -226,7 +238,7 @@ func (w *ReminderWorker) tick() error {
 	today := w.Today()
 	now := time.Now().Unix()
 	err := w.DB.Write(func(tx *sql.Tx) error {
-		if err := materialize(tx, today); err != nil {
+		if err := schedule.Materialize(tx, today); err != nil {
 			return err
 		}
 		statements := []stmt{
@@ -237,7 +249,7 @@ func (w *ReminderWorker) tick() error {
 				(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0)`, nil},
 		}
 		if w.Settings.TelegramEnabled && w.Settings.TelegramChatID != "" {
-			horizon := formatDate(today.AddDate(0, 0, 3))
+			horizon := schedule.FormatDate(today.AddDate(0, 0, 3))
 			statements = append(statements,
 				stmt{"INSERT OR IGNORE INTO reminders(occurrence_id,state) SELECT id,'pending' FROM (" + eligible + ")", []any{horizon}},
 				// Cancelling payment confirmation can make an unsent reminder eligible again.
@@ -249,8 +261,10 @@ func (w *ReminderWorker) tick() error {
 				return err
 			}
 		}
-		if err := cleanupKeys(tx, w.Settings.KeyIdleDays, time.Now()); err != nil {
-			return err
+		if w.Maintenance != nil {
+			if err := w.Maintenance(tx); err != nil {
+				return err
+			}
 		}
 		return w.enqueueDeliveries(tx, today)
 	})
@@ -273,6 +287,9 @@ func (w *ReminderWorker) tick() error {
 // sendTeam sends pending «due» reminders to the team chat.
 func (w *ReminderWorker) sendTeam() error {
 	for range 20 {
+		if w.stopped() {
+			return nil
+		}
 		var row ReminderRow
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
@@ -318,7 +335,7 @@ func (w *ReminderWorker) sendTeam() error {
 			result = w.send(row)
 			var sentAt any
 			if result.State == "sent" {
-				sentAt = timestamp()
+				sentAt = schedule.Timestamp()
 			}
 			_, err := tx.Exec("UPDATE reminders SET state=?,error=?,message_id=?,sent_at=?,retry_after=? WHERE occurrence_id=?",
 				result.State, nullable(result.Error), nullable(result.MessageID), sentAt, time.Now().Unix()+int64(result.RetryDelay), row.OccurrenceID)
@@ -340,6 +357,9 @@ func (w *ReminderWorker) sendTeam() error {
 func (w *ReminderWorker) sendPersonal(today time.Time) error {
 	noTeamChat := w.Settings.TelegramChatID == ""
 	for range 20 {
+		if w.stopped() {
+			return nil
+		}
 		var row ReminderRow
 		var chat int64
 		found := false
@@ -349,7 +369,7 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 				JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
 				WHERE r.active=1 AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
 				AND NOT EXISTS (SELECT 1 FROM personal_reminders p WHERE p.occurrence_id=o.id AND p.chat_id=t.chat_id)
-				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, formatDate(today), formatDate(today.AddDate(0, 0, 3))).
+				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, schedule.FormatDate(today), schedule.FormatDate(today.AddDate(0, 0, 3))).
 				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
 					&row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch, &chat)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -378,7 +398,7 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 			}
 			state, sentAt := "failed", any(nil)
 			if result.State == "sent" {
-				state, sentAt = "sent", timestamp()
+				state, sentAt = "sent", schedule.Timestamp()
 			}
 			_, err := tx.Exec("UPDATE personal_reminders SET state=?,sent_at=?,error=? WHERE occurrence_id=? AND chat_id=?",
 				state, sentAt, nullable(result.Error), row.OccurrenceID, chat)
@@ -412,31 +432,24 @@ func nullable(s string) any {
 	return s
 }
 
-// Start runs passes every ReminderInterval seconds until Stop.
-func (w *ReminderWorker) Start() {
-	w.stop, w.done = make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(w.done)
-		ticker := time.NewTicker(time.Duration(w.Settings.ReminderInterval) * time.Second)
-		defer ticker.Stop()
-		for {
-			w.Tick()
-			select {
-			case <-w.stop:
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-}
-
-func (w *ReminderWorker) Stop() {
-	if w.stop != nil {
-		close(w.stop)
+// Run makes a pass every ReminderInterval seconds until ctx is cancelled. A pass in progress
+// stops between messages, never in the middle of one, and Run returns after it and the passes
+// started by Kick have finished.
+func (w *ReminderWorker) Run(ctx context.Context) {
+	stopped := context.AfterFunc(ctx, func() { w.stopping.Store(true) })
+	defer stopped()
+	ticker := time.NewTicker(time.Duration(w.Settings.ReminderInterval) * time.Second)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
+		w.Tick()
 		select {
-		case <-w.done:
-		case <-time.After(10 * time.Second):
+		case <-ctx.Done():
+		case <-ticker.C:
 		}
 	}
+	w.stopping.Store(true)
 	w.Wait()
 }
+
+// stopped reports a shutdown: passes leave their loops between messages.
+func (w *ReminderWorker) stopped() bool { return w.stopping.Load() }

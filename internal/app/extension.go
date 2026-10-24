@@ -16,6 +16,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/store"
 )
 
 const (
@@ -142,7 +146,7 @@ func (s *Server) apiKeysDelete(w http.ResponseWriter, r *http.Request) error {
 		if n, _ := result.RowsAffected(); n == 0 {
 			return fail(404, "Ключ не найден")
 		}
-		return audit(tx, user.Username, "api_key.delete", id)
+		return audit.Record(tx, user.Username, "api_key.delete", id)
 	})
 	if err != nil {
 		return err
@@ -176,7 +180,7 @@ func (s *Server) extensionWhoami(w http.ResponseWriter, r *http.Request) error {
 	}
 	return writeJSON(w, 200, map[string]any{
 		"username": user.Username, "display_name": user.DisplayName, "role": user.Role,
-		"timezone": s.Settings.Timezone, "today": formatDate(s.Today()),
+		"timezone": s.Settings.Timezone, "today": schedule.FormatDate(s.Today()),
 	})
 }
 
@@ -206,11 +210,11 @@ func scanSuggestion(row scanner) (suggestion, error) {
 	var sg suggestion
 	err := row.Scan(&sg.ID, &sg.SourceKey, &sg.SourceURL, &sg.Title, &sg.amountCents, &sg.Currency, &sg.NextDueDate,
 		&sg.Status, &sg.SubmittedBy, &sg.RecurringPaymentID, &sg.CreatedAt, &sg.UpdatedAt)
-	sg.Amount = money(sg.amountCents)
+	sg.Amount = schedule.Money(sg.amountCents)
 	return sg, err
 }
 
-func (s *Server) findSuggestion(q querier, id int64) (suggestion, error) {
+func (s *Server) findSuggestion(q store.Querier, id int64) (suggestion, error) {
 	sg, err := scanSuggestion(q.QueryRow(suggestionSelect+" WHERE id=?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return sg, fail(404, "Предложение не найдено")
@@ -227,7 +231,7 @@ func paymentFields(f *form, dateField string) (title *string, cents int64, curre
 		f.add("currency", "Допустимые значения: RUB, USD, EUR", "literal_error")
 	}
 	due = f.date(dateField)
-	if due != nil && (due.Before(civil(2000, 1, 1)) || due.After(civil(2100, 12, 31))) {
+	if due != nil && (due.Before(schedule.Civil(2000, 1, 1)) || due.After(schedule.Civil(2100, 12, 31))) {
 		f.add(dateField, "Дата должна быть между 2000 и 2100 годами", "value_error")
 	}
 	for _, name := range []string{"title", "amount", "currency", dateField} {
@@ -264,7 +268,7 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 	status, result := 200, "unchanged"
 	var saved suggestion
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		now := timestamp()
+		now := schedule.Timestamp()
 		existing, err := scanSuggestion(tx.QueryRow(suggestionSelect+" WHERE source_key=?", *source))
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
@@ -276,13 +280,13 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 				return fail(429, "Слишком много неразобранных предложений. Разберите их в панели")
 			}
 			res, err := tx.Exec(`INSERT INTO payment_suggestions(source_key,source_url,title,amount_cents,currency,next_due_date,submitted_by,created_at,updated_at)
-				VALUES(?,?,?,?,?,?,?,?,?)`, *source, url, *title, cents, *currency, formatDate(*due), user.Username, now, now)
+				VALUES(?,?,?,?,?,?,?,?,?)`, *source, url, *title, cents, *currency, schedule.FormatDate(*due), user.Username, now, now)
 			if err != nil {
 				return err
 			}
 			id, _ := res.LastInsertId()
 			status, result = 201, "created"
-			if err := audit(tx, user.Username, "suggestion.create", id); err != nil {
+			if err := audit.Record(tx, user.Username, "suggestion.create", id); err != nil {
 				return err
 			}
 			saved, err = s.findSuggestion(tx, id)
@@ -292,7 +296,7 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 		case existing.Status == "pending":
 			// The same service seen again: keep one suggestion, with the latest price and date.
 			if _, err := tx.Exec(`UPDATE payment_suggestions SET source_url=?,title=?,amount_cents=?,currency=?,next_due_date=?,submitted_by=?,updated_at=?
-				WHERE id=?`, url, *title, cents, *currency, formatDate(*due), user.Username, now, existing.ID); err != nil {
+				WHERE id=?`, url, *title, cents, *currency, schedule.FormatDate(*due), user.Username, now, existing.ID); err != nil {
 				return err
 			}
 			result = "updated"
@@ -392,7 +396,7 @@ func (s *Server) suggestionsAccept(w http.ResponseWriter, r *http.Request) error
 			currency = &sg.Currency
 		}
 		if due == nil {
-			parsed, err := parseDate(sg.NextDueDate)
+			parsed, err := schedule.ParseDate(sg.NextDueDate)
 			if err != nil {
 				return err
 			}
@@ -402,10 +406,10 @@ func (s *Server) suggestionsAccept(w http.ResponseWriter, r *http.Request) error
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec("UPDATE payment_suggestions SET status='accepted',recurring_payment_id=?,updated_at=? WHERE id=?", paymentID, timestamp(), id); err != nil {
+		if _, err := tx.Exec("UPDATE payment_suggestions SET status='accepted',recurring_payment_id=?,updated_at=? WHERE id=?", paymentID, schedule.Timestamp(), id); err != nil {
 			return err
 		}
-		if err := audit(tx, admin.Username, "suggestion.accept", id); err != nil {
+		if err := audit.Record(tx, admin.Username, "suggestion.accept", id); err != nil {
 			return err
 		}
 		saved, err = s.findSuggestion(tx, id)
@@ -436,10 +440,10 @@ func (s *Server) suggestionsReject(w http.ResponseWriter, r *http.Request) error
 		if sg.Status != "pending" {
 			return fail(409, "Предложение уже разобрано")
 		}
-		if _, err := tx.Exec("UPDATE payment_suggestions SET status='rejected',updated_at=? WHERE id=?", timestamp(), id); err != nil {
+		if _, err := tx.Exec("UPDATE payment_suggestions SET status='rejected',updated_at=? WHERE id=?", schedule.Timestamp(), id); err != nil {
 			return err
 		}
-		if err := audit(tx, admin.Username, "suggestion.reject", id); err != nil {
+		if err := audit.Record(tx, admin.Username, "suggestion.reject", id); err != nil {
 			return err
 		}
 		saved, err = s.findSuggestion(tx, id)

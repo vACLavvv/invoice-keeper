@@ -1,10 +1,11 @@
-package app
+package bot
 
 // MAX bot: long polling GET /updates for the «✅ Оплачено» button under reminders and the commands
 // /todo, /overdue, /chatid, /help. Like the Telegram bot, only the configured chat (MAX_CHAT_ID)
 // may read data or mark payments; /chatid and /help answer anywhere to help with the setup.
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -15,53 +16,64 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/store"
 )
 
-type maxUser struct {
+type MaxUser struct {
 	UserID    int64  `json:"user_id"`
 	Name      string `json:"name"`
 	FirstName string `json:"first_name"`
 	Username  string `json:"username"`
 }
 
-type maxMessage struct {
+type MaxMessage struct {
 	Recipient struct {
 		ChatID   int64  `json:"chat_id"`
 		ChatType string `json:"chat_type"`
 	} `json:"recipient"`
-	Sender *maxUser `json:"sender"`
+	Sender *MaxUser `json:"sender"`
 	Body   struct {
 		Text string `json:"text"`
 	} `json:"body"`
 }
 
-type maxUpdate struct {
+type MaxUpdate struct {
 	UpdateType string      `json:"update_type"`
-	Message    *maxMessage `json:"message"`
+	Message    *MaxMessage `json:"message"`
 	Callback   *struct {
 		CallbackID string  `json:"callback_id"`
 		Payload    string  `json:"payload"`
-		User       maxUser `json:"user"`
+		User       MaxUser `json:"user"`
 	} `json:"callback"`
 }
 
-type MaxBot struct {
-	server *Server
-	client *http.Client
-	stop   chan struct{}
-	done   chan struct{}
+// Max is the MAX bot.
+type Max struct {
+	settings *config.Settings
+	db       *store.DB
+	backend  Backend
+	client   *http.Client
 }
 
-func NewMaxBot(s *Server, client *http.Client) *MaxBot {
+// NewMax makes the bot; client replaces the HTTP client in tests.
+func NewMax(settings *config.Settings, db *store.DB, backend Backend, client *http.Client) *Max {
 	if client == nil {
-		client = maxClient(s.Settings, 45*time.Second)
+		client = notify.MaxClient(settings, 45*time.Second)
 	}
-	return &MaxBot{server: s, client: client}
+	return &Max{settings: settings, db: db, backend: backend, client: client}
 }
 
 // call invokes a method and decodes the answer; errors never contain the token or the response body.
-func (b *MaxBot) call(method, path string, payload, result any) error {
-	response, err := maxCall(b.client, b.server.Settings, method, path, payload)
+func (b *Max) call(method, path string, payload, result any) error {
+	return b.callContext(context.Background(), method, path, payload, result)
+}
+
+func (b *Max) callContext(ctx context.Context, method, path string, payload, result any) error {
+	response, err := notify.MaxCall(ctx, b.client, b.settings, method, path, payload)
 	if err != nil {
 		return fmt.Errorf("MAX %s: соединение не удалось", strings.SplitN(path, "?", 2)[0])
 	}
@@ -75,56 +87,39 @@ func (b *MaxBot) call(method, path string, payload, result any) error {
 	return json.NewDecoder(response.Body).Decode(result)
 }
 
-func (b *MaxBot) Start() {
-	if b.server.Settings.MaxBotToken == "" {
+// Run polls MAX until ctx is cancelled; like the Telegram bot, the long poll is aborted at once
+// and updates already received are handled to the end.
+func (b *Max) Run(ctx context.Context) {
+	if b.settings.MaxBotToken == "" {
 		return
 	}
-	b.stop, b.done = make(chan struct{}), make(chan struct{})
-	go func() {
-		defer close(b.done)
-		for {
-			if err := b.pollOnce(30); err != nil {
-				log.Printf("MAX-бот: %v", err)
-				select {
-				case <-b.stop:
-					return
-				case <-time.After(5 * time.Second):
-				}
-			}
+	for ctx.Err() == nil {
+		if err := b.pollOnce(ctx, 30); err != nil && ctx.Err() == nil {
+			log.Printf("MAX-бот: %v", err)
 			select {
-			case <-b.stop:
-				return
-			default:
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
 			}
 		}
-	}()
-}
-
-func (b *MaxBot) Stop() {
-	if b.stop == nil {
-		return
-	}
-	close(b.stop)
-	select {
-	case <-b.done:
-	case <-time.After(2 * time.Second):
 	}
 }
 
-// pollOnce fetches one batch; the marker is stored so a restart does not replay handled updates.
-func (b *MaxBot) pollOnce(timeout int) error {
+// PollOnce fetches one batch; the marker is stored so a restart does not replay handled updates.
+func (b *Max) PollOnce(timeout int) error { return b.pollOnce(context.Background(), timeout) }
+
+func (b *Max) pollOnce(ctx context.Context, timeout int) error {
 	query := url.Values{"timeout": {strconv.Itoa(timeout)}, "types": {"message_callback,message_created"}}
 	var stored string
-	if err := b.server.DB.QueryRow("SELECT value FROM app_state WHERE key='max_marker'").Scan(&stored); err == nil {
+	if err := b.db.QueryRow("SELECT value FROM app_state WHERE key='max_marker'").Scan(&stored); err == nil {
 		query.Set("marker", stored)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	var batch struct {
-		Updates []maxUpdate `json:"updates"`
+		Updates []MaxUpdate `json:"updates"`
 		Marker  *int64      `json:"marker"`
 	}
-	if err := b.call("GET", "/updates?"+query.Encode(), nil, &batch); err != nil {
+	if err := b.callContext(ctx, "GET", "/updates?"+query.Encode(), nil, &batch); err != nil {
 		return err
 	}
 	for _, update := range batch.Updates {
@@ -135,16 +130,16 @@ func (b *MaxBot) pollOnce(timeout int) error {
 	if batch.Marker == nil || itoa(*batch.Marker) == stored {
 		return nil
 	}
-	return setState(b.server.DB, "max_marker", itoa(*batch.Marker))
+	return store.SetState(b.db, "max_marker", itoa(*batch.Marker))
 }
 
-func (b *MaxBot) ourChat(id int64) bool { return b.server.Settings.MaxChatID == itoa(id) }
+func (b *Max) ourChat(id int64) bool { return b.settings.MaxChatID == itoa(id) }
 
-func (b *MaxBot) send(chatID int64, text string) error {
+func (b *Max) send(chatID int64, text string) error {
 	return b.call("POST", "/messages?chat_id="+itoa(chatID), map[string]any{"text": text}, nil)
 }
 
-func maxActor(u maxUser) string {
+func maxActor(u MaxUser) string {
 	switch {
 	case u.Username != "":
 		return "max:@" + u.Username
@@ -163,7 +158,7 @@ const maxHelp = `Invoice Keeper напоминает о регулярных п�
 /chatid — ID этого чата для настройки
 Под напоминанием есть кнопка «✅ Оплачено».`
 
-func (b *MaxBot) handle(update maxUpdate) error {
+func (b *Max) handle(update MaxUpdate) error {
 	switch {
 	case update.UpdateType == "message_callback" && update.Callback != nil:
 		return b.onCallback(update)
@@ -173,7 +168,7 @@ func (b *MaxBot) handle(update maxUpdate) error {
 	return nil
 }
 
-func (b *MaxBot) onMessage(m *maxMessage) error {
+func (b *Max) onMessage(m *MaxMessage) error {
 	fields := strings.Fields(m.Body.Text)
 	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
 		return nil
@@ -192,7 +187,7 @@ func (b *MaxBot) onMessage(m *maxMessage) error {
 		if !b.ourChat(chat) {
 			return b.send(chat, "Этот чат не подключён к Invoice Keeper.")
 		}
-		text, err := b.server.todoText(command == "/overdue")
+		text, err := b.backend.TodoText(command == "/overdue")
 		if err != nil {
 			return err
 		}
@@ -203,7 +198,7 @@ func (b *MaxBot) onMessage(m *maxMessage) error {
 
 // onCallback marks the period paid and replaces the message: without attachments the button
 // disappears, so nobody presses it twice.
-func (b *MaxBot) onCallback(update maxUpdate) error {
+func (b *Max) onCallback(update MaxUpdate) error {
 	callback := update.Callback
 	answer := func(notification, newText string) error {
 		body := map[string]any{"notification": notification}
@@ -221,9 +216,8 @@ func (b *MaxBot) onCallback(update maxUpdate) error {
 		return answer("Неизвестная кнопка", "")
 	}
 	actor := maxActor(callback.User)
-	already, err := b.server.markPaidFromMessenger(id, actor)
-	var apiErr *apiError
-	if errors.As(err, &apiErr) && apiErr.Status == 404 {
+	already, err := b.backend.MarkPaid(id, actor)
+	if errors.Is(err, ErrNotFound) {
 		return answer("Платёж не найден", "")
 	}
 	if err != nil {
@@ -233,5 +227,5 @@ func (b *MaxBot) onCallback(update maxUpdate) error {
 		return answer("Уже отмечено ранее", "")
 	}
 	return answer("Отмечено: оплачено", update.Message.Body.Text+
-		fmt.Sprintf("\n\n✅ Оплачено — %s, %s", strings.TrimPrefix(actor, "max:"), shortDate(formatDate(b.server.Today()))))
+		fmt.Sprintf("\n\n✅ Оплачено — %s, %s", strings.TrimPrefix(actor, "max:"), schedule.ShortDate(schedule.FormatDate(b.backend.Today()))))
 }

@@ -1,9 +1,10 @@
-package app
-
+// Package wallet validates payee crypto wallets and screens them against the OFAC SDN list.
+//
 // Crypto wallet addresses of payees: format and checksum validation for the supported networks.
 // BTC — Base58Check (P2PKH, P2SH) and Bech32/Bech32m (SegWit, Taproot); ETH — 0x + 40 hex digits,
 // EIP-55 checksum when the address is mixed-case (also USDT/USDC on Ethereum and other EVM chains);
 // TRON — Base58Check with version byte 0x41.
+package wallet
 
 import (
 	"bytes"
@@ -15,7 +16,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-var walletNetworks = []string{"BTC", "ETH", "TRON"}
+var Networks = []string{"BTC", "ETH", "TRON"}
 
 const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -122,7 +123,7 @@ func validSegwit(address string) bool {
 	return version != 0 || program == 20 || program == 32
 }
 
-func keccakHex(s string) string {
+func KeccakHex(s string) string {
 	hash := sha3.NewLegacyKeccak256()
 	hash.Write([]byte(s))
 	return hex.EncodeToString(hash.Sum(nil))
@@ -140,7 +141,7 @@ func validEthereum(address string) bool {
 	if digits == strings.ToLower(digits) || digits == strings.ToUpper(digits) {
 		return true
 	}
-	hash := keccakHex(strings.ToLower(digits))
+	hash := KeccakHex(strings.ToLower(digits))
 	for i, c := range digits {
 		if c >= 'a' && c <= 'f' && hash[i] >= '8' || c >= 'A' && c <= 'F' && hash[i] < '8' {
 			return false
@@ -149,8 +150,8 @@ func validEthereum(address string) bool {
 	return true
 }
 
-// validWallet reports whether the address is a well-formed mainnet address of the network.
-func validWallet(network, address string) bool {
+// Valid reports whether the address is a well-formed mainnet address of the network.
+func Valid(network, address string) bool {
 	switch network {
 	case "BTC":
 		if strings.HasPrefix(strings.ToLower(address), "bc1") {
@@ -167,8 +168,8 @@ func validWallet(network, address string) bool {
 	return false
 }
 
-// walletKey is the comparison form of an address: hex and Bech32 are case-insensitive, Base58 is not.
-func walletKey(address string) string {
+// Key is the comparison form of an address: hex and Bech32 are case-insensitive, Base58 is not.
+func Key(address string) string {
 	address = strings.TrimSpace(address)
 	lower := strings.ToLower(address)
 	if strings.HasPrefix(lower, "0x") || strings.HasPrefix(lower, "bc1") {

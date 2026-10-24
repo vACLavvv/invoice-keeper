@@ -8,6 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 var currencies = []string{"RUB", "USD", "EUR"}
@@ -24,14 +29,14 @@ type occurrenceFilter struct {
 	includeArchived bool
 }
 
-func (s *Server) loadOccurrences(q querier, filter occurrenceFilter) ([]Occurrence, error) {
+func (s *Server) loadOccurrences(q store.Querier, filter occurrenceFilter) ([]Occurrence, error) {
 	var clauses []string
 	var args []any
 	if filter.from != nil {
-		clauses, args = append(clauses, "o.due_date>=?"), append(args, formatDate(*filter.from))
+		clauses, args = append(clauses, "o.due_date>=?"), append(args, schedule.FormatDate(*filter.from))
 	}
 	if filter.to != nil {
-		clauses, args = append(clauses, "o.due_date<=?"), append(args, formatDate(*filter.to))
+		clauses, args = append(clauses, "o.due_date<=?"), append(args, schedule.FormatDate(*filter.to))
 	}
 	if filter.currency != "" {
 		clauses, args = append(clauses, "o.currency=?"), append(args, filter.currency)
@@ -134,7 +139,7 @@ func (s *Server) occurrenceList(w http.ResponseWriter, r *http.Request) error {
 	}
 	var items []Occurrence
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		if err := materialize(tx, s.Today()); err != nil {
+		if err := schedule.Materialize(tx, s.Today()); err != nil {
 			return err
 		}
 		var err error
@@ -147,7 +152,7 @@ func (s *Server) occurrenceList(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, items)
 }
 
-func (s *Server) findOccurrence(q querier, id int64) (Occurrence, error) {
+func (s *Server) findOccurrence(q store.Querier, id int64) (Occurrence, error) {
 	item, err := scanOccurrence(q.QueryRow(occurrenceSelect+" WHERE o.id=?", id), s.Today())
 	if errors.Is(err, sql.ErrNoRows) {
 		return item, fail(404, "Период оплаты не найден")
@@ -215,20 +220,20 @@ func (s *Server) occurrenceUpdate(w http.ResponseWriter, r *http.Request) error 
 		case (paid != nil && !*paid) || f.isNull("paid_at"):
 			value = nil
 		case paidAt != nil:
-			value = formatDate(*paidAt)
+			value = schedule.FormatDate(*paidAt)
 		case current.PaidAt != nil:
 			value = *current.PaidAt
 		case paid != nil && *paid:
-			value = formatDate(today)
+			value = schedule.FormatDate(today)
 		}
-		if _, err := tx.Exec("UPDATE payment_occurrences SET paid_at=?,updated_by=?,updated_at=? WHERE id=?", value, user.Username, timestamp(), id); err != nil {
+		if _, err := tx.Exec("UPDATE payment_occurrences SET paid_at=?,updated_by=?,updated_at=? WHERE id=?", value, user.Username, schedule.Timestamp(), id); err != nil {
 			return err
 		}
 		action := "occurrence.unpaid"
 		if value != nil {
 			action = "occurrence.paid"
 		}
-		if err := audit(tx, user.Username, action, id); err != nil {
+		if err := audit.Record(tx, user.Username, action, id); err != nil {
 			return err
 		}
 		updated, err = s.findOccurrence(tx, id)
@@ -262,7 +267,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) error {
 	}
 	var items []Occurrence
 	err := s.DB.Write(func(tx *sql.Tx) error {
-		if err := materialize(tx, s.Today()); err != nil {
+		if err := schedule.Materialize(tx, s.Today()); err != nil {
 			return err
 		}
 		var err error
@@ -295,13 +300,13 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) error {
 	}
 	result := map[string]currencyTotals{}
 	for c, t := range totals {
-		result[c] = currencyTotals{money(t.total), money(t.paid), money(t.unpaid), money(t.overdue), t.count}
+		result[c] = currencyTotals{schedule.Money(t.total), schedule.Money(t.paid), schedule.Money(t.unpaid), schedule.Money(t.overdue), t.count}
 	}
 	dateOrNil := func(d *time.Time) any {
 		if d == nil {
 			return nil
 		}
-		return formatDate(*d)
+		return schedule.FormatDate(*d)
 	}
 	return writeJSON(w, 200, map[string]any{"from_date": dateOrNil(from), "to_date": dateOrNil(to), "currencies": result})
 }
@@ -318,7 +323,7 @@ type publicUser struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-func (s *Server) findUser(q querier, id int64) (publicUser, string, error) {
+func (s *Server) findUser(q store.Querier, id int64) (publicUser, string, error) {
 	u := publicUser{Role: "user"}
 	var hash string
 	err := q.QueryRow("SELECT id,username,display_name,created_at,password_hash FROM users WHERE id=?", id).
@@ -381,18 +386,18 @@ func (s *Server) usersCreate(w http.ResponseWriter, r *http.Request) error {
 	if strings.EqualFold(*username, s.Settings.AdminUsername) {
 		return fail(409, "Этот логин принадлежит администратору")
 	}
-	encoded := hashPassword(*password)
+	encoded := security.HashPassword(*password)
 	var created publicUser
 	err = s.DB.Write(func(tx *sql.Tx) error {
-		result, err := tx.Exec("INSERT INTO users(username,display_name,password_hash,created_at) VALUES(?,?,?,?)", *username, *display, encoded, timestamp())
-		if isUniqueViolation(err) {
+		result, err := tx.Exec("INSERT INTO users(username,display_name,password_hash,created_at) VALUES(?,?,?,?)", *username, *display, encoded, schedule.Timestamp())
+		if store.IsUniqueViolation(err) {
 			return fail(409, "Пользователь с таким логином уже существует")
 		}
 		if err != nil {
 			return err
 		}
 		id, _ := result.LastInsertId()
-		if err := audit(tx, admin.Username, "user.create", id); err != nil {
+		if err := audit.Record(tx, admin.Username, "user.create", id); err != nil {
 			return err
 		}
 		created, _, err = s.findUser(tx, id)
@@ -438,7 +443,7 @@ func (s *Server) usersUpdate(w http.ResponseWriter, r *http.Request) error {
 	}
 	encoded := ""
 	if password != nil {
-		encoded = hashPassword(*password)
+		encoded = security.HashPassword(*password)
 	}
 	var updated publicUser
 	err = s.DB.Write(func(tx *sql.Tx) error {
@@ -456,7 +461,7 @@ func (s *Server) usersUpdate(w http.ResponseWriter, r *http.Request) error {
 			hash = encoded
 		}
 		_, err = tx.Exec("UPDATE users SET username=?,display_name=?,password_hash=? WHERE id=?", current.Username, current.DisplayName, hash, id)
-		if isUniqueViolation(err) {
+		if store.IsUniqueViolation(err) {
 			return fail(409, "Пользователь с таким логином уже существует")
 		}
 		if err != nil {
@@ -468,7 +473,7 @@ func (s *Server) usersUpdate(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 		}
-		if err := audit(tx, admin.Username, "user.update", id); err != nil {
+		if err := audit.Record(tx, admin.Username, "user.update", id); err != nil {
 			return err
 		}
 		updated, _, err = s.findUser(tx, id)
@@ -499,7 +504,7 @@ func (s *Server) usersDelete(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec("DELETE FROM users WHERE id=?", id); err != nil {
 			return err
 		}
-		return audit(tx, admin.Username, "user.delete", id)
+		return audit.Record(tx, admin.Username, "user.delete", id)
 	})
 	if err != nil {
 		return err

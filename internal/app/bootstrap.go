@@ -7,6 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 // Bootstrap creates only project-local configuration and optional non-destructive demo data.
@@ -21,7 +26,7 @@ func Bootstrap(root string, demo bool) error {
 			"TELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=\nREMINDER_INTERVAL_SECONDS=60\n"+
 			"DEMO_USERNAME=teammate\nDEMO_PASSWORD=%s\n"+
 			"# Ключ шифрования данных в базе. Храните копию отдельно от базы: без него зашифрованное не прочитать.\n"+
-			"DATA_ENCRYPTION_KEY=%s\n", randomToken(20), randomToken(16), NewEncryptionKey())
+			"DATA_ENCRYPTION_KEY=%s\n", security.RandomToken(20), security.RandomToken(16), security.NewEncryptionKey())
 		if closeErr := file.Close(); err == nil {
 			err = closeErr
 		}
@@ -34,11 +39,11 @@ func Bootstrap(root string, demo bool) error {
 	default:
 		return err
 	}
-	settings, err := SettingsFromEnv(root)
+	settings, err := config.FromEnv(root)
 	if err != nil {
 		return err
 	}
-	db, err := OpenDB(settings.DatabasePath)
+	db, err := store.OpenDB(settings.DatabasePath)
 	if err != nil {
 		return err
 	}
@@ -59,8 +64,8 @@ func Bootstrap(root string, demo bool) error {
 	return nil
 }
 
-func seedDemo(db *DB, settings *Settings) error {
-	demoUser, demoPassword := env("DEMO_USERNAME", "teammate"), os.Getenv("DEMO_PASSWORD")
+func seedDemo(db *store.DB, settings *config.Settings) error {
+	demoUser, demoPassword := config.Env("DEMO_USERNAME", "teammate"), os.Getenv("DEMO_PASSWORD")
 	switch {
 	case demoPassword == "":
 		return errors.New("Для демопользователя добавьте DEMO_PASSWORD (12+ символов) в .env. База не изменена.")
@@ -69,7 +74,7 @@ func seedDemo(db *DB, settings *Settings) error {
 	case strings.EqualFold(demoUser, settings.AdminUsername):
 		return errors.New("Логины администратора и демопользователя должны различаться.")
 	}
-	today := localToday(settings)
+	today := schedule.Today(settings.Location())
 	samples := []struct {
 		title    string
 		cents    int64
@@ -94,7 +99,7 @@ func seedDemo(db *DB, settings *Settings) error {
 			return nil
 		}
 		if _, err := tx.Exec("INSERT INTO users(username,display_name,password_hash,created_at) VALUES(?,?,?,?)",
-			demoUser, "Алексей · команда", hashPassword(demoPassword), timestamp()); err != nil {
+			demoUser, "Алексей · команда", security.HashPassword(demoPassword), schedule.Timestamp()); err != nil {
 			return err
 		}
 		type paidPeriod struct {
@@ -105,21 +110,21 @@ func seedDemo(db *DB, settings *Settings) error {
 		for _, sample := range samples {
 			due := today.AddDate(0, 0, sample.due)
 			result, err := tx.Exec("INSERT INTO recurring_payments(title,amount_cents,currency,first_due_date,anchor_day,created_at) VALUES(?,?,?,?,?,?)",
-				sample.title, sample.cents, sample.currency, formatDate(due), due.Day(), timestamp())
+				sample.title, sample.cents, sample.currency, schedule.FormatDate(due), due.Day(), schedule.Timestamp())
 			if err != nil {
 				return err
 			}
 			if sample.paid {
 				id, _ := result.LastInsertId()
-				paid = append(paid, paidPeriod{id, formatDate(due)})
+				paid = append(paid, paidPeriod{id, schedule.FormatDate(due)})
 			}
 		}
-		if err := materialize(tx, today); err != nil {
+		if err := schedule.Materialize(tx, today); err != nil {
 			return err
 		}
 		for _, p := range paid {
 			if _, err := tx.Exec("UPDATE payment_occurrences SET paid_at=?,updated_by='demo',updated_at=? WHERE recurring_payment_id=? AND due_date=?",
-				p.due, timestamp(), p.id, p.due); err != nil {
+				p.due, schedule.Timestamp(), p.id, p.due); err != nil {
 				return err
 			}
 		}
@@ -138,7 +143,7 @@ func seedDemo(db *DB, settings *Settings) error {
 }
 
 // Backup writes a consistent copy via VACUUM INTO; it never overwrites an existing file.
-func Backup(settings *Settings, destination string) (string, error) {
+func Backup(settings *config.Settings, destination string) (string, error) {
 	source, err := filepath.Abs(settings.DatabasePath)
 	if err != nil {
 		return "", err
@@ -158,7 +163,7 @@ func Backup(settings *Settings, destination string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return "", err
 	}
-	db, err := OpenDB(source)
+	db, err := store.OpenDB(source)
 	if err != nil {
 		return "", err
 	}

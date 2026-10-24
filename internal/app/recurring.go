@@ -7,6 +7,12 @@ import (
 	"net/url"
 	"slices"
 	"time"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/wallet"
 )
 
 // --- recurring payments: create, edit, pause, archive ---
@@ -46,7 +52,7 @@ r.active,r.created_at,r.deleted_at,
 FROM recurring_payments r LEFT JOIN users u ON u.id=r.assignee_id LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
 
 // activePause is the pause in force today or later: open-ended or ending today or later.
-func activePause(pauses []pause, today time.Time) *pause {
+func activePause(pauses []schedule.Pause, today time.Time) *schedule.Pause {
 	for i := len(pauses) - 1; i >= 0; i-- {
 		if pauses[i].Until == nil || !pauses[i].Until.Before(today) {
 			return &pauses[i]
@@ -55,13 +61,13 @@ func activePause(pauses []pause, today time.Time) *pause {
 	return nil
 }
 
-func (s *Server) loadRecurring(q querier, where string, args ...any) ([]recurringItem, error) {
+func (s *Server) loadRecurring(q store.Querier, where string, args ...any) ([]recurringItem, error) {
 	today := s.Today()
-	pauses, err := loadPauses(q)
+	pauses, err := schedule.LoadPauses(q)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := q.Query(recurringSelect+where, append([]any{formatDate(today)}, args...)...)
+	rows, err := q.Query(recurringSelect+where, append([]any{schedule.FormatDate(today)}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -79,8 +85,8 @@ func (s *Server) loadRecurring(q querier, where string, args ...any) ([]recurrin
 			&walletNetwork, &walletAddress, &sdnName, &sdnCurrency, &sdnUID, &listLoaded, &item.Active, &item.CreatedAt, &deleted, &item.UnpaidCount, &next); err != nil {
 			return nil, err
 		}
-		item.Amount = money(cents)
-		if err := decryptNullable("recurring_payments.payment_details", &item.PaymentDetails); err != nil {
+		item.Amount = schedule.Money(cents)
+		if err := security.DecryptNullable("recurring_payments.payment_details", &item.PaymentDetails); err != nil {
 			return nil, err
 		}
 		item.Wallet = makeWallet(walletNetwork, walletAddress, sdnName, sdnCurrency, sdnUID, listLoaded)
@@ -97,9 +103,9 @@ func (s *Server) loadRecurring(q querier, where string, args ...any) ([]recurrin
 			item.NextDueDate = &next.String
 		}
 		if p := activePause(pauses[item.ID], today); p != nil && item.Active {
-			info := &pauseInfo{From: formatDate(p.From)}
+			info := &pauseInfo{From: schedule.FormatDate(p.From)}
 			if p.Until != nil {
-				until := formatDate(*p.Until)
+				until := schedule.FormatDate(*p.Until)
 				info.Until = &until
 			}
 			item.Paused = info
@@ -115,7 +121,7 @@ func (s *Server) recurringList(w http.ResponseWriter, r *http.Request) error {
 	}
 	var items []recurringItem
 	err := s.DB.Write(func(tx *sql.Tx) error {
-		if err := materialize(tx, s.Today()); err != nil {
+		if err := schedule.Materialize(tx, s.Today()); err != nil {
 			return err
 		}
 		var err error
@@ -128,7 +134,7 @@ func (s *Server) recurringList(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, items)
 }
 
-func (s *Server) findRecurring(q querier, id int64) (recurringItem, error) {
+func (s *Server) findRecurring(q store.Querier, id int64) (recurringItem, error) {
 	items, err := s.loadRecurring(q, " WHERE r.id=?", id)
 	if err != nil {
 		return recurringItem{}, err
@@ -153,7 +159,7 @@ type recurringInput struct {
 // extraFields validates frequency, category and assignee shared by create, edit and CSV import.
 func extraFields(f *form) (frequency *string, category *string, assignee *int64) {
 	frequency = f.text("frequency", textRule{max: 16})
-	if f.has("frequency") && (frequency == nil || !slices.Contains(frequencies, *frequency)) {
+	if f.has("frequency") && (frequency == nil || !slices.Contains(schedule.Frequencies, *frequency)) {
 		f.add("frequency", "Допустимые значения: monthly, quarterly, yearly", "literal_error")
 	}
 	category = f.text("category", textRule{trim: true, max: 40})
@@ -166,16 +172,16 @@ func sealedDetails(details *string) *string {
 	if details == nil {
 		return nil
 	}
-	sealed := encryptText("recurring_payments.payment_details", *details)
+	sealed := security.EncryptText("recurring_payments.payment_details", *details)
 	return &sealed
 }
 
 // auditSanctioned records that a payment was saved with a wallet from the OFAC list.
-func auditSanctioned(q querier, actor string, item recurringItem) error {
+func auditSanctioned(q store.Querier, actor string, item recurringItem) error {
 	if item.Wallet == nil || item.Wallet.Sanctioned == nil || !*item.Wallet.Sanctioned {
 		return nil
 	}
-	return audit(q, actor, "wallet.sanctioned", item.ID)
+	return audit.Record(q, actor, "wallet.sanctioned", item.ID)
 }
 
 // paymentLinkFields validates where to pay: a http(s) link to the bill or cabinet and free-form details.
@@ -194,7 +200,7 @@ func isWebURL(link string) bool {
 	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
 }
 
-func checkAssignee(q querier, id *int64) error {
+func checkAssignee(q store.Querier, id *int64) error {
 	if id == nil {
 		return nil
 	}
@@ -274,13 +280,13 @@ func (s *Server) createRecurring(tx *sql.Tx, actor string, in recurringInput) (i
 	}
 	var walletKeyValue any
 	if in.walletAddress != nil {
-		walletKeyValue = walletKey(*in.walletAddress)
+		walletKeyValue = wallet.Key(*in.walletAddress)
 	}
 	result, err := tx.Exec(`INSERT INTO recurring_payments(title,amount_cents,currency,first_due_date,anchor_day,frequency,category,assignee_id,
 		payment_url,payment_details,wallet_network,wallet_address,wallet_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		in.title, in.cents, in.currency, formatDate(in.due), in.due.Day(), in.frequency,
+		in.title, in.cents, in.currency, schedule.FormatDate(in.due), in.due.Day(), in.frequency,
 		nullableString(in.category), nullableInt(in.assigneeID), nullableString(in.paymentURL), nullableString(sealedDetails(in.paymentDetails)),
-		nullableString(in.walletNetwork), nullableString(in.walletAddress), walletKeyValue, timestamp())
+		nullableString(in.walletNetwork), nullableString(in.walletAddress), walletKeyValue, schedule.Timestamp())
 	if err != nil {
 		return 0, err
 	}
@@ -288,10 +294,10 @@ func (s *Server) createRecurring(tx *sql.Tx, actor string, in recurringInput) (i
 	if err != nil {
 		return 0, err
 	}
-	if err := materialize(tx, s.Today()); err != nil {
+	if err := schedule.Materialize(tx, s.Today()); err != nil {
 		return 0, err
 	}
-	return id, audit(tx, actor, "recurring.create", id)
+	return id, audit.Record(tx, actor, "recurring.create", id)
 }
 
 // recurringUpdate edits the title, category, assignee, payment link and details, or amount. A new amount applies to unpaid
@@ -366,7 +372,7 @@ func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 		if f.has("wallet_address") {
 			var key any
 			if walletAddress != nil {
-				key = walletKey(*walletAddress)
+				key = wallet.Key(*walletAddress)
 			}
 			if err := set("UPDATE recurring_payments SET wallet_network=?,wallet_address=?,wallet_key=? WHERE id=?",
 				nullableString(walletNetwork), nullableString(walletAddress), key); err != nil {
@@ -378,11 +384,11 @@ func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			if _, err := tx.Exec("UPDATE payment_occurrences SET amount_cents=? WHERE recurring_payment_id=? AND paid_at IS NULL AND due_date>=?",
-				cents, id, formatDate(s.Today())); err != nil {
+				cents, id, schedule.FormatDate(s.Today())); err != nil {
 				return err
 			}
 		}
-		if err := audit(tx, user.Username, "recurring.update", id); err != nil {
+		if err := audit.Record(tx, user.Username, "recurring.update", id); err != nil {
 			return err
 		}
 		if updated, err = s.findRecurring(tx, id); err != nil {
@@ -417,13 +423,13 @@ func (s *Server) recurringDelete(w http.ResponseWriter, r *http.Request) error {
 		if err != nil || !active {
 			return err
 		}
-		if _, err := tx.Exec("UPDATE recurring_payments SET active=0,deleted_at=? WHERE id=?", timestamp(), id); err != nil {
+		if _, err := tx.Exec("UPDATE recurring_payments SET active=0,deleted_at=? WHERE id=?", schedule.Timestamp(), id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("UPDATE reminders SET state='cancelled' WHERE state='pending' AND occurrence_id IN (SELECT id FROM payment_occurrences WHERE recurring_payment_id=?)", id); err != nil {
 			return err
 		}
-		return audit(tx, user.Username, "recurring.archive", id)
+		return audit.Record(tx, user.Username, "recurring.archive", id)
 	})
 	if err != nil {
 		return err
@@ -468,15 +474,15 @@ func (s *Server) recurringPause(w http.ResponseWriter, r *http.Request) error {
 		}
 		var untilValue any
 		if until != nil {
-			untilValue = formatDate(*until)
+			untilValue = schedule.FormatDate(*until)
 		}
 		if _, err := tx.Exec("INSERT INTO payment_pauses(recurring_payment_id,from_date,until_date,created_by,created_at) VALUES(?,?,?,?,?)",
-			id, formatDate(today), untilValue, user.Username, timestamp()); err != nil {
+			id, schedule.FormatDate(today), untilValue, user.Username, schedule.Timestamp()); err != nil {
 			return err
 		}
 		inPause := `SELECT o.id FROM payment_occurrences o WHERE o.recurring_payment_id=? AND o.paid_at IS NULL AND o.due_date>=?
 			AND (? IS NULL OR o.due_date<=?) AND NOT EXISTS (SELECT 1 FROM receipts x WHERE x.occurrence_id=o.id)`
-		args := []any{id, formatDate(today), untilValue, untilValue}
+		args := []any{id, schedule.FormatDate(today), untilValue, untilValue}
 		for _, table := range []string{"reminders", "personal_reminders"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE occurrence_id IN ("+inPause+")", args...); err != nil { // #nosec G202 -- table is one of two constant names, values are parameters
 				return err
@@ -485,10 +491,10 @@ func (s *Server) recurringPause(w http.ResponseWriter, r *http.Request) error {
 		if _, err := tx.Exec("DELETE FROM payment_occurrences WHERE id IN ("+inPause+")", args...); err != nil {
 			return err
 		}
-		if err := audit(tx, user.Username, "recurring.pause", id); err != nil {
+		if err := audit.Record(tx, user.Username, "recurring.pause", id); err != nil {
 			return err
 		}
-		if err := materialize(tx, today); err != nil {
+		if err := schedule.Materialize(tx, today); err != nil {
 			return err
 		}
 		updated, err = s.findRecurring(tx, id)
@@ -521,7 +527,7 @@ func (s *Server) recurringResume(w http.ResponseWriter, r *http.Request) error {
 		if current.Paused == nil {
 			return fail(409, "Платёж не на паузе")
 		}
-		yesterday := formatDate(today.AddDate(0, 0, -1))
+		yesterday := schedule.FormatDate(today.AddDate(0, 0, -1))
 		if current.Paused.From > yesterday {
 			_, err = tx.Exec("DELETE FROM payment_pauses WHERE recurring_payment_id=? AND from_date=?", id, current.Paused.From)
 		} else {
@@ -530,10 +536,10 @@ func (s *Server) recurringResume(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if err := audit(tx, user.Username, "recurring.resume", id); err != nil {
+		if err := audit.Record(tx, user.Username, "recurring.resume", id); err != nil {
 			return err
 		}
-		if err := materialize(tx, today); err != nil {
+		if err := schedule.Materialize(tx, today); err != nil {
 			return err
 		}
 		updated, err = s.findRecurring(tx, id)

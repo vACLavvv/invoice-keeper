@@ -11,6 +11,11 @@ import (
 	"time"
 
 	"golang.org/x/text/encoding/charmap"
+
+	"invoice-keeper/internal/app/bot"
+	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
 )
 
 func dates(items []map[string]any, payment any) string {
@@ -31,11 +36,11 @@ func TestQuarterlyAndYearlyPeriods(t *testing.T) {
 	yearly := c.createPayment(map[string]any{"title": "Домен", "frequency": "yearly", "first_due_date": "2026-01-31"})
 	leap := c.createPayment(map[string]any{"title": "Високосный", "frequency": "yearly", "first_due_date": "2028-02-29"})
 	expect(t, "frequency stored", yearly["frequency"], any("yearly"))
-	e.clock.Set(civil(2026, 5, 2))
+	e.clock.Set(schedule.Civil(2026, 5, 2))
 	items := c.get("/api/v1/payment-occurrences").list(t)
 	expect(t, "quarterly keeps the 31st", dates(items, quarterly["id"]), "2026-01-31,2026-04-30,2026-07-31")
 	expect(t, "next yearly date is visible", dates(items, yearly["id"]), "2026-01-31,2027-01-31")
-	e.clock.Set(civil(2028, 3, 1))
+	e.clock.Set(schedule.Civil(2028, 3, 1))
 	items = c.get("/api/v1/payment-occurrences").list(t)
 	expect(t, "29 Feb → 28 Feb", dates(items, leap["id"]), "2028-02-29,2029-02-28")
 	expect(t, "bad frequency", c.post("/api/v1/recurring-payments", map[string]any{"title": "x", "amount": "1", "currency": "RUB", "first_due_date": "2026-01-31", "frequency": "weekly"}).status, 422)
@@ -55,7 +60,7 @@ func TestPauseSkipsPeriodsAndResumeRestarts(t *testing.T) {
 	expect(t, "double pause", admin.post(path+"/pause", nil).status, 409)
 	expect(t, "periods inside the pause removed", len(admin.get("/api/v1/payment-occurrences").list(t)), 0)
 
-	e.clock.Set(civil(2026, 4, 1))
+	e.clock.Set(schedule.Civil(2026, 4, 1))
 	items := admin.get("/api/v1/payment-occurrences").list(t)
 	expect(t, "after the pause", dates(items, nil), "2026-03-31,2026-04-30,2026-05-31")
 	expect(t, "nothing overdue for skipped months", items[0]["status"], any("overdue"))
@@ -64,7 +69,7 @@ func TestPauseSkipsPeriodsAndResumeRestarts(t *testing.T) {
 	open := admin.createPayment(map[string]any{"title": "Сервер", "first_due_date": "2026-04-10"})
 	openPath := "/api/v1/recurring-payments/" + id(open)
 	admin.post(openPath+"/pause", nil)
-	e.clock.Set(civil(2026, 5, 20))
+	e.clock.Set(schedule.Civil(2026, 5, 20))
 	expect(t, "still paused", dates(admin.get("/api/v1/payment-occurrences").list(t), open["id"]), "")
 	resumed := admin.post(openPath+"/resume", nil)
 	expect(t, "resume", resumed.status, 200)
@@ -132,8 +137,8 @@ func TestAdminTwoFactor(t *testing.T) {
 	now := time.Date(2026, 1, 28, 12, 0, 0, 0, time.UTC)
 	e.server.Now = func() time.Time { return now }
 	code := func(offset time.Duration, secret string) string {
-		raw, _ := totpEncoding.DecodeString(secret)
-		return totpCode(raw, now.Add(offset).Unix()/30)
+		raw, _ := security.TOTPEncoding.DecodeString(secret)
+		return security.TOTPCode(raw, now.Add(offset).Unix()/30)
 	}
 	admin := e.client()
 	admin.signIn()
@@ -177,7 +182,7 @@ func TestTelegramLinkAndPersonalReminders(t *testing.T) {
 	admin := e.client()
 	admin.signIn()
 	expect(t, "bot not configured", admin.post("/api/v1/me/telegram/link", nil).status, 409)
-	bot, tg := botFor(e)
+	tb, tg := botFor(e)
 	e.settings.TelegramChatID = "" // personal reminders only
 	e.server.SetBotUsername("invoice_test_bot")
 	alex := admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"}).object(t)
@@ -193,15 +198,15 @@ func TestTelegramLinkAndPersonalReminders(t *testing.T) {
 	}
 	start := message(9001, "/start "+code)
 	start.Message.Chat.Type = "private"
-	start.Message.From = &tgUser{ID: 501, Username: "alex_tg"}
-	bot.handle(start)
+	start.Message.From = &bot.User{ID: 501, Username: "alex_tg"}
+	tb.Handle(start)
 	if !strings.Contains(tg.sent("sendMessage")[0]["text"].(string), "привязан к учётной записи alex") {
 		t.Fatalf("link reply: %v", tg.sent("sendMessage")[0]["text"])
 	}
 	me := user.get("/api/v1/me/telegram").object(t)
 	expect(t, "linked", me["linked"], any(true))
 	expect(t, "username", me["username"], any("alex_tg"))
-	bot.handle(start)
+	tb.Handle(start)
 	if !strings.Contains(tg.sent("sendMessage")[1]["text"].(string), "устарела") {
 		t.Fatal("a code works once")
 	}
@@ -209,7 +214,7 @@ func TestTelegramLinkAndPersonalReminders(t *testing.T) {
 	admin.createPayment(map[string]any{"title": "Аренда", "assignee_id": alex["id"]})
 	admin.createPayment(map[string]any{"title": "Чужой платёж"})
 	sent := &recorder{}
-	worker := makeWorker(e, sent.sender(SendResult{State: "sent", MessageID: "1"}))
+	worker := makeWorker(e, sent.sender(notify.SendResult{State: "sent", MessageID: "1"}))
 	worker.Settings.TelegramChatID = ""
 	worker.Tick()
 	worker.Tick()
@@ -219,11 +224,11 @@ func TestTelegramLinkAndPersonalReminders(t *testing.T) {
 
 	period := user.get("/api/v1/payment-occurrences?assignee=me").list(t)[0]
 	press := pressPaid(9001, id(period))
-	press.CallbackQuery.From = tgUser{ID: 501, Username: "alex_tg"}
-	bot.handle(press)
+	press.CallbackQuery.From = bot.User{ID: 501, Username: "alex_tg"}
+	tb.Handle(press)
 	expect(t, "paid under the panel name", user.get("/api/v1/payment-occurrences/" + id(period)).object(t)["updated_by"], any("alex"))
 	expect(t, "unlink", user.delete("/api/v1/me/telegram").status, 204)
-	expect(t, "private chat no longer allowed", bot.allowed(9001), false)
+	expect(t, "private chat no longer allowed", e.server.isLinkedChat(9001), false)
 }
 
 func multipartFile(t *testing.T, name string, content []byte) (*bytes.Buffer, string) {

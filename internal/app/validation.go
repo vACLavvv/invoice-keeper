@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"invoice-keeper/internal/app/schedule"
 )
 
 // apiError is rendered as {"detail": ...}; Detail is a message or a list of field errors.
@@ -145,7 +147,7 @@ func (f *form) date(name string) *time.Time {
 	if value == nil {
 		return nil
 	}
-	parsed, err := parseDate(*value)
+	parsed, err := schedule.ParseDate(*value)
 	if err != nil {
 		f.add(name, "Ожидается существующая дата YYYY-MM-DD", "date_from_datetime_parsing")
 		return nil
@@ -218,7 +220,7 @@ func (q *queryParams) date(name string) *time.Time {
 	if value == "" {
 		return nil
 	}
-	parsed, err := parseDate(value)
+	parsed, err := schedule.ParseDate(value)
 	if err != nil {
 		q.add(name, "Ожидается дата YYYY-MM-DD", "date_parsing")
 		return nil

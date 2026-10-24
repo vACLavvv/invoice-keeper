@@ -13,6 +13,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"invoice-keeper/internal/app/audit"
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/security"
 )
 
 // sessionID is the public handle of a session: a prefix of its token hash, never the token itself.
@@ -64,7 +68,7 @@ func sessionOwner(user *User) (string, []any) {
 
 func currentTokenHash(r *http.Request) string {
 	if cookie, err := r.Cookie(cookieName); err == nil {
-		return digest(cookie.Value)
+		return security.Digest(cookie.Value)
 	}
 	return ""
 }
@@ -123,7 +127,7 @@ func (s *Server) sessionsDelete(w http.ResponseWriter, r *http.Request) error {
 		if n, _ := result.RowsAffected(); n == 0 {
 			return fail(404, "Сессия не найдена")
 		}
-		return audit(tx, user.Username, "session.revoke", id)
+		return audit.Record(tx, user.Username, "session.revoke", id)
 	})
 	if err != nil {
 		return err
@@ -145,7 +149,7 @@ func (s *Server) sessionsDeleteOthers(w http.ResponseWriter, r *http.Request) er
 			return err
 		}
 		closed, _ = result.RowsAffected()
-		return audit(tx, user.Username, "session.revoke_others", closed)
+		return audit.Record(tx, user.Username, "session.revoke_others", closed)
 	})
 	if err != nil {
 		return err
@@ -168,7 +172,7 @@ func (s *Server) tokenUser(r *http.Request, allowed ...string) (*User, error) {
 	var isAdmin bool
 	var fingerprint, lastUsed sql.NullString
 	var access, createdAt string
-	err := s.DB.QueryRow("SELECT id,user_id,is_admin,admin_fingerprint,access,expires_at,last_used_at,created_at FROM api_keys WHERE token_hash=?", digest(token)).
+	err := s.DB.QueryRow("SELECT id,user_id,is_admin,admin_fingerprint,access,expires_at,last_used_at,created_at FROM api_keys WHERE token_hash=?", security.Digest(token)).
 		Scan(&keyID, &userID, &isAdmin, &fingerprint, &access, &expires, &lastUsed, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Ключ API не найден или удалён")
@@ -194,7 +198,7 @@ func (s *Server) tokenUser(r *http.Request, allowed ...string) (*User, error) {
 	}
 	user := &User{Role: "user", viaToken: true}
 	if isAdmin {
-		if !constantEqual(fingerprint.String, s.adminFingerprint()) {
+		if !security.Equal(fingerprint.String, s.adminFingerprint()) {
 			return nil, fail(401, "Настройки администратора изменены. Создайте новый ключ")
 		}
 		user = &User{ID: 0, Username: s.Settings.AdminUsername, DisplayName: "Администратор", Role: "admin", viaToken: true}
@@ -202,7 +206,7 @@ func (s *Server) tokenUser(r *http.Request, allowed ...string) (*User, error) {
 		Scan(&user.ID, &user.Username, &user.DisplayName); err != nil {
 		return nil, fail(401, "Пользователь ключа удалён")
 	}
-	if _, err := s.DB.Exec("UPDATE api_keys SET last_used_at=? WHERE id=?", timestamp(), keyID); err != nil {
+	if _, err := s.DB.Exec("UPDATE api_keys SET last_used_at=? WHERE id=?", schedule.Timestamp(), keyID); err != nil {
 		return nil, err
 	}
 	return user, nil

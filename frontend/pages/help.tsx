@@ -37,7 +37,7 @@ export default function Help() {
   const channels = (['telegram', 'max', 'email', 'webhook'] as const).filter((c) => settings.channels?.[c])
     .map((c) => ({ telegram: 'Telegram', max: 'MAX', email: 'Email', webhook: 'Webhook' })[c]);
   return (
-    <Shell title={t('Помощь')} heading={t('помощь')} subtitle={t('Как устроен Invoice Keeper и что делать, если что-то не так.')}>
+    <Shell title={t('Помощь')} heading={t('Помощь')} subtitle={t('Как устроен Invoice Keeper и что делать, если что-то не так.')}>
       <SectionTitle>{t('разделы')}</SectionTitle>
       <Grid>
         {sections.map((s) => (

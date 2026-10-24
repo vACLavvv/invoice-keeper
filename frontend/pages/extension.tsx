@@ -44,7 +44,7 @@ export default function Extension() {
   return (
     <Shell
       title={t('Расширение')}
-      heading={t('расширение для браузера')}
+      heading={t('Расширение для браузера')}
       subtitle={t('Подтягивает платежи из кабинетов сервисов: aeza, хостинги, подписки.')}
       action={<Button as="a" href="/extension.zip" download>{t('Скачать расширение ↓')}</Button>}
     >

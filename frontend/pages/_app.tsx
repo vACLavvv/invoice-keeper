@@ -1,5 +1,9 @@
-import '@fontsource-variable/inter';
-import '@fontsource-variable/inter/wght-italic.css';
+// The workspace design of the main branch: base, themes, workspace layout and the Apple-like layer, in this order.
+import '@/styles/workspace/styles.css';
+import '@/styles/workspace/themes.css';
+import '@/styles/workspace/workspace.css';
+import '@/styles/workspace/apple.css';
+import '@/styles/workspace/extras.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -38,7 +42,6 @@ const Loading = styled.div`
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 1.6rem;
-  color: ${({ theme }) => theme.color.muted};
-  font-weight: 700;
+  padding: 16px;
+  color: var(--apple-secondary);
 `;

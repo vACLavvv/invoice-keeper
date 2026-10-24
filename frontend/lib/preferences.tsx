@@ -23,7 +23,7 @@ function write(key: string, value: string) {
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>('system');
+  const [mode, setModeState] = useState<ThemeMode>('light');
   const [systemDark, setSystemDark] = useState(true);
   const [language, setLanguageState] = useState<Language>('ru');
 
@@ -52,6 +52,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => { document.documentElement.lang = language; }, [language]);
 
   const dark = mode === 'dark' || (mode === 'system' && systemDark);
+  // The workspace stylesheets switch palettes by html[data-theme].
+  useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; }, [dark]);
   return (
     <PreferencesContext.Provider value={{ mode, setMode, language, setLanguage: chooseLanguage }}>
       <ThemeProvider theme={dark ? darkTheme : lightTheme}>

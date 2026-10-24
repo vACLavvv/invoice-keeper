@@ -234,3 +234,15 @@ func (a apiAdapter) ListForecast(w http.ResponseWriter, r *http.Request, _ api.L
 func (a apiAdapter) CreatePeriod(w http.ResponseWriter, r *http.Request, _ int) {
 	a.s.serveAPI(w, r, a.s.periodCreate)
 }
+
+func (a apiAdapter) AuditPage(w http.ResponseWriter, r *http.Request, _ api.AuditPageParams) {
+	a.s.serveAPI(w, r, a.s.auditPage)
+}
+
+func (a apiAdapter) ListNotifications(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.notificationList)
+}
+
+func (a apiAdapter) MarkNotifications(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.notificationRead)
+}

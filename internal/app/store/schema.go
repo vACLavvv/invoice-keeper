@@ -32,4 +32,8 @@ CREATE TABLE IF NOT EXISTS extension_pairings (
     code_hash TEXT PRIMARY KEY, key_id INTEGER NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
     token TEXT NOT NULL, expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS notification_reads (
+    reader TEXT NOT NULL, item TEXT NOT NULL, read_at TEXT NOT NULL,
+    PRIMARY KEY(reader, item)
+);
 `

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { InfoBox, Modal, ModalForm } from '@/components/Modal';
 import { Shell } from '@/components/Shell';
-import { Button, Card, Empty, Field, Input, Muted, Notice, Pill, Row, TableWrap } from '@/components/ui';
+import { ws } from '@/components/icons';
+import { Button, Field, Input, Notice } from '@/components/ui';
 import { api, type TeamUser } from '@/lib/api';
 import { date } from '@/lib/format';
 import { t } from '@/lib/i18n';
@@ -15,7 +16,7 @@ export default function Team() {
   const { data, error } = useLoad(() => (isAdmin ? api<TeamUser[]>('/users') : Promise.resolve([])), [isAdmin]);
   if (!isAdmin) {
     return (
-      <Shell title={t('Команда')} heading={t('ваша команда')} subtitle={t('Раздел доступен администратору.')}>
+      <Shell title={t('Команда')} heading={t('Ваша команда')} subtitle={t('Раздел доступен администратору.')} action={<></>}>
         <Notice $tone="warning">{t('Управлять участниками может только администратор.')}</Notice>
       </Shell>
     );
@@ -23,39 +24,37 @@ export default function Team() {
   return (
     <Shell
       title={t('Команда')}
-      heading={t('ваша команда')}
+      heading={t('Ваша команда')}
       subtitle={t('Дайте коллегам доступ к платежам и истории оплат.')}
-      action={<Button type="button" onClick={() => setEditing('new')}>{t('Добавить участника +')}</Button>}
+      action={<button type="button" className="button primary" onClick={() => setEditing('new')}><span className="button-icon" aria-hidden="true">{ws.plus}</span> {t('Добавить участника')}</button>}
     >
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
       <Notice>{t('Администратор задаётся в .env и здесь не отображается. Участники видят платежи, отмечают оплату и исправляют даты.')}</Notice>
-      <Card>
-        {!data ? <Empty>{t('Загружаем…')}</Empty> : data.length === 0 ? (
-          <Empty><b>{t('Пригласите команду')}</b>{t('Создайте учётную запись для коллеги.')}</Empty>
+      <div id="users-table" className="ledger table-wrap cards">
+        {!data ? <div className="empty-state">{t('Загружаем…')}</div> : data.length === 0 ? (
+          <div className="empty-state"><b>{t('Пригласите команду')}</b>{t('Создайте учётную запись для коллеги.')}<br />{t('Администратор не отображается в этом списке.')}</div>
         ) : (
-          <TableWrap>
-            <table>
-              <thead><tr><th>{t('Имя')}</th><th>{t('Логин')}</th><th>{t('Роль')}</th><th>{t('Создан')}</th><th /></tr></thead>
-              <tbody>
-                {data.map((u) => (
-                  <tr key={u.id}>
-                    <td><b>{u.display_name}</b></td>
-                    <td><Muted>{u.username}</Muted></td>
-                    <td><Pill $status="active">{t('пользователь')}</Pill></td>
-                    <td><Muted>{date(u.created_at)}</Muted></td>
-                    <td>
-                      <Row $gap={0.8}>
-                        <Button type="button" $small $variant="secondary" onClick={() => setEditing(u)}>{t('изменить')}</Button>
-                        <Button type="button" $small $variant="ghost" onClick={() => setDeleting(u)}>{t('удалить')}</Button>
-                      </Row>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
+          <table>
+            <thead><tr><th>{t('ИМЯ')}</th><th>{t('ЛОГИН')}</th><th>{t('РОЛЬ')}</th><th>{t('СОЗДАН')}</th><th /></tr></thead>
+            <tbody>
+              {data.map((u) => (
+                <tr key={u.id}>
+                  <td><b>{u.display_name}</b></td>
+                  <td className="date-cell" data-label={t('Логин')}>{u.username}</td>
+                  <td data-label={t('Роль')}><span className="pill paid">{t('Пользователь')}</span></td>
+                  <td className="date-cell" data-label={t('Создан')}>{date(u.created_at)}</td>
+                  <td>
+                    <div className="row-action-group">
+                      <button type="button" className="row-action" onClick={() => setEditing(u)}>{t('Изменить ↗')}</button>
+                      <button type="button" className="row-action delete" onClick={() => setDeleting(u)}>{t('Удалить')}</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-      </Card>
+      </div>
       {editing && <UserModal user={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {deleting && <DeleteModal user={deleting} onClose={() => setDeleting(null)} />}
     </Shell>

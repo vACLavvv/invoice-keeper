@@ -1,0 +1,57 @@
+/* Additions to the main-branch workspace design for screens it does not have:
+   wallets and OFAC, receipts, extension, account, API keys, suggestions, help. */
+
+nav > div { display: contents; }
+.lang-toggle { width: auto; min-width: 34px; padding: 0 9px; font-size: 10px; font-weight: 600; letter-spacing: .3px; }
+.bell-button { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 11px; border: 1px solid var(--line); color: var(--apple-secondary); }
+.bell-button svg { width: 16px; height: 16px; }
+.bell-button:hover { color: var(--apple-blue); }
+
+/* Forms: a label that wraps its control. */
+fieldset.modal-form { border: 0; margin: 0; padding: 0; min-width: 0; }
+label.form-field { color: var(--apple-secondary); font-size: 12px; font-weight: 500; }
+label.form-field > input, label.form-field > select, label.form-field > textarea { width: 100%; font-size: 13px; color: var(--ink); font-weight: 400; }
+label.form-field small { font-weight: 400; }
+textarea { min-height: 88px; }
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea { background: #111113; color: var(--ink); border-color: var(--line); }
+dialog.wide { width: 820px; }
+dialog form { margin: 0; }
+.button.small { min-height: 34px; padding: 7px 13px; font-size: 11px; }
+.button.danger { border-radius: 999px; }
+.notice-error { background: #fff1ef !important; border-color: #f0d9d5 !important; color: #a8473a !important; }
+.notice-warning { background: #fdf6ec !important; border-color: #f2e3c9 !important; color: #8f6a2c !important; }
+[data-theme="dark"] .notice-error { background: #3a1f1b !important; border-color: #5a2d27 !important; color: #f2b3a8 !important; }
+[data-theme="dark"] .notice-warning { background: #33291a !important; border-color: #4d3d22 !important; color: #e8c88e !important; }
+.notice + .notice, .notice + .ledger, .notice + .summary-grid { margin-top: 0; }
+.form-error { margin: 0; }
+
+/* Stacked sections inside a page. */
+.stack { display: grid; gap: 20px; min-width: 0; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.ledger td .muted, .ledger td small { color: var(--apple-secondary); }
+.ledger td .payment-name small { display: block; }
+.amount-cell small { margin-left: 3px; }
+
+/* Calendar: forecast dates that can be paid ahead. */
+.calendar-item.projection { background: transparent; border: 1px dashed var(--line); color: var(--apple-secondary); }
+
+/* Phone: tables marked .cards become one card per row, labels from data-label. */
+@media (max-width: 720px) {
+  .table-wrap.cards { overflow: visible; }
+  .table-wrap.cards table, .table-wrap.cards tbody { display: block; width: 100%; }
+  .table-wrap.cards thead { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+  .table-wrap.cards tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .table-wrap.cards tr:last-child { border-bottom: 0; }
+  .table-wrap.cards td { padding: 0; border: 0; min-width: 0; white-space: normal; font-size: 12px; }
+  .table-wrap.cards td:first-child { grid-column: 1 / -1; }
+  .table-wrap.cards td[data-label]:not(:first-child)::before { content: attr(data-label) ': '; color: var(--apple-secondary); font-size: 10px; }
+  .table-wrap.cards td:last-child:not([data-label]) { grid-column: 1 / -1; text-align: right; }
+  .table-wrap table { white-space: normal; }
+}
+
+/* Budget charts and wallet line. */
+.chart-panel { margin-bottom: 24px; }
+.chart-body { padding: 0 23px 22px; display: grid; gap: 12px; }
+.wallet-line { display: flex !important; align-items: center; gap: 6px; flex-wrap: wrap; }
+.budget-switch .status-tab { min-width: 34px; }
+.section-title::first-letter, .form-field::first-letter { text-transform: uppercase; }

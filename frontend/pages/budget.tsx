@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import styled from 'styled-components';
 import { CategoryChart, Legend, MonthChart } from '@/components/BudgetCharts';
 import { Shell } from '@/components/Shell';
-import { Amount, Empty, Muted, Notice, Row, SectionTitle, TableWrap, Tile, TileTitle } from '@/components/ui';
+import { currencyTitle } from '@/components/Workspace';
 import { api, type Budget, type BudgetLine } from '@/lib/api';
-import { currencies, currencyName, date, money, symbols, type Currency } from '@/lib/format';
+import { currencies, date, money, symbols, type Currency } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 
@@ -18,150 +17,97 @@ export default function BudgetPage() {
   const chartCurrency = picked && shown.includes(picked) ? picked : shown[0];
 
   return (
-    <Shell title={t('Бюджет')} heading={t('бюджет на год')} subtitle={t('Плановые расходы по месяцам и категориям, отдельно по каждой валюте.')}>
-      {error && <Notice $tone="error" role="alert">{error}</Notice>}
-      <Row $gap={0.4}>
-        <Arrow type="button" aria-label={t('Предыдущий год')} onClick={() => setYear((y) => Math.max(2000, y - 1))}>‹</Arrow>
-        <Year aria-live="polite">{year}</Year>
-        <Arrow type="button" aria-label={t('Следующий год')} onClick={() => setYear((y) => Math.min(2100, y + 1))}>›</Arrow>
-      </Row>
-      {!data ? <Empty>{t('Считаем…')}</Empty> : (
+    <Shell title={t('Бюджет')} heading={t('План расходов')} subtitle={t('Посмотрите, сколько потребуется на месяц и год — отдельно по каждой валюте.')}>
+      {error && <div className="notice notice-error" role="alert">{error}</div>}
+      <div className="budget-toolbar">
+        <div className="budget-switch" role="group" aria-label={t('Год бюджета')}>
+          <button type="button" className="status-tab" aria-label={t('Предыдущий год')} onClick={() => setYear((y) => Math.max(2000, y - 1))}>‹</button>
+          <button type="button" className="status-tab selected" aria-live="polite">{t('На {year} год', { year })}</button>
+          <button type="button" className="status-tab" aria-label={t('Следующий год')} onClick={() => setYear((y) => Math.min(2100, y + 1))}>›</button>
+        </div>
+        <label className="budget-year-label">{t('Год')}
+          <input type="number" min={2000} max={2100} value={year} aria-label={t('Год бюджета')}
+            onChange={(e) => { const v = Number(e.target.value); if (v >= 2000 && v <= 2100) setYear(v); }} />
+        </label>
+      </div>
+      {!data ? <div className="ledger empty-state">{t('Считаем…')}</div> : (
         <>
-          <Tiles>
-            {currencies.map((c) => <Total key={c} currency={c} line={data.currencies[c]} />)}
-          </Tiles>
-          <Notice><span>{t('Будущие месяцы посчитаны по правилу повторения каждого платежа, паузы учтены. «Оплачено» — по отмеченным периодам.')}</span></Notice>
-          <SectionTitle>{t('по месяцам')}</SectionTitle>
+          <div className="summary-grid">
+            {currencies.map((c) => <BudgetCard key={c} currency={c} line={data.currencies[c]} />)}
+          </div>
+          <div className="notice">{t('Разовые платежи учтены один раз, регулярные — по своему повторению, по сроку оплаты. Будущие месяцы посчитаны по графику без создания записей в истории, паузы учтены. Конвертации валют нет.')}</div>
           {used.length > 0 && (
-            <>
-              <Row $between $wrap>
-                <Row $gap={0.4} role="group" aria-label={t('Валюта графиков')}>
+            <section className="work-panel chart-panel">
+              <div className="work-panel-heading">
+                <h2>{t('По месяцам')}</h2>
+                <div className="status-tabs" role="group" aria-label={t('Валюта графиков')}>
                   {used.map((c) => (
-                    <CurrencyButton key={c} type="button" $selected={c === chartCurrency} aria-pressed={c === chartCurrency} onClick={() => setPicked(c)}>
+                    <button key={c} type="button" className={`status-tab${c === chartCurrency ? ' selected' : ''}`} aria-pressed={c === chartCurrency} onClick={() => setPicked(c)}>
                       {symbols[c]} {c}
-                    </CurrencyButton>
+                    </button>
                   ))}
-                </Row>
+                </div>
+              </div>
+              <div className="chart-body">
+                <MonthChart budget={data} currency={chartCurrency} />
                 <Legend />
-              </Row>
-              <MonthChart budget={data} currency={chartCurrency} />
-              <Muted>{t('Нажмите на месяц, чтобы открыть его в календаре. Валюты не складываются: графики — по одной выбранной.')}</Muted>
-            </>
+              </div>
+            </section>
           )}
-          <TableWrap>
+          <h2 className="section-title">{t('План по месяцам')}</h2>
+          <div className="ledger table-wrap cards">
             <table>
-              <thead>
-                <tr>
-                  <th>{t('Месяц')}</th>
-                  {shown.map((c) => <th key={c}>{t('План, {c}', { c })}</th>)}
-                  {shown.map((c) => <th key={c + 'p'}>{t('Оплачено, {c}', { c })}</th>)}
-                </tr>
-              </thead>
+              <thead><tr><th>{t('МЕСЯЦ')}</th>{shown.map((c) => <th key={c}>{c} · {t('ПЛАН')}</th>)}{shown.map((c) => <th key={c + 'p'}>{c} · {t('ОПЛАЧЕНО')}</th>)}</tr></thead>
               <tbody>
                 {data.months.map((m) => (
                   <tr key={m.month}>
-                    <td>{capitalize(date(m.month + '-01', { month: 'long' }))}</td>
-                    {shown.map((c) => <td key={c}><Cell value={m.currencies[c].planned} currency={c} /></td>)}
-                    {shown.map((c) => <td key={c + 'p'}><Cell value={m.currencies[c].paid} currency={c} muted /></td>)}
+                    <td>{date(m.month + '-01', { month: 'long', year: 'numeric' })}</td>
+                    {shown.map((c) => <td key={c} className="amount-cell" data-label={`${c} · ${t('план')}`}>{money(m.currencies[c].planned)}<small>{symbols[c]}</small></td>)}
+                    {shown.map((c) => <td key={c + 'p'} className="date-cell" data-label={`${c} · ${t('оплачено')}`}>{money(m.currencies[c].paid)} {symbols[c]}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
-          </TableWrap>
-          <SectionTitle>{t('по категориям')}</SectionTitle>
-          {data.categories.length === 0 ? <Empty>{t('В этом году платежей нет')}</Empty> : (<>
-            {used.length > 0 && <CategoryChart budget={data} currency={chartCurrency} />}
-            <TableWrap>
-              <table>
-                <thead><tr><th>{t('Категория')}</th>{shown.map((c) => <th key={c}>{t('План, {c}', { c })}</th>)}{shown.map((c) => <th key={c + 'r'}>{t('Осталось, {c}', { c })}</th>)}</tr></thead>
-                <tbody>
-                  {data.categories.map((row) => (
-                    <tr key={row.category ?? '-'}>
-                      <td>{row.category ?? <Muted>{t('без категории')}</Muted>}</td>
-                      {shown.map((c) => <td key={c}><Cell value={row.currencies[c].planned} currency={c} /></td>)}
-                      {shown.map((c) => <td key={c + 'r'}><Cell value={row.currencies[c].remaining} currency={c} muted /></td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableWrap>
-          </>)}
+          </div>
+          <h2 className="section-title">{t('По категориям')}</h2>
+          {data.categories.length === 0 ? <div className="ledger empty-state">{t('В этом году платежей нет')}</div> : (
+            <>
+              {used.length > 0 && <section className="work-panel chart-panel"><div className="chart-body"><CategoryChart budget={data} currency={chartCurrency} /></div></section>}
+              <div className="ledger table-wrap cards">
+                <table>
+                  <thead><tr><th>{t('КАТЕГОРИЯ')}</th>{shown.map((c) => <th key={c}>{c} · {t('ПЛАН')}</th>)}{shown.map((c) => <th key={c + 'r'}>{c} · {t('ОСТАЛОСЬ')}</th>)}</tr></thead>
+                  <tbody>
+                    {data.categories.map((row) => (
+                      <tr key={row.category ?? '-'}>
+                        <td>{row.category ?? <span className="muted">{t('Без категории')}</span>}</td>
+                        {shown.map((c) => <td key={c} className="amount-cell" data-label={`${c} · ${t('план')}`}>{money(row.currencies[c].planned)}<small>{symbols[c]}</small></td>)}
+                        {shown.map((c) => <td key={c + 'r'} className="date-cell" data-label={`${c} · ${t('осталось')}`}>{money(row.currencies[c].remaining)} {symbols[c]}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
       )}
     </Shell>
   );
 }
 
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
-function Cell({ value, currency, muted = false }: { value: string; currency: Currency; muted?: boolean }) {
-  if (Number(value) === 0) return <Muted>—</Muted>;
-  return muted ? <Muted>{symbols[currency]} {money(value)}</Muted> : <Amount>{symbols[currency]} {money(value)}</Amount>;
-}
-
-function Total({ currency, line }: { currency: Currency; line: BudgetLine }) {
-  const planned = Number(line.planned);
-  const ratio = planned ? Math.round((Number(line.paid) / planned) * 100) : 0;
+function BudgetCard({ currency, line }: { currency: Currency; line: BudgetLine }) {
   return (
-    <Tile>
-      <TileTitle>{currencyName(currency)} · {currency}</TileTitle>
-      <Muted>{t('план на год')}</Muted>
-      <Big>{symbols[currency]} {money(line.planned)}</Big>
-      <Track><span style={{ width: `${ratio}%` }} /></Track>
-      <Row $between $wrap>
-        <Muted>{t('оплачено {sum}', { sum: `${money(line.paid)} ${symbols[currency]}` })}</Muted>
-        <Muted>{t('осталось {sum}', { sum: `${money(line.remaining)} ${symbols[currency]}` })}</Muted>
-      </Row>
-    </Tile>
+    <article className="summary-card">
+      <div className="summary-top">
+        <span className="currency-label"><span className="currency-symbol">{symbols[currency]}</span>{currency}</span>
+        <span>{currencyTitle(currency)}</span>
+      </div>
+      <div className="summary-amount">{money(line.planned)}<small>{symbols[currency]}</small></div>
+      <p className="summary-caption">{t('План на год')}</p>
+      <div className="budget-card-detail">
+        <span>{t('Оплачено')} <b>{money(line.paid)} {symbols[currency]}</b></span>
+        <span>{t('Осталось')} <b>{money(line.remaining)} {symbols[currency]}</b></span>
+      </div>
+    </article>
   );
 }
-
-const CurrencyButton = styled.button<{ $selected: boolean }>`
-  padding: 0.6rem 1.2rem;
-  border-radius: ${({ theme }) => theme.radius.md};
-  color: ${({ theme, $selected }) => ($selected ? theme.color.strong : theme.color.muted)};
-  background: ${({ theme, $selected }) => ($selected ? theme.color.tile : 'transparent')};
-  &:hover { color: ${({ theme }) => theme.color.strong}; }
-`;
-
-const Tiles = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.6rem;
-  ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }
-`;
-
-const Big = styled.div`
-  margin: 0.8rem 0;
-  font-size: 3.2rem;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  color: ${({ theme }) => theme.color.strong};
-`;
-
-const Track = styled.div`
-  height: 0.6rem;
-  margin-bottom: 0.8rem;
-  border-radius: 99rem;
-  background: ${({ theme }) => theme.color.line};
-  overflow: hidden;
-  span { display: block; height: 100%; background: ${({ theme }) => theme.color.accent}; }
-`;
-
-const Arrow = styled.button`
-  width: 3.2rem;
-  height: 3.2rem;
-  border-radius: 50%;
-  color: ${({ theme }) => theme.color.muted};
-  font-size: 2.6rem;
-  line-height: 1;
-  &:hover { color: ${({ theme }) => theme.color.strong}; background: ${({ theme }) => theme.color.tile}; }
-`;
-
-const Year = styled.h2`
-  min-width: 8rem;
-  text-align: center;
-  font-size: 2rem;
-  font-weight: 500;
-  color: ${({ theme }) => theme.color.strong};
-`;

@@ -41,6 +41,14 @@ export type Reminder = {
   attempted_at: number | null; sent_at: string | null; message_id: string | null; error: string | null; title: string; due_date: string;
 };
 export type AuditEntry = { id: number; actor: string; action: string; entity: string; created_at: string };
+export type AuditPage = {
+  items: AuditEntry[]; total: number; page: number; pages: number; page_size: number; snapshot_id: number; actors: string[]; actions: string[];
+};
+export type Notification = {
+  id: string; kind: 'overdue' | 'due' | 'paid'; occurrence_id: number; title: string; amount: string; currency: Currency;
+  due_date: string; paid_at: string | null; paid_by: string | null; read: boolean;
+};
+export type NotificationFeed = { items: Notification[]; unread_count: number };
 export type ApiKey = {
   id: number; name: string; prefix: string; access: 'extension' | 'read' | 'write'; expires_at: string | null;
   created_at: string; last_used_at: string | null;

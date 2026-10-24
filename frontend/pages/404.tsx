@@ -1,44 +1,16 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import styled from 'styled-components';
 import { t } from '@/lib/i18n';
 
 export default function NotFound() {
   return (
-    <Page>
-      <Head><title>{t('Страница не найдена')} · Invoice Keeper</title></Head>
-      <Ghost aria-hidden="true">404</Ghost>
-      <h1>{t('такой страницы нет')}</h1>
-      <p>{t('Возможно, ссылка устарела. Вернитесь к платежам.')}</p>
-      <Link href="/">{t('на главную →')}</Link>
-    </Page>
+    <main className="empty-state" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center' }}>
+      <Head><title>{`${t('Страница не найдена')} · Invoice Keeper`}</title></Head>
+      <b style={{ fontSize: 64 }}>404</b>
+      <b>{t('Такой страницы нет')}</b>
+      {t('Возможно, ссылка устарела. Вернитесь к платежам.')}
+      <br />
+      <Link className="button primary" href="/">{t('На главную →')}</Link>
+    </main>
   );
 }
-
-const Page = styled.main`
-  min-height: 100vh;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 1.2rem;
-  padding: 1.6rem;
-  text-align: center;
-  h1 { font-size: 2.6rem; font-weight: 600; color: ${({ theme }) => theme.color.strong}; }
-  p { color: ${({ theme }) => theme.color.muted}; }
-  a {
-    margin-top: 1.2rem;
-    padding: 1rem 2rem;
-    border-radius: ${({ theme }) => theme.radius.md};
-    background: ${({ theme }) => theme.color.accent};
-    color: #fff;
-    font-weight: 500;
-  }
-`;
-
-const Ghost = styled.div`
-  font-size: 16rem;
-  line-height: 0.9;
-  font-weight: 900;
-  font-style: italic;
-  color: ${({ theme }) => theme.color.ghost};
-`;

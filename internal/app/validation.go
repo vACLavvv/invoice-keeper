@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -258,3 +259,20 @@ func pathID(r *http.Request, name string) (int64, error) {
 	}
 	return id, nil
 }
+
+// integer reads a whole number in [min, max]; absent means fallback.
+func (q *queryParams) integer(name string, fallback, min, max int) int {
+	value := q.values.Get(name)
+	if value == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < min || n > max {
+		q.add(name, fmt.Sprintf("Ожидается целое число от %d до %d", min, max), "int_parsing")
+		return fallback
+	}
+	return n
+}
+
+// decode unmarshals a field into v (lists and objects).
+func (f *form) decode(name string, v any) error { return json.Unmarshal(f.values[name], v) }

@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { Shell } from '@/components/Shell';
 import { Button, Card, Empty, Input, Muted, Notice, Pill, Row, Select, SectionTitle as Title, TableWrap } from '@/components/ui';
 import { ScreeningPill, walletNetworks } from '@/components/Wallet';
-import { api, type AuditCheck, type AuditEntry, type Delivery, type Reminder, type SanctionsStatus, type Screening, type WalletNetwork } from '@/lib/api';
+import { api, query, type AuditCheck, type AuditPage, type Delivery, type Reminder, type SanctionsStatus, type Screening, type WalletNetwork } from '@/lib/api';
 import { useToast } from '@/lib/toast';
 import { date } from '@/lib/format';
 import { locale, t } from '@/lib/i18n';
@@ -40,116 +40,184 @@ const actions = (): Record<string, string> => ({
   'suggestion.create': t('Расширение предложило платёж'), 'suggestion.accept': t('Предложение принято'), 'suggestion.reject': t('Предложение отклонено'),
 });
 
-export default function Activity() {
-  const { isAdmin, settings } = useSession();
-  const reminders = useLoad(() => (isAdmin ? api<Reminder[]>('/reminders') : Promise.resolve([])), [isAdmin]);
-  const audit = useLoad(() => (isAdmin ? api<AuditEntry[]>('/audit-log') : Promise.resolve([])), [isAdmin]);
-  const deliveries = useLoad(() => (isAdmin ? api<Delivery[]>('/deliveries') : Promise.resolve([])), [isAdmin]);
-  const integrity = useLoad(() => (isAdmin ? api<AuditCheck>('/audit-log/verify') : Promise.resolve(null)), [isAdmin]);
-  const time = new Intl.DateTimeFormat(locale(), { timeZone: settings.timezone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+type Tab = 'actions' | 'delivery' | 'sanctions';
+type Filters = { from_date?: string; to_date?: string; actor?: string; action?: string; search?: string };
 
+export default function Activity() {
+  const { isAdmin } = useSession();
+  const [tab, setTab] = useState<Tab>('actions');
   if (!isAdmin) {
     return (
-      <Shell title={t('Журнал')} heading={t('история действий')} subtitle={t('Раздел доступен администратору.')}>
+      <Shell title={t('Журнал')} heading={t('Журнал')} subtitle={t('Раздел доступен администратору.')} action={<></>}>
         <Notice $tone="warning">{t('Журнал может смотреть только администратор.')}</Notice>
       </Shell>
     );
   }
+  const tabs: [Tab, string][] = [['actions', t('Действия')], ['delivery', t('Доставка')], ['sanctions', t('Санкции OFAC')]];
   return (
-    <Shell title={t('Журнал')} heading={t('история действий')} subtitle={t('Состояние напоминаний и последние изменения в системе.')}>
-      <Notice $tone={settings.telegram_enabled ? 'info' : 'warning'}>
+    <Shell title={t('Журнал')} heading={t('Журнал')} subtitle={t('Действия команды, доставка уведомлений и состояние сервиса.')} action={<></>}>
+      <div className="log-tabs" role="tablist" aria-label={t('Журналы')}>
+        {tabs.map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)}>{label}</button>
+        ))}
+      </div>
+      {tab === 'actions' && <AuditLog />}
+      {tab === 'delivery' && <DeliveryLog />}
+      {tab === 'sanctions' && (
+        <section>
+          <div className="section-heading audit-heading"><div><h2 className="section-title">{t('Санкционный список OFAC')}</h2><p className="muted">{t('Сверка криптокошельков получателей и ручная проверка адреса.')}</p></div></div>
+          <SanctionsCard />
+        </section>
+      )}
+    </Shell>
+  );
+}
+
+/** «Журнал действий» with date, user and action filters, pages and the chain check. */
+function AuditLog() {
+  const { settings } = useSession();
+  const [filters, setFilters] = useState<Filters>({});
+  const [page, setPage] = useState(1);
+  const [snapshot, setSnapshot] = useState(0);
+  const [reload, setReload] = useState(0);
+  const { data, error } = useLoad(() => api<AuditPage>('/audit-log/page' + query({ ...filters, page: String(page), page_size: '25', snapshot_id: page > 1 && snapshot ? String(snapshot) : '' })), [filters, page, reload]);
+  const integrity = useLoad(() => api<AuditCheck>('/audit-log/verify'), [reload]);
+  const time = new Intl.DateTimeFormat(locale(), { timeZone: settings.timezone, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  useEffect(() => { if (data && page === 1) setSnapshot(data.snapshot_id); }, [data, page]);
+  const first = data?.total ? (data.page - 1) * data.page_size + 1 : 0;
+
+  return (
+    <section>
+      <div className="section-heading audit-heading">
+        <div><h2 className="section-title">{t('Журнал действий')}</h2><p className="muted">{t('Кто изменил данные и что произошло. История сохраняется после перезапуска.')}</p></div>
+        <button type="button" className="button secondary" onClick={() => { setPage(1); setReload((n) => n + 1); }}>{t('Обновить')}</button>
+      </div>
+      {integrity.data && (integrity.data.ok ? (
+        <div className="notice">
+          {t('Журнал цел: проверено записей — {n}. Каждая запись подписана вместе с предыдущей, правка или удаление будут видны.', { n: integrity.data.checked })}
+          {' '}{integrity.data.keyed ? t('Подпись — ключом вне базы.') : t('Задайте DATA_ENCRYPTION_KEY, чтобы подпись нельзя было пересчитать, имея доступ к базе.')}
+        </div>
+      ) : (
+        <div className="notice notice-error" role="alert">
+          <b>{t('Журнал нарушен с записи #{id}', { id: integrity.data.broken_id ?? '—' })}</b> {integrity.data.reason}
+        </div>
+      ))}
+      <form className="audit-filters" onSubmit={(e) => {
+        e.preventDefault();
+        const form = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
+        setFilters(Object.fromEntries(Object.entries(form).filter(([, v]) => v)));
+        setPage(1);
+      }}>
+        <label>{t('С даты')}<input name="from_date" type="date" min="2000-01-01" max="2100-12-31" /></label>
+        <label>{t('По дату')}<input name="to_date" type="date" min="2000-01-01" max="2100-12-31" /></label>
+        <label>{t('Пользователь')}
+          <select name="actor"><option value="">{t('Все пользователи')}</option>{data?.actors.map((a) => <option key={a} value={a}>{a}</option>)}</select>
+        </label>
+        <label>{t('Действие')}
+          <select name="action"><option value="">{t('Все действия')}</option>{data?.actions.map((a) => <option key={a} value={a}>{actions()[a] ?? a}</option>)}</select>
+        </label>
+        <label className="audit-search-label">{t('Поиск')}<input name="search" type="search" maxLength={200} placeholder={t('Платёж, пользователь или событие')} /></label>
+        <div className="audit-filter-actions">
+          <button type="submit" className="button primary">{t('Применить')}</button>
+          <button type="reset" className="button secondary" onClick={() => { setFilters({}); setPage(1); }}>{t('Сбросить')}</button>
+        </div>
+      </form>
+      <div className="audit-caption"><span>{t('Время событий: {tz}', { tz: settings.timezone })}</span><span>{t('Доступно только администратору')}</span></div>
+      {error && <div className="notice notice-error" role="alert">{error} · {t('Список не обновлён.')}</div>}
+      <div className="ledger table-wrap cards" aria-live="polite">
+        {!data ? <div className="empty-state">{t('Загружаем историю…')}</div> : data.items.length === 0 ? (
+          <div className="empty-state"><b>{t('Записей нет')}</b>{t('Измените даты или фильтры.')}</div>
+        ) : (
+          <table>
+            <thead><tr><th>{t('ВРЕМЯ')}</th><th>{t('ПОЛЬЗОВАТЕЛЬ')}</th><th>{t('ДЕЙСТВИЕ / ОБЪЕКТ')}</th><th>{t('РЕЗУЛЬТАТ')}</th></tr></thead>
+            <tbody>
+              {data.items.map((a) => (
+                <tr key={a.id}>
+                  <td className="date-cell">{time.format(new Date(a.created_at))}</td>
+                  <td className="audit-actor" data-label={t('Кто')}>{a.actor}</td>
+                  <td className="audit-detail" data-label={t('Действие')}><b>{actions()[a.action] ?? a.action}</b><small>{a.entity}</small></td>
+                  <td data-label={t('Результат')}><span className={`pill ${a.action === 'wallet.sanctioned' ? 'overdue' : 'paid'}`}>{a.action === 'wallet.sanctioned' ? t('Внимание') : t('Успешно')}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="audit-pagination" aria-label={t('Страницы журнала')}>
+        <span aria-live="polite">{data ? t('{from}–{to} из {total}', { from: first, to: Math.min(data.page * data.page_size, data.total), total: data.total }) : '—'}</span>
+        <div>
+          <button type="button" className="button secondary" disabled={!data || page <= 1} onClick={() => setPage((p) => p - 1)}>{t('Назад')}</button>
+          <span>{t('Страница {page} из {pages}', { page: data?.page ?? page, pages: data?.pages ?? 1 })}</span>
+          <button type="button" className="button secondary" disabled={!data || page >= data.pages} onClick={() => setPage((p) => p + 1)}>{t('Далее')}</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Reminders in Telegram and the other channels. */
+function DeliveryLog() {
+  const { settings } = useSession();
+  const reminders = useLoad(() => api<Reminder[]>('/reminders'), []);
+  const deliveries = useLoad(() => api<Delivery[]>('/deliveries'), []);
+  const time = new Intl.DateTimeFormat(locale(), { timeZone: settings.timezone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (
+    <section>
+      <div className="section-heading audit-heading"><div><h2 className="section-title">{t('Доставка напоминаний')}</h2><p className="muted">{t('Результаты отправки по каждому периоду и каналу.')}</p></div></div>
+      <div className={`notice${settings.telegram_enabled ? '' : ' notice-warning'}`}>
         {settings.telegram_enabled
           ? t('Telegram включён, сроки проверяются автоматически. Если результат отправки неизвестен, запись помечается «Нужна проверка» и автоматически не повторяется — так в чат не придёт дубль.')
           : t('Telegram выключен. Для реальных напоминаний задайте TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env, установите TELEGRAM_ENABLED=true и перезапустите приложение.')}
-      </Notice>
-      {(reminders.error || audit.error || deliveries.error) && <Notice $tone="error" role="alert">{reminders.error || audit.error || deliveries.error}</Notice>}
-      <Title>{t('напоминания в telegram')}</Title>
-      <Card>
-        {!reminders.data ? <Empty>{t('Загружаем…')}</Empty> : reminders.data.length === 0 ? (
-          <Empty>{t('Отправок пока нет. Здесь появится состояние каждого напоминания.')}</Empty>
+      </div>
+      {(reminders.error || deliveries.error) && <div className="notice notice-error" role="alert">{reminders.error || deliveries.error}</div>}
+      <h2 className="section-title">{t('Напоминания в Telegram')}</h2>
+      <div className="ledger table-wrap cards">
+        {!reminders.data ? <div className="empty-state">{t('Загружаем…')}</div> : reminders.data.length === 0 ? (
+          <div className="empty-state">{t('Отправок пока нет. Здесь появится состояние каждого напоминания.')}</div>
         ) : (
-          <TableWrap>
-            <table>
-              <thead><tr><th>{t('Платёж')}</th><th>{t('Срок')}</th><th>{t('Состояние')}</th><th>{t('Примечание')}</th></tr></thead>
-              <tbody>
-                {reminders.data.map((r) => {
-                  const [label, tone] = reminderStates()[r.state];
-                  return (
-                    <tr key={r.occurrence_id}>
-                      <td><b>{r.title}</b></td>
-                      <td><Muted>{date(r.due_date)}</Muted></td>
-                      <td><Pill $status={tone}>{label.toLowerCase()}</Pill></td>
-                      <td><Muted>{r.error || (r.sent_at ? t('Отправлено') + ' ' + time.format(new Date(r.sent_at)) : '—')}</Muted></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </TableWrap>
-        )}
-      </Card>
-      <Title>{t('другие каналы и просрочка')}</Title>
-      <Card>
-        {!deliveries.data ? <Empty>{t('Загружаем…')}</Empty> : deliveries.data.length === 0 ? (
-          <Empty>{t('Здесь появятся повторные напоминания о просрочке и отправки в MAX, на почту и в webhook.')}</Empty>
-        ) : (
-          <TableWrap>
-            <table>
-              <thead><tr><th>{t('Платёж')}</th><th>{t('Срок')}</th><th>{t('Канал')}</th><th>{t('Состояние')}</th><th>{t('Примечание')}</th></tr></thead>
-              <tbody>
-                {deliveries.data.map((d, i) => {
-                  const [label, tone] = deliveryStates()[d.state];
-                  return (
-                    <tr key={i}>
-                      <td><b>{d.title}</b>{d.kind === 'overdue' && <Muted> · {t('просрочка')}</Muted>}</td>
-                      <td><Muted>{date(d.due_date)}</Muted></td>
-                      <td>{channelNames()[d.channel]}</td>
-                      <td><Pill $status={tone}>{label.toLowerCase()}</Pill></td>
-                      <td><Muted>{d.error || (d.sent_at ? t('Отправлено') + ' ' + time.format(new Date(d.sent_at)) : '—')}</Muted></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </TableWrap>
-        )}
-      </Card>
-      <Title>{t('санкционный список OFAC')}</Title>
-      <SanctionsCard />
-      <Title>{t('последние действия')}</Title>
-      {integrity.data && (integrity.data.ok ? (
-        <Notice>
-          <span>
-            {t('Журнал цел: проверено записей — {n}. Каждая запись подписана вместе с предыдущей, правка или удаление будут видны.', { n: integrity.data.checked })}
-            {' '}{integrity.data.keyed ? t('Подпись — ключом вне базы.') : t('Задайте DATA_ENCRYPTION_KEY, чтобы подпись нельзя было пересчитать, имея доступ к базе.')}
-          </span>
-        </Notice>
-      ) : (
-        <Notice $tone="error" role="alert">
-          <b>{t('Журнал нарушен с записи #{id}', { id: integrity.data.broken_id ?? '—' })}</b>
-          <span>{integrity.data.reason}</span>
-        </Notice>
-      ))}
-      <Card>
-        {!audit.data ? <Empty>{t('Загружаем…')}</Empty> : audit.data.length === 0 ? <Empty>{t('Действий пока нет.')}</Empty> : (
-          <TableWrap>
-            <table>
-              <thead><tr><th>{t('Время')}</th><th>{t('Кто')}</th><th>{t('Действие')}</th><th>{t('Запись')}</th></tr></thead>
-              <tbody>
-                {audit.data.map((a) => (
-                  <tr key={a.id}>
-                    <td><Muted>{time.format(new Date(a.created_at))}</Muted></td>
-                    <td><b>{a.actor}</b></td>
-                    <td>{actions()[a.action] ?? a.action}</td>
-                    <td><Muted>{a.entity}</Muted></td>
+          <table>
+            <thead><tr><th>{t('ПЛАТЁЖ')}</th><th>{t('СРОК')}</th><th>{t('СОСТОЯНИЕ')}</th><th>{t('ПРИМЕЧАНИЕ')}</th></tr></thead>
+            <tbody>
+              {reminders.data.map((r) => {
+                const [label, tone] = reminderStates()[r.state];
+                return (
+                  <tr key={r.occurrence_id}>
+                    <td><b>{r.title}</b></td>
+                    <td className="date-cell" data-label={t('Срок')}>{date(r.due_date)}</td>
+                    <td data-label={t('Состояние')}><span className={`pill ${tone}`}>{label}</span></td>
+                    <td className="date-cell" data-label={t('Примечание')}>{r.error || (r.sent_at ? t('Отправлено') + ' ' + time.format(new Date(r.sent_at)) : '—')}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
+                );
+              })}
+            </tbody>
+          </table>
         )}
-      </Card>
-    </Shell>
+      </div>
+      <h2 className="section-title">{t('Доставка через другие каналы')}</h2>
+      <div className="ledger table-wrap cards">
+        {!deliveries.data ? <div className="empty-state">{t('Загружаем…')}</div> : deliveries.data.length === 0 ? (
+          <div className="empty-state">{t('Здесь появятся повторные напоминания о просрочке и отправки в MAX, на почту и в webhook.')}</div>
+        ) : (
+          <table>
+            <thead><tr><th>{t('ПЛАТЁЖ')}</th><th>{t('СРОК')}</th><th>{t('КАНАЛ')}</th><th>{t('СОСТОЯНИЕ')}</th><th>{t('ПРИМЕЧАНИЕ')}</th></tr></thead>
+            <tbody>
+              {deliveries.data.map((d, i) => {
+                const [label, tone] = deliveryStates()[d.state];
+                return (
+                  <tr key={i}>
+                    <td><b>{d.title}</b>{d.kind === 'overdue' && <span className="muted"> · {t('просрочка')}</span>}</td>
+                    <td className="date-cell" data-label={t('Срок')}>{date(d.due_date)}</td>
+                    <td data-label={t('Канал')}>{channelNames()[d.channel]}</td>
+                    <td data-label={t('Состояние')}><span className={`pill ${tone}`}>{label}</span></td>
+                    <td className="date-cell" data-label={t('Примечание')}>{d.error || (d.sent_at ? t('Отправлено') + ' ' + time.format(new Date(d.sent_at)) : '—')}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -222,10 +290,10 @@ function SanctionsCard() {
   );
 }
 
-const Box = styled.div`
+const Box = styled.div.attrs({ className: 'work-panel' })`
   display: grid;
-  gap: 1.2rem;
-  padding: 1.6rem;
+  gap: 12px;
+  padding: 22px;
 `;
 
 const CheckForm = styled.form`

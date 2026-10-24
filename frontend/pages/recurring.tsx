@@ -1,14 +1,20 @@
 import { useState } from 'react';
-import styled from 'styled-components';
+import { ws } from '@/components/icons';
 import { ArchiveModal, EditPaymentModal, ImportModal, PauseModal } from '@/components/PaymentModals';
 import { ScreeningPill, shortAddress } from '@/components/Wallet';
 import { Shell } from '@/components/Shell';
-import { Button, Chevron, Empty, Muted, Notice, Pill, Row, Sticker, Tile, TileTitle, Wire } from '@/components/ui';
 import { api, type Recurring } from '@/lib/api';
-import { frequencyName, longDate, money, perPeriod, symbols } from '@/lib/format';
+import { date, money, symbols } from '@/lib/format';
 import { t, tp } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+
+const repeat = (r: Recurring) => ({
+  once: t('Один раз'),
+  monthly: t('{n}-го числа ежемесячно', { n: r.anchor_day }),
+  quarterly: t('{n}-го числа раз в квартал', { n: r.anchor_day }),
+  yearly: t('Раз в год, {date}', { date: date(r.first_due_date, { day: 'numeric', month: 'long' }) }),
+})[r.frequency];
 
 export default function RecurringPage() {
   const { isAdmin, refresh } = useSession();
@@ -27,79 +33,68 @@ export default function RecurringPage() {
   }
 
   return (
-    <Shell
-      title={t('Регулярные')}
-      heading={t('регулярные платежи')}
-      subtitle={t('Один раз настройте расход — система сама создаёт следующие периоды.')}
-      action={isAdmin && <Button type="button" $variant="secondary" onClick={() => setModal('import')}>{t('Импорт из CSV')}</Button>}
-    >
-      {error && <Notice $tone="error" role="alert">{error}</Notice>}
-      <Notice><span>{t('Каждый период — отдельная отметка оплаты. Повтор ежемесячно, раз в квартал или раз в год; если нужного числа нет, срок переносится на последний день месяца.')}</span></Notice>
-      {!data ? <Empty>{t('Загружаем…')}</Empty> : data.length === 0 ? (
-        <Empty><b>{t('Начните с регулярного платежа')}</b>{t('Добавьте аренду, сервер или подписку кнопкой «Добавить платёж» слева или импортируйте CSV.')}</Empty>
-      ) : (
-        <Grid>
-          {data.map((r) => (
-            <Tile key={r.id}>
-              <TileTitle>{r.title}<Chevron aria-hidden="true">›</Chevron></TileTitle>
-              <Muted title={r.description ?? undefined}>
-                {symbols[r.currency]} {money(r.amount)} {perPeriod(r.frequency)} · {frequencyName(r.frequency)}
-                {r.category ? ` · ${r.category}` : ''}
-              </Muted>
-              <Wire height={17 + (payLine(r) ? 4.3 : 0) + (r.wallet ? 4.3 : 0)}>
-                {r.frequency === 'once' ? (
-                  <>
-                    <Line>{t('срок {date}', { date: longDate(r.first_due_date) })}</Line>
-                    <Line>
-                      <Details title={r.description ?? undefined}>{r.unpaid_count ? (r.description ?? t('ожидает оплаты')) : t('оплачен')}</Details>
-                      {r.assignee && <Muted>@{r.assignee.username}</Muted>}
-                    </Line>
-                  </>
-                ) : (
-                  <>
-                    <Line>{r.next_due_date ? t('ближайший срок {date}', { date: longDate(r.next_due_date) }) : t('с {date}', { date: longDate(r.first_due_date) })}</Line>
-                    <Line>
-                      {r.unpaid_count} {tp(r.unpaid_count, ['неоплаченный период', 'неоплаченных периода', 'неоплаченных периодов'], ['unpaid period', 'unpaid periods'])}
-                      {r.assignee && <Muted>@{r.assignee.username}</Muted>}
-                    </Line>
-                  </>
-                )}
-                {payLine(r) && (
-                  <Line>
-                    <Details title={r.payment_details ?? undefined}>{r.payment_details ?? ''}</Details>
-                    {r.payment_url && !r.wallet?.sanctioned && <PayLink href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('💳 оплатить ↗')}</PayLink>}
-                  </Line>
-                )}
-                {r.wallet && (
-                  <Line>
-                    <Details title={r.wallet.address}>{r.wallet.network} · {shortAddress(r.wallet.address)}</Details>
-                    <ScreeningPill wallet={r.wallet} compact />
-                  </Line>
-                )}
-                <Line>
-                  <Pill $status={!r.active ? 'archived' : r.paused ? 'unpaid' : 'active'}>
-                    {!r.active ? t('в архиве') : r.paused ? (r.paused.until ? t('на паузе до {date}', { date: longDate(r.paused.until) }) : t('на паузе')) : t('активен')}
-                  </Pill>
-                </Line>
-                {isAdmin && r.active && (
-                  <Line>
-                    <Row $gap={0.4} $wrap>
-                      <Button type="button" $small $variant="secondary" onClick={() => setModal({ kind: 'edit', payment: r })}>{t('изменить')}</Button>
-                      {r.frequency !== 'once' && (r.paused
-                        ? <Button type="button" $small $variant="secondary" onClick={() => resume(r)}>{t('возобновить')}</Button>
-                        : <Button type="button" $small $variant="secondary" onClick={() => setModal({ kind: 'pause', payment: r })}>{t('пауза')}</Button>)}
-                      <Button type="button" $small $variant="ghost" onClick={() => setModal({ kind: 'archive', payment: r })}>{t('прекратить')}</Button>
-                    </Row>
-                  </Line>
-                )}
-              </Wire>
-              {!r.active && <Corner><Sticker $tilt={-6}>{t('архив')}</Sticker></Corner>}
-              {r.active && r.paused && <Corner><Sticker $tilt={-6}>{t('пауза')}</Sticker></Corner>}
-              {r.active && r.frequency === 'once' && <Corner><Sticker $tilt={-6}>{t('разовый')}</Sticker></Corner>}
-            </Tile>
-          ))}
-        </Grid>
-      )}
+    <Shell title={t('Регулярные')} heading={t('Регулярные платежи')} subtitle={t('Один раз настройте расход — система создаст следующие периоды.')}>
+      {error && <div className="notice notice-error" role="alert">{error}</div>}
+      <div className="notice">
+        <span>{t('Каждый период — отдельная отметка оплаты. Повтор ежемесячно, раз в квартал или раз в год; если нужного числа нет, срок переносится на последний день месяца.')}</span>
+        {isAdmin && <button type="button" className="text-button notice-detail" onClick={() => setModal('import')}>{t('Импорт из CSV ↗')}</button>}
+      </div>
+      <div id="recurring-table" className="ledger table-wrap cards">
+        {!data ? <div className="empty-state">{t('Загружаем…')}</div> : data.length === 0 ? (
+          <div className="empty-state"><b>{t('Начните с регулярного платежа')}</b>{t('Добавьте аренду, сервер или подписку.')}</div>
+        ) : (
+          <table>
+            <thead><tr><th>{t('ПЛАТЁЖ')}</th><th>{t('СУММА')}</th><th>{t('ПОВТОРЕНИЕ')}</th><th>{t('БЛИЖАЙШИЙ СРОК')}</th><th>{t('СОСТОЯНИЕ')}</th>{isAdmin && <th />}</tr></thead>
+            <tbody>
+              {data.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <div className="payment-name">
+                      <span className={`payment-icon ${r.currency.toLowerCase()}`}>{r.frequency === 'once' ? ws.receipt : ws.recurring}</span>
+                      <span>
+                        <b>{r.title}</b>
+                        <small>
+                          {[
+                            r.frequency === 'once' ? (r.description ?? t('Разовый платёж')) : `${r.unpaid_count} ${tp(r.unpaid_count, ['неоплаченный период', 'неоплаченных периода', 'неоплаченных периодов'], ['unpaid period', 'unpaid periods'])}`,
+                            r.category, r.assignee && '@' + r.assignee.username, r.payment_details,
+                          ].filter(Boolean).join(' · ')}
+                        </small>
+                        {r.wallet && (
+                          <small className="wallet-line" title={r.wallet.address}>
+                            {r.wallet.network} · {shortAddress(r.wallet.address)} <ScreeningPill wallet={r.wallet} compact />
+                          </small>
+                        )}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="amount-cell" data-label={t('Сумма')}>{money(r.amount)}<small>{symbols[r.currency]}</small></td>
+                  <td className="date-cell" data-label={t('Повторение')}>{repeat(r)}</td>
+                  <td className="date-cell" data-label={t('Срок')}>{date(r.next_due_date ?? r.first_due_date, { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                  <td data-label={t('Состояние')}>
+                    <span className={`pill ${!r.active ? 'archived' : r.paused ? 'unpaid' : 'paid'}`}>
+                      {!r.active ? t('Архив') : r.paused ? (r.paused.until ? t('Пауза до {date}', { date: date(r.paused.until) }) : t('На паузе')) : t('Активен')}
+                    </span>
+                  </td>
+                  {isAdmin && (
+                    <td>
+                      {r.active ? (
+                        <div className="row-action-group">
+                          {r.payment_url && !r.wallet?.sanctioned && <a className="row-action edit" href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('Оплатить ↗')}</a>}
+                          <button type="button" className="row-action edit" onClick={() => setModal({ kind: 'edit', payment: r })}>{t('Изменить')}</button>
+                          {r.frequency !== 'once' && (r.paused
+                            ? <button type="button" className="row-action" onClick={() => resume(r)}>{t('Возобновить')}</button>
+                            : <button type="button" className="row-action edit" onClick={() => setModal({ kind: 'pause', payment: r })}>{t('Пауза')}</button>)}
+                          <button type="button" className="row-action delete" onClick={() => setModal({ kind: 'archive', payment: r })}>{t('Прекратить ↗')}</button>
+                        </div>
+                      ) : '—'}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
       {modal === 'import' && <ImportModal onClose={() => setModal(null)} />}
       {modal && modal !== 'import' && modal.kind === 'edit' && <EditPaymentModal payment={modal.payment} onClose={() => setModal(null)} />}
       {modal && modal !== 'import' && modal.kind === 'pause' && <PauseModal payment={modal.payment} onClose={() => setModal(null)} />}
@@ -107,40 +102,3 @@ export default function RecurringPage() {
     </Shell>
   );
 }
-
-/** Details or a usable payment link; a sanctioned payee gets no «оплатить». */
-const payLine = (r: Recurring) => !!r.payment_details || (!!r.payment_url && !r.wallet?.sanctioned);
-
-const Grid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(30rem, 1fr));
-  gap: 1.6rem;
-`;
-
-const Line = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.6rem 1.4rem;
-  min-height: 4.2rem;
-  & + & { border-top: 1px solid ${({ theme }) => theme.color.faint}; }
-`;
-
-const Details = styled(Muted)`
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-`;
-
-const PayLink = styled.a`
-  flex-shrink: 0;
-  color: ${({ theme }) => theme.color.accent};
-`;
-
-const Corner = styled.div`
-  position: absolute;
-  right: 2rem;
-  top: 1.4rem;
-`;

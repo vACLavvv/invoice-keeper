@@ -29,6 +29,7 @@ var panelPages = map[string]string{
 	"/team": "team.html", "/activity": "activity.html",
 	"/suggestions": "suggestions.html", "/extension": "extension.html",
 	"/budget": "budget.html", "/help": "help.html", "/account": "account.html",
+	"/payments": "payments.html", "/history": "history.html", "/notifications": "notifications.html",
 }
 
 var inlineScript = regexp.MustCompile(`(?s)<script([^>]*)>(.*?)</script>`)

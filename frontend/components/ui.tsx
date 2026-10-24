@@ -2,210 +2,103 @@ import type { ReactNode } from 'react';
 import styled, { css } from 'styled-components';
 import type { Status } from '@/lib/format';
 
+// Building blocks in the workspace design of the main branch: each one renders the class names
+// that styles/workspace already styles (button, pill, notice, ledger, form-field…), so light and
+// dark themes come from those stylesheets. Only what they lack is added here.
+
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
-export const Button = styled.button<{ $variant?: Variant; $small?: boolean }>`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.8rem;
-  min-height: ${({ $small }) => ($small ? '3.2rem' : '4.4rem')};
-  padding: ${({ $small }) => ($small ? '0.5rem 1.4rem' : '1rem 2rem')};
-  border-radius: ${({ theme }) => theme.radius.md};
-  font-size: ${({ $small }) => ($small ? '1.3rem' : '1.4rem')};
-  font-weight: 500;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-  ${({ theme, $variant = 'primary' }) => ({
-    primary: css`
-      background: ${theme.color.accent}; color: #fff;
-      &:hover:not(:disabled) { background: ${theme.color.accentDeep}; }
-    `,
-    secondary: css`
-      background: ${theme.color.tile}; color: ${theme.color.strong};
-      &:hover:not(:disabled) { background: ${theme.color.tileHover}; }
-    `,
-    danger: css`
-      background: ${theme.color.overdue}; color: #fff;
-      &:hover:not(:disabled) { filter: brightness(0.92); }
-    `,
-    ghost: css`
-      background: none; color: ${theme.color.accent}; padding-inline: 0.2rem; min-height: auto;
-      &:hover:not(:disabled) { text-decoration: underline; }
-    `,
-  })[$variant]}
-`;
+const buttonClass = (variant: Variant, small?: boolean) =>
+  variant === 'ghost' ? 'text-button' : `button ${variant}${small ? ' small' : ''}`;
 
-/** Round chevron in a tile corner. */
-export const Chevron = styled.span`
-  width: 2.2rem;
-  height: 2.2rem;
-  flex-shrink: 0;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  background: ${({ theme }) => theme.color.chevron};
-  color: ${({ theme }) => theme.color.chevronText};
-  font-size: 1.2rem;
-  line-height: 1;
-`;
+export const Button = styled.button.attrs<{ $variant?: Variant; $small?: boolean }>(({ $variant = 'primary', $small, className }) => ({
+  className: [buttonClass($variant, $small), className].filter(Boolean).join(' '),
+}))<{ $variant?: Variant; $small?: boolean }>``;
 
-export const IconButton = styled.button`
-  width: 3.2rem;
-  height: 3.2rem;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  color: ${({ theme }) => theme.color.muted};
-  font-size: 2.2rem;
-  line-height: 1;
-  &:hover { color: ${({ theme }) => theme.color.strong}; background: ${({ theme }) => theme.color.tile}; }
-`;
+/** Arrow at the end of a clickable row. */
+export const Chevron = styled.span.attrs({ className: 'work-item-arrow', children: '›' })``;
 
-/** Plain block; tables sit straight on the dark surface. */
+export const IconButton = styled.button.attrs({ className: 'icon-button' })``;
+
 export const Card = styled.section`
   display: grid;
-  gap: 1.2rem;
+  gap: 12px;
   min-width: 0;
 `;
 
+/** A white panel with a thin border: the workspace card. */
 export const Tile = styled.div<{ $interactive?: boolean }>`
   position: relative;
   display: grid;
   align-content: start;
-  gap: 0.4rem;
+  gap: 6px;
   min-width: 0;
-  padding: 1.6rem;
-  border-radius: ${({ theme }) => theme.radius.lg};
-  background: ${({ theme }) => theme.color.tile};
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  color: var(--ink);
   overflow: hidden;
-  transition: background 0.15s;
-  ${({ $interactive, theme }) => $interactive && css`cursor: pointer; &:hover { background: ${theme.color.tileHover}; }`}
+  transition: border-color 0.16s;
+  ${({ $interactive }) => $interactive && css`cursor: pointer; &:hover { border-color: #a8b9ce; }`}
 `;
 
 export const TileTitle = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1.2rem;
-  color: ${({ theme }) => theme.color.strong};
-  font-weight: 500;
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink);
+  /* Section names were lowercase in the old design; the workspace capitalizes them. */
+  &::first-letter { text-transform: uppercase; }
+  & > * { float: right; margin-left: 12px; }
 `;
 
-/** The tilted turquoise sticker («free!», «-40% off»). */
+/** Small label next to a title («разовый», «новое»). */
 export const Sticker = styled.span<{ $tilt?: number }>`
   display: inline-block;
-  padding: 0.4rem 1rem;
-  border-radius: ${({ theme }) => theme.radius.sm};
-  background: ${({ theme }) => theme.color.accent};
-  color: #fff;
-  font-style: italic;
-  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: var(--cyan-soft);
+  color: var(--apple-blue);
+  font-size: 10px;
+  font-weight: 550;
   white-space: nowrap;
-  transform: rotate(${({ $tilt = -6 }) => $tilt}deg);
-  box-shadow: 0 0 0 0.2rem ${({ theme }) => theme.color.page};
 `;
 
-const statusColor = (status: Status | 'archived' | 'active') => css`
-  ${({ theme }) => ({ paid: theme.color.paid, active: theme.color.paid, unpaid: theme.color.unpaid, overdue: theme.color.overdue, archived: theme.color.faint })[status]}
-`;
+/** Status chip: paid, unpaid, overdue, archived (active looks like paid). */
+export const Pill = styled.span.attrs<{ $status: Status | 'archived' | 'active' }>(({ $status }) => ({
+  className: `pill ${$status === 'active' ? 'paid' : $status}`,
+}))<{ $status: Status | 'archived' | 'active' }>``;
 
-/** Status as a dot and a word, like «● работает». */
-export const Pill = styled.span<{ $status: Status | 'archived' | 'active' }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.8rem;
-  white-space: nowrap;
-  color: ${({ theme }) => theme.color.text};
-  &::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: 50%; background: ${({ $status }) => statusColor($status)}; }
-`;
-
-export const Notice = styled.div<{ $tone?: 'info' | 'error' | 'warning' }>`
-  display: flex;
-  align-items: center;
+export const Notice = styled.div.attrs<{ $tone?: 'info' | 'error' | 'warning' }>(({ $tone = 'info' }) => ({
+  className: `notice${$tone === 'info' ? '' : ' notice-' + $tone}`,
+}))<{ $tone?: 'info' | 'error' | 'warning' }>`
   flex-wrap: wrap;
-  gap: 1.2rem;
-  padding: 1.4rem 1.8rem;
-  border-radius: ${({ theme }) => theme.radius.md};
-  line-height: 1.5;
-  ${({ theme, $tone = 'info' }) => ({
-    info: css`background: ${theme.color.tile}; color: ${theme.color.text}; box-shadow: inset 0.3rem 0 0 ${theme.color.accent};`,
-    warning: css`background: ${theme.color.unpaidSoft}; color: ${theme.color.unpaid};`,
-    error: css`background: ${theme.color.overdueSoft}; color: ${theme.color.overdue};`,
-  })[$tone]}
+  margin-bottom: 0;
 `;
 
-export const Empty = styled.div`
-  padding: 4.8rem 2.4rem;
-  text-align: center;
-  color: ${({ theme }) => theme.color.muted};
-  display: grid;
-  justify-items: center;
-  gap: 0.8rem;
-  border-radius: ${({ theme }) => theme.radius.lg};
-  border: 1px dashed ${({ theme }) => theme.color.line};
-  b { color: ${({ theme }) => theme.color.strong}; font-size: 1.6rem; font-weight: 500; }
-`;
+export const Empty = styled.div.attrs({ className: 'empty-state' })``;
 
-export const TableWrap = styled.div`
-  overflow-x: auto;
-  table { width: 100%; border-collapse: collapse; min-width: 76rem; }
-  th {
-    text-align: left;
-    font-size: 1.6rem;
-    font-weight: 500;
-    color: ${({ theme }) => theme.color.strong};
-    padding: 1.2rem 1.4rem;
-    border-bottom: 1px solid ${({ theme }) => theme.color.line};
-  }
-  td {
-    padding: 1.1rem 1.4rem;
-    font-size: 1.5rem;
-    border-bottom: 1px solid ${({ theme }) => theme.color.line};
-    vertical-align: middle;
-  }
-  tbody tr { transition: background 0.15s; }
-  tbody tr:hover { background: ${({ theme }) => theme.color.hover}; }
-`;
+/** A table inside the white ledger panel; on phones rows become cards (see extras.css). */
+export const TableWrap = styled.div.attrs({ className: 'ledger table-wrap' })``;
 
 export const Muted = styled.span`
-  color: ${({ theme }) => theme.color.muted};
+  color: var(--apple-secondary);
 `;
 
-export const Amount = styled.span`
+export const Amount = styled.span.attrs({ className: 'amount' })`
   white-space: nowrap;
-  color: ${({ theme }) => theme.color.strong};
-  small { margin-left: 0.4rem; color: ${({ theme }) => theme.color.muted}; font-size: inherit; }
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  small { margin-left: 3px; color: var(--apple-secondary); font-size: 10px; font-weight: 400; }
 `;
 
-export const Field = styled.label`
-  display: grid;
-  gap: 0.6rem;
-  font-size: 1.3rem;
-  font-weight: 500;
-  color: ${({ theme }) => theme.color.strong};
-  small { font-weight: 400; color: ${({ theme }) => theme.color.muted}; }
-`;
+/** Label with its control inside: «form-field» of the workspace forms. */
+export const Field = styled.label.attrs({ className: 'form-field form-label' })``;
 
-const control = css`
-  width: 100%;
-  min-height: 4.6rem;
-  padding: 1rem 1.4rem;
-  border-radius: ${({ theme }) => theme.radius.md};
-  border: 1px solid ${({ theme }) => theme.color.line};
-  background: ${({ theme }) => theme.color.tile};
-  color: ${({ theme }) => theme.color.strong};
-  font-size: 1.5rem;
-  outline: none;
-  transition: border-color 0.15s;
-  &::placeholder { color: ${({ theme }) => theme.color.faint}; }
-  &:focus { border-color: ${({ theme }) => theme.color.accent}; }
-`;
-
-export const Input = styled.input`${control}`;
-export const Select = styled.select`${control}`;
+export const Input = styled.input``;
+export const Select = styled.select``;
 export const Textarea = styled.textarea`
-  ${control}
   font-family: inherit;
   line-height: 1.5;
   resize: vertical;
@@ -214,53 +107,29 @@ export const Textarea = styled.textarea`
 export const Row = styled.div<{ $gap?: number; $wrap?: boolean; $between?: boolean }>`
   display: flex;
   align-items: center;
-  gap: ${({ $gap = 1.2 }) => $gap}rem;
+  gap: ${({ $gap = 1.2 }) => $gap * 10}px;
   flex-wrap: ${({ $wrap }) => ($wrap ? 'wrap' : 'nowrap')};
   justify-content: ${({ $between }) => ($between ? 'space-between' : 'flex-start')};
 `;
 
-/** «🇩🇪 single-red  вирт. сервер»: name, then a muted kind. */
-export const PaymentName = styled.div`
-  display: flex;
-  align-items: baseline;
-  gap: 0.8rem;
-  flex-wrap: wrap;
-  b { color: ${({ theme }) => theme.color.strong}; font-weight: 400; }
-  small { color: ${({ theme }) => theme.color.muted}; font-size: inherit; }
-`;
+/** Payment title with a muted second line, as in the ledger. */
+export const PaymentName = styled.div.attrs({ className: 'payment-name' })``;
 
-export const CurrencyBadge = styled.span`
-  align-self: center;
-  flex-shrink: 0;
-  width: 2.2rem;
-  height: 1.6rem;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 0.3rem;
-  background: ${({ theme }) => theme.color.tile};
-  color: ${({ theme }) => theme.color.accent};
-  font-size: 1.1rem;
-  font-weight: 600;
-`;
+export const CurrencyBadge = styled.span.attrs({ className: 'payment-icon' })``;
 
-export const SectionTitle = styled.h2`
-  font-size: 2.2rem;
-  font-weight: 600;
-  color: ${({ theme }) => theme.color.strong};
-  text-transform: lowercase;
-`;
+export const SectionTitle = styled.h2.attrs({ className: 'section-title' })``;
 
-/** Thin line drawings for tile illustrations, as in the service cards. */
+/** Kept for pages that still draw a frame around an illustration. */
 export function Wire({ children, height = 14 }: { children: ReactNode; height?: number }) {
-  return <WireBox style={{ height: `${height}rem` }}>{children}</WireBox>;
+  return <WireBox style={{ height: `${height * 10}px` }}>{children}</WireBox>;
 }
 
 const WireBox = styled.div`
   position: relative;
-  margin-top: 1.6rem;
-  border: 1px solid ${({ theme }) => theme.color.faint};
+  margin-top: 16px;
+  border: 1px solid var(--line);
   border-bottom: 0;
-  border-radius: ${({ theme }) => theme.radius.sm} ${({ theme }) => theme.radius.sm} 0 0;
-  color: ${({ theme }) => theme.color.muted};
+  border-radius: 12px 12px 0 0;
+  color: var(--apple-secondary);
   overflow: hidden;
 `;

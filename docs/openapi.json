@@ -3262,6 +3262,224 @@
           }
         }
       }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "Уведомления"
+        ],
+        "summary": "Личная лента уведомлений",
+        "operationId": "listNotifications",
+        "description": "Просроченные периоды, сроки в ближайшие 3 дня и оплаты за 7 дней, отмеченные другими. Отметки прочтения — свои у каждого пользователя.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Сначала просрочка, затем ближайшие сроки, затем оплаты",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationFeed"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read": {
+      "post": {
+        "tags": [
+          "Уведомления"
+        ],
+        "summary": "Отметить прочитанными",
+        "operationId": "markNotifications",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationRead"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Сколько осталось непрочитанных",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "unread_count"
+                  ],
+                  "properties": {
+                    "unread_count": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/audit-log/page": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Журнал действий: фильтры и страницы",
+        "operationId": "auditPage",
+        "description": "Только администратор. Даты — дни в часовом поясе приложения.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "description": "Не раньше этого дня",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "description": "Не позже этого дня",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Кто",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Действие, например occurrence.paid",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Подстрока в пользователе, действии или объекте",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Страница",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Записей на странице",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "query",
+            "description": "Из ответа на первую страницу",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Новые сверху",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5278,6 +5496,154 @@
             "nullable": true,
             "description": "Фактическая дата оплаты, не позже сегодняшней; без неё период создаётся неоплаченным",
             "example": "2026-10-25"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "occurrence_id",
+          "title",
+          "amount",
+          "currency",
+          "due_date",
+          "paid_at",
+          "paid_by",
+          "read"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "overdue-12",
+            "description": "Стабилен для периода и события: просрочка — новое уведомление"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "overdue",
+              "due",
+              "paid"
+            ]
+          },
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "paid_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "Кто отметил оплату"
+          },
+          "read": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NotificationFeed": {
+        "type": "object",
+        "required": [
+          "items",
+          "unread_count"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "unread_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "NotificationRead": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "string"
+            }
+          },
+          "all": {
+            "type": "boolean",
+            "description": "Все текущие уведомления"
+          },
+          "read": {
+            "type": "boolean",
+            "default": true,
+            "description": "false — вернуть в непрочитанные"
+          }
+        }
+      },
+      "AuditPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages",
+          "page_size",
+          "snapshot_id",
+          "actors",
+          "actions"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          },
+          "snapshot_id": {
+            "type": "integer",
+            "description": "Передайте в следующие запросы, чтобы страницы не сдвигались от новых записей"
+          },
+          "actors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

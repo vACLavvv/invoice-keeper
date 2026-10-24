@@ -5,9 +5,9 @@ import { createGlobalStyle, css } from 'styled-components';
 // The sign-in page always uses the light landing palette (`light`).
 
 const shared = {
-  accent: '#22b6ca',
-  accentDeep: '#1595a8',
-  accentSoft: 'rgba(34, 182, 202, 0.14)',
+  accent: '#0071e3',
+  accentDeep: '#005bbb',
+  accentSoft: 'rgba(0, 113, 227, 0.1)',
 };
 
 const light = {
@@ -22,8 +22,8 @@ const light = {
 const base = {
   light,
   radius: { sm: '0.8rem', md: '1.2rem', lg: '1.6rem', xl: '2.4rem', sheet: '4.8rem', pill: '99rem' },
-  font: `'Inter Variable', 'Segoe UI', system-ui, -apple-system, sans-serif`,
-  mobile: '@media (max-width: 960px)',
+  font: `Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
+  mobile: '@media (max-width: 720px)',
 };
 
 export const darkTheme = {
@@ -31,18 +31,18 @@ export const darkTheme = {
   name: 'dark' as 'dark' | 'light',
   color: {
     ...shared,
-    page: '#000000',
-    surface: '#161616',
-    tile: '#232323',
-    tileHover: '#2b2b2b',
-    inset: '#000000',
-    hover: 'rgba(255, 255, 255, 0.025)',
-    line: '#2c2c2c',
-    text: '#ececec',
-    strong: '#ffffff',
-    muted: '#8b8b8b',
-    faint: '#5c5c5c',
-    ghost: '#343434',
+    page: '#0b0b0d',
+    surface: '#18181b',
+    tile: '#202024',
+    tileHover: '#26262b',
+    inset: '#111113',
+    hover: 'rgba(255, 255, 255, 0.03)',
+    line: '#303035',
+    text: '#e4e4e7',
+    strong: '#f5f5f7',
+    muted: '#a1a1aa',
+    faint: '#6b6b73',
+    ghost: '#303035',
     chevron: '#000000',
     chevronText: '#ffffff',
     shadow: 'rgba(0, 0, 0, 0.6)',
@@ -59,18 +59,18 @@ export const lightTheme: typeof darkTheme = {
   name: 'light',
   color: {
     ...shared,
-    page: '#eef0f2',
+    page: '#f5f5f7',
     surface: '#ffffff',
-    tile: '#f2f3f4',
-    tileHover: '#e8eaed',
+    tile: '#f5f5f7',
+    tileHover: '#ececf0',
     inset: '#ffffff',
     hover: 'rgba(17, 18, 20, 0.025)',
-    line: '#e5e7ea',
-    text: '#26282c',
-    strong: '#111214',
-    muted: '#70757d',
-    faint: '#a5aab2',
-    ghost: '#e2e4e8',
+    line: '#e5e5e9',
+    text: '#1d1d1f',
+    strong: '#1d1d1f',
+    muted: '#6e6e73',
+    faint: '#a1a1a6',
+    ghost: '#e5e5e9',
     chevron: '#111214',
     chevronText: '#ffffff',
     shadow: 'rgba(17, 18, 20, 0.18)',
@@ -115,24 +115,6 @@ export const globe = css`
 export const GlobalStyle = createGlobalStyle`
   html { font-size: 10px; -webkit-text-size-adjust: 100%; }
   *, *::before, *::after { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: ${({ theme }) => theme.font};
-    font-size: 1.4rem;
-    line-height: 1.5;
-    color: ${({ theme }) => theme.color.text};
-    background: ${({ theme }) => theme.color.page};
-    font-feature-settings: 'tnum' 1, 'cv11' 1;
-    -webkit-font-smoothing: antialiased;
-    color-scheme: ${({ theme }) => theme.name};
-    transition: background 0.2s, color 0.2s;
-  }
-  h1, h2, h3, p { margin: 0; }
-  a { color: inherit; text-decoration: none; }
-  button, input, select { font: inherit; color: inherit; }
-  button { cursor: pointer; border: 0; background: none; padding: 0; }
-  button:disabled { cursor: wait; opacity: 0.6; }
-  :focus-visible { outline: 0.2rem solid ${({ theme }) => theme.color.accent}; outline-offset: 0.2rem; }
-  [hidden] { display: none !important; }
-  ::selection { background: ${({ theme }) => theme.color.accent}; color: #fff; }
+  /* Base styles come from styles/workspace; rem stays 10px for the styled components. */
+  body { color-scheme: ${({ theme }) => theme.name}; font-feature-settings: 'tnum' 1, 'cv11' 1; }
 `;

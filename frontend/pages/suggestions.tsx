@@ -17,7 +17,7 @@ export default function Suggestions() {
 
   if (!isAdmin) {
     return (
-      <Shell title={t('Предложения')} heading={t('предложения платежей')} subtitle={t('Раздел доступен администратору.')}>
+      <Shell title={t('Предложения')} heading={t('Предложения платежей')} subtitle={t('Раздел доступен администратору.')}>
         <Notice $tone="warning">{t('Разбирать предложения может только администратор.')}</Notice>
       </Shell>
     );
@@ -36,7 +36,7 @@ export default function Suggestions() {
   }
 
   return (
-    <Shell title={t('Предложения')} heading={t('предложения платежей')} subtitle={t('Расширение находит платежи в кабинетах сервисов, вы решаете, что добавить.')}>
+    <Shell title={t('Предложения')} heading={t('Предложения платежей')} subtitle={t('Расширение находит платежи в кабинетах сервисов, вы решаете, что добавить.')}>
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
       {!data ? <Empty>{t('Загружаем…')}</Empty> : pending.length === 0 ? (
         <Empty>

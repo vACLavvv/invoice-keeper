@@ -14,7 +14,7 @@ import { useToast } from '@/lib/toast';
 export default function Account() {
   const { user, isAdmin } = useSession();
   return (
-    <Shell title={t('Аккаунт')} heading={t('мой аккаунт')} subtitle={t('@{login} · {role}', { login: user.username, role: isAdmin ? t('администратор') : t('пользователь') })}>
+    <Shell title={t('Аккаунт')} heading={t('Мой аккаунт')} subtitle={t('@{login} · {role}', { login: user.username, role: isAdmin ? t('администратор') : t('пользователь') })}>
       <Grid>
         <TelegramTile />
         {isAdmin ? <TwoFactorTile /> : <PasswordTile />}

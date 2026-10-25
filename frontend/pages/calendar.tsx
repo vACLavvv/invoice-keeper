@@ -76,13 +76,13 @@ export default function CalendarPage() {
               {daily.map((o) => (
                 <button key={o.id} type="button" className={`calendar-item ${o.status}`} onClick={() => setPaying(o)}
                   title={`${o.title} · ${money(o.amount)} ${symbols[o.currency]}`}>
-                  {o.title}<strong>{money(o.amount)} {symbols[o.currency]}</strong>
+                  {o.title}
                 </button>
               ))}
               {planned.map((f) => (
                 <button key={'plan-' + f.recurring_payment_id} type="button" className="calendar-item unpaid projection" onClick={() => setPaying(f)}
                   title={`${f.title} · ${money(f.amount)} ${symbols[f.currency]} · ${t('по графику, можно оплатить заранее')}`}>
-                  {f.title}<strong>{money(f.amount)} {symbols[f.currency]} *</strong>
+                  {f.title}
                 </button>
               ))}
               {totals.length > 0 && (

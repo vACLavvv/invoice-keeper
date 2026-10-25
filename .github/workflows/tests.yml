@@ -41,7 +41,7 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: gosec — статический анализ (G104 — необработанные ошибки Close/Rollback — исключён)
         run: go run github.com/securego/gosec/v2/cmd/gosec@latest -quiet -exclude-generated -exclude=G104 ./...
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: npm audit — уязвимости в зависимостях панели
@@ -56,7 +56,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

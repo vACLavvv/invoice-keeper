@@ -1206,4 +1206,11 @@ export const en: Record<string, string> = {
   'Изменён получатель вебхука': 'Webhook receiver updated',
   'Удалён получатель вебхука': 'Webhook receiver deleted',
   'Отправлен тест получателю вебхука': 'Webhook receiver test sent',
+  'срок оплаты {date}': 'due {date}',
+  'ответственный: {name}': 'assignee: {name}',
+  'без ответственного': 'no assignee',
+  'ссылка на оплату: {host}': 'payment link: {host}',
+  'Проверьте, что расширение распознало всё верно. Это разовый платёж без повтора.': 'Check that the extension recognised everything correctly. This is a one-time payment.',
+  'Проверьте, что расширение распознало всё верно. Платёж будет повторяться {period} с этой даты.': 'Check that the extension recognised everything correctly. The payment repeats {period} from this date.',
+  'Сохранить кошелёк {network} {address}': 'Keep wallet {network} {address}',
 };

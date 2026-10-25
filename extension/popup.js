@@ -4,7 +4,9 @@
 
 const $ = (selector) => document.querySelector(selector);
 let settings = { server: '', key: '' };
-let page = { host: '', url: '', pageTitle: '' };
+let page = { host: '', url: '', pageTitle: '', wallets: [] };
+let team = [];
+let last = { assignee: '' };
 
 async function loadSettings() {
   const stored = await chrome.storage.local.get(['server', 'key', 'username']);
@@ -122,7 +124,7 @@ async function saveSettings() {
     const me = await call('/extension/whoami');
     await chrome.storage.local.set({ ...settings, username: me.username });
     status.textContent = `подключено: @${me.username}`;
-    setTimeout(() => { showSettings(false); detect(); }, 700);
+    setTimeout(async () => { showSettings(false); await loadTeam(); detect(); }, 700);
   } catch (e) {
     status.textContent = e.message;
     status.className = 'bad';
@@ -137,13 +139,34 @@ function addCard(item = {}) {
   field('currency').value = item.currency || 'RUB';
   field('date').value = item.date || (item.how ? today() : '');
   card.dataset.sourceKey = item.sourceKey || '';
+  field('frequency').value = item.yearly ? 'yearly' : 'monthly';
+  for (const person of team) field('assignee').append(new Option(`${person.display_name} · @${person.username}`, person.id));
+  field('assignee').value = team.some((p) => String(p.id) === last.assignee) ? last.assignee : '';
+  field('assignee').addEventListener('change', () => chrome.storage.local.set({ lastAssignee: field('assignee').value }));
+  // Where to pay: the page itself, or a wallet address found on it. One of the two, both can be switched off.
+  const wallet = page.wallets?.[0];
+  const toggle = (name, on) => {
+    field(name + '-on').checked = on;
+    card.querySelector(name === 'link' ? '[name="link"]' : '.wallet').hidden = !on;
+  };
+  field('link').value = /^https?:/.test(page.url) ? page.url.slice(0, 500) : '';
+  if (wallet) {
+    field('network').value = wallet.network;
+    field('address').value = wallet.address;
+  }
+  toggle('wallet', Boolean(wallet && item.how));
+  toggle('link', !field('wallet-on').checked && Boolean(field('link').value) && Boolean(item.how));
+  field('link-on').addEventListener('change', () => { toggle('link', field('link-on').checked); if (field('link-on').checked) toggle('wallet', false); });
+  field('wallet-on').addEventListener('change', () => { toggle('wallet', field('wallet-on').checked); if (field('wallet-on').checked) toggle('link', false); });
   card.querySelector('.title-text').textContent = item.how ? `Найдено: ${item.how}` : 'Вручную';
   const notes = [item.context];
   if (item.how && !item.date) notes.unshift('дата не найдена — стоит сегодняшняя, проверьте');
-  if (item.yearly) {
+  if (item.yearly) notes.unshift('похоже на годовую оплату — стоит «Ежегодно»');
+  if (item.done) {
     field('use').checked = false;
-    notes.unshift('похоже на годовую оплату — система повторяет ежемесячно');
+    notes.unshift('уже оплачено — похоже на историю, не отмечено');
   }
+  if (wallet && item.how) notes.unshift(`кошелёк ${wallet.network} найден на странице`);
   card.querySelector('.context').textContent = notes.filter(Boolean).join(' · ');
   card.querySelector('.context').title = item.context || '';
   field('title').addEventListener('input', () => { card.dataset.sourceKey = ''; });
@@ -216,12 +239,20 @@ async function send() {
       source_key: card.dataset.sourceKey || `${page.host || 'manual'}:${title.toLowerCase()}`.slice(0, 200),
       source_url: /^https?:/.test(page.url) ? page.url.slice(0, 500) : undefined,
       title, amount: value('amount').replace(',', '.'), currency: value('currency'), next_due_date: value('date'),
+      frequency: value('frequency'), assignee_id: value('assignee') ? Number(value('assignee')) : null,
+      payment_url: card.querySelector('[name="link-on"]').checked && value('link') ? value('link') : null,
+      ...(card.querySelector('[name="wallet-on"]').checked && value('address')
+        ? { wallet_network: value('network'), wallet_address: value('address') } : {}),
     };
     try {
       const answer = await call('/payment-suggestions', { method: 'POST', body: JSON.stringify(body) });
       const decided = { accepted: 'уже принято администратором', rejected: 'администратор отклонил ранее' };
       status.textContent = answer.result === 'created' ? 'отправлено' : answer.result === 'updated' ? 'обновлено' : decided[answer.suggestion.status];
       status.className = 'status ' + (answer.result === 'unchanged' ? 'warn' : 'ok');
+      if (answer.suggestion.wallet?.sanctioned) {
+        status.textContent += ' · ⛔ кошелёк в санкционном списке: ' + (answer.suggestion.wallet.match_name || '');
+        status.className = 'status bad';
+      }
       card.querySelector('[name="use"]').checked = false;
       ok++;
     } catch (e) {
@@ -241,9 +272,21 @@ $('#manual').addEventListener('click', () => addCard().querySelector('[name="amo
 $('#send').addEventListener('click', send);
 $('#list').addEventListener('change', updateSend);
 
+/** The team for the «Ответственный» list; without it the popup still works, just without names. */
+async function loadTeam() {
+  last.assignee = (await chrome.storage.local.get('lastAssignee')).lastAssignee || '';
+  if (!settings.server || !settings.key) return;
+  try {
+    team = (await call('/extension/whoami')).team || [];
+  } catch {
+    team = [];
+  }
+}
+
 loadSettings().then(async () => {
   const connecting = await claimPending();
   if (!settings.server || !settings.key) showSettings(true);
+  await loadTeam();
   await detect(); // clears notices, so the result of connecting is shown after it
   if (connecting) {
     notice(connecting.text, connecting.bad);

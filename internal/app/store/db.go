@@ -129,6 +129,13 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"deliveries", "claim_token", "TEXT"},
 	{"deliveries", "dispatch_started_at", "INTEGER"},
 	{"email_contacts", "claim_token", "TEXT"},
+	// Extension suggestions: how often, who is responsible and where to pay.
+	{"payment_suggestions", "frequency", "TEXT"},
+	{"payment_suggestions", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
+	{"payment_suggestions", "payment_url", "TEXT"},
+	{"payment_suggestions", "wallet_network", "TEXT"},
+	{"payment_suggestions", "wallet_address", "TEXT"},
+	{"payment_suggestions", "wallet_key", "TEXT"},
 }
 
 const frequencyColumn = "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly','once'))"

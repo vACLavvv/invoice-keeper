@@ -233,3 +233,36 @@ func TestExtensionConfigUsesPublicBaseURL(t *testing.T) {
 		t.Fatalf("unexpected config.js: %s", got)
 	}
 }
+
+func TestSuggestionCarriesFrequencyAssigneeLinkAndWallet(t *testing.T) {
+	e := setup(t)
+	admin := e.client()
+	admin.signIn()
+	alex := admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"}).object(t)
+	ext := e.keyClient(admin.createKey("Chrome"))
+
+	team := ext.get("/api/v1/extension/whoami").object(t)["team"].([]any)
+	expect(t, "team for the popup", len(team), 1)
+	expect(t, "team member", team[0].(map[string]any)["username"], any("alex"))
+
+	bad := ext.post("/api/v1/payment-suggestions", suggestionBody(map[string]any{"assignee_id": 999}))
+	expect(t, "unknown assignee", bad.status, 422)
+	bad = ext.post("/api/v1/payment-suggestions", suggestionBody(map[string]any{"wallet_network": "TRON", "wallet_address": "nope"}))
+	expect(t, "bad wallet", bad.status, 422)
+
+	created := ext.post("/api/v1/payment-suggestions", suggestionBody(map[string]any{
+		"frequency": "yearly", "assignee_id": alex["id"], "payment_url": "https://my.aeza.net/billing",
+		"wallet_network": "TRON", "wallet_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+	})).object(t)["suggestion"].(map[string]any)
+	expect(t, "frequency", created["frequency"], any("yearly"))
+	expect(t, "assignee", created["assignee"].(map[string]any)["username"], any("alex"))
+	expect(t, "wallet", created["wallet"].(map[string]any)["address"], any("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"))
+
+	// The admin keeps the proposed frequency and wallet but unassigns the payment.
+	admin.post("/api/v1/payment-suggestions/"+id(created)+"/accept", map[string]any{"assignee_id": nil})
+	payment := admin.get("/api/v1/recurring-payments").list(t)[0]
+	expect(t, "payment frequency", payment["frequency"], any("yearly"))
+	expect(t, "payment link", payment["payment_url"], any("https://my.aeza.net/billing"))
+	expect(t, "payment wallet", payment["wallet"].(map[string]any)["network"], any("TRON"))
+	expect(t, "assignee cleared", payment["assignee"], nil)
+}

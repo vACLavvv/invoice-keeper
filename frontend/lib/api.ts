@@ -66,6 +66,7 @@ export type Delivery = {
 };
 export type Suggestion = {
   id: number; source_key: string; source_url: string | null; title: string; amount: string; currency: Currency; next_due_date: string;
+  frequency: Frequency; assignee: Person | null; payment_url: string | null; wallet: Wallet | null;
   status: 'pending' | 'accepted' | 'rejected'; submitted_by: string; recurring_payment_id: number | null; created_at: string; updated_at: string;
 };
 export type Receipt = {

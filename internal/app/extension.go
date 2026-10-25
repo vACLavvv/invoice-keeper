@@ -21,6 +21,7 @@ import (
 	"invoice-keeper/internal/app/audit"
 	"invoice-keeper/internal/app/schedule"
 	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/wallet"
 )
 
 const (
@@ -179,44 +180,78 @@ func (s *Server) extensionWhoami(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// The team, so the popup can name who is responsible; users already see assignees next to payments.
+	rows, err := s.DB.Query("SELECT id,display_name,username FROM users ORDER BY display_name COLLATE NOCASE")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	team := []Person{}
+	for rows.Next() {
+		var p Person
+		if err := rows.Scan(&p.ID, &p.DisplayName, &p.Username); err != nil {
+			return err
+		}
+		team = append(team, p)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	return writeJSON(w, 200, map[string]any{
 		"username": user.Username, "display_name": user.DisplayName, "role": user.Role,
-		"timezone": s.Settings.Timezone, "today": schedule.FormatDate(s.Today()),
+		"timezone": s.Settings.Timezone, "today": schedule.FormatDate(s.Today()), "team": team,
 	})
 }
 
 // --- suggestions ---
 
 type suggestion struct {
-	ID                 int64   `json:"id"`
-	SourceKey          string  `json:"source_key"`
-	SourceURL          *string `json:"source_url"`
-	Title              string  `json:"title"`
-	Amount             string  `json:"amount"`
-	Currency           string  `json:"currency"`
-	NextDueDate        string  `json:"next_due_date"`
-	Status             string  `json:"status"`
-	SubmittedBy        string  `json:"submitted_by"`
-	RecurringPaymentID *int64  `json:"recurring_payment_id"`
-	CreatedAt          string  `json:"created_at"`
-	UpdatedAt          string  `json:"updated_at"`
+	ID                 int64       `json:"id"`
+	SourceKey          string      `json:"source_key"`
+	SourceURL          *string     `json:"source_url"`
+	Title              string      `json:"title"`
+	Amount             string      `json:"amount"`
+	Currency           string      `json:"currency"`
+	NextDueDate        string      `json:"next_due_date"`
+	Status             string      `json:"status"`
+	Frequency          string      `json:"frequency"`
+	Assignee           *Person     `json:"assignee"`
+	PaymentURL         *string     `json:"payment_url"`
+	Wallet             *walletInfo `json:"wallet"`
+	SubmittedBy        string      `json:"submitted_by"`
+	RecurringPaymentID *int64      `json:"recurring_payment_id"`
+	CreatedAt          string      `json:"created_at"`
+	UpdatedAt          string      `json:"updated_at"`
 
 	amountCents int64
 }
 
-const suggestionSelect = `SELECT id,source_key,source_url,title,amount_cents,currency,next_due_date,status,submitted_by,
-recurring_payment_id,created_at,updated_at FROM payment_suggestions`
+const suggestionSelect = `SELECT s.id,s.source_key,s.source_url,s.title,s.amount_cents,s.currency,s.next_due_date,s.status,
+COALESCE(s.frequency,'monthly'),u.id,u.display_name,u.username,s.payment_url,
+s.wallet_network,s.wallet_address,x.sdn_name,x.currency,x.sdn_uid,EXISTS(SELECT 1 FROM sanctioned_addresses),
+s.submitted_by,s.recurring_payment_id,s.created_at,s.updated_at
+FROM payment_suggestions s LEFT JOIN users u ON u.id=s.assignee_id LEFT JOIN sanctioned_addresses x ON x.address_key=s.wallet_key`
 
 func scanSuggestion(row scanner) (suggestion, error) {
 	var sg suggestion
-	err := row.Scan(&sg.ID, &sg.SourceKey, &sg.SourceURL, &sg.Title, &sg.amountCents, &sg.Currency, &sg.NextDueDate,
-		&sg.Status, &sg.SubmittedBy, &sg.RecurringPaymentID, &sg.CreatedAt, &sg.UpdatedAt)
+	var assigneeID sql.NullInt64
+	var assigneeName, assigneeLogin, walletNetwork, walletAddress, sdnName, sdnCurrency sql.NullString
+	var sdnUID sql.NullInt64
+	var listLoaded bool
+	err := row.Scan(&sg.ID, &sg.SourceKey, &sg.SourceURL, &sg.Title, &sg.amountCents, &sg.Currency, &sg.NextDueDate, &sg.Status,
+		&sg.Frequency, &assigneeID, &assigneeName, &assigneeLogin, &sg.PaymentURL,
+		&walletNetwork, &walletAddress, &sdnName, &sdnCurrency, &sdnUID, &listLoaded,
+		&sg.SubmittedBy, &sg.RecurringPaymentID, &sg.CreatedAt, &sg.UpdatedAt)
 	sg.Amount = schedule.Money(sg.amountCents)
+	sg.Wallet = makeWallet(walletNetwork, walletAddress, sdnName, sdnCurrency, sdnUID, listLoaded)
+	if assigneeID.Valid {
+		sg.Assignee = &Person{ID: assigneeID.Int64, DisplayName: assigneeName.String, Username: assigneeLogin.String}
+	}
 	return sg, err
 }
 
 func (s *Server) findSuggestion(q store.Querier, id int64) (suggestion, error) {
-	sg, err := scanSuggestion(q.QueryRow(suggestionSelect+" WHERE id=?", id))
+	sg, err := scanSuggestion(q.QueryRow(suggestionSelect+" WHERE s.id=?", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return sg, fail(404, "Предложение не найдено")
 	}
@@ -248,7 +283,8 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	f, err := readForm(r, "source_key", "source_url", "title", "amount", "currency", "next_due_date")
+	f, err := readForm(r, "source_key", "source_url", "title", "amount", "currency", "next_due_date", "frequency", "assignee_id", "payment_url",
+		"wallet_network", "wallet_address")
 	if err != nil {
 		return err
 	}
@@ -259,6 +295,9 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 		f.add("source_url", "Ссылка должна начинаться с http:// или https://", "url_scheme")
 	}
 	title, cents, currency, due := paymentFields(f, "next_due_date")
+	frequency, _, assignee := extraFields(f)
+	payURL, _ := paymentLinkFields(f)
+	walletNetwork, walletAddress := walletFields(f, "wallet_network", "wallet_address")
 	if err := f.err(); err != nil {
 		return err
 	}
@@ -266,11 +305,20 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 	if link != nil && *link != "" {
 		url = *link
 	}
+	var walletKeyValue any
+	if walletAddress != nil {
+		walletKeyValue = wallet.Key(*walletAddress)
+	}
+	extra := []any{nullableString(frequency), nullableInt(assignee), nullableString(payURL),
+		nullableString(walletNetwork), nullableString(walletAddress), walletKeyValue}
 	status, result := 200, "unchanged"
 	var saved suggestion
 	err = s.DB.Write(func(tx *sql.Tx) error {
+		if err := checkAssignee(tx, assignee); err != nil {
+			return err
+		}
 		now := schedule.Timestamp()
-		existing, err := scanSuggestion(tx.QueryRow(suggestionSelect+" WHERE source_key=?", *source))
+		existing, err := scanSuggestion(tx.QueryRow(suggestionSelect+" WHERE s.source_key=?", *source))
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			var pending int
@@ -280,8 +328,9 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 			if pending >= maxPendingInInbox {
 				return fail(429, "Слишком много неразобранных предложений. Разберите их в панели")
 			}
-			res, err := tx.Exec(`INSERT INTO payment_suggestions(source_key,source_url,title,amount_cents,currency,next_due_date,submitted_by,created_at,updated_at)
-				VALUES(?,?,?,?,?,?,?,?,?)`, *source, url, *title, cents, *currency, schedule.FormatDate(*due), user.Username, now, now)
+			res, err := tx.Exec(`INSERT INTO payment_suggestions(source_key,source_url,title,amount_cents,currency,next_due_date,frequency,assignee_id,
+				payment_url,wallet_network,wallet_address,wallet_key,submitted_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				append(append([]any{*source, url, *title, cents, *currency, schedule.FormatDate(*due)}, extra...), user.Username, now, now)...)
 			if err != nil {
 				return err
 			}
@@ -296,8 +345,9 @@ func (s *Server) suggestionsSubmit(w http.ResponseWriter, r *http.Request) error
 			return err
 		case existing.Status == "pending":
 			// The same service seen again: keep one suggestion, with the latest price and date.
-			if _, err := tx.Exec(`UPDATE payment_suggestions SET source_url=?,title=?,amount_cents=?,currency=?,next_due_date=?,submitted_by=?,updated_at=?
-				WHERE id=?`, url, *title, cents, *currency, schedule.FormatDate(*due), user.Username, now, existing.ID); err != nil {
+			if _, err := tx.Exec(`UPDATE payment_suggestions SET source_url=?,title=?,amount_cents=?,currency=?,next_due_date=?,frequency=?,assignee_id=?,
+				payment_url=?,wallet_network=?,wallet_address=?,wallet_key=?,submitted_by=?,updated_at=? WHERE id=?`,
+				append(append([]any{url, *title, cents, *currency, schedule.FormatDate(*due)}, extra...), user.Username, now, existing.ID)...); err != nil {
 				return err
 			}
 			result = "updated"
@@ -326,9 +376,9 @@ func (s *Server) suggestionsList(w http.ResponseWriter, r *http.Request) error {
 	}
 	query, args := suggestionSelect, []any{}
 	if status != "" {
-		query, args = query+" WHERE status=?", append(args, status)
+		query, args = query+" WHERE s.status=?", append(args, status)
 	}
-	rows, err := s.DB.Query(query+" ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, updated_at DESC LIMIT 200", args...)
+	rows, err := s.DB.Query(query+" ORDER BY CASE s.status WHEN 'pending' THEN 0 ELSE 1 END, s.updated_at DESC LIMIT 200", args...)
 	if err != nil {
 		return err
 	}
@@ -370,11 +420,15 @@ func (s *Server) suggestionsAccept(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	f, err := readOptionalForm(r, "title", "amount", "currency", "first_due_date")
+	f, err := readOptionalForm(r, "title", "amount", "currency", "first_due_date", "frequency", "assignee_id", "payment_url",
+		"wallet_network", "wallet_address")
 	if err != nil {
 		return err
 	}
 	title, cents, currency, due := paymentFields(f, "first_due_date")
+	frequency, _, assignee := extraFields(f)
+	payURL, _ := paymentLinkFields(f)
+	walletNetwork, walletAddress := walletFields(f, "wallet_network", "wallet_address")
 	if err := f.err(); err != nil {
 		return err
 	}
@@ -403,8 +457,38 @@ func (s *Server) suggestionsAccept(w http.ResponseWriter, r *http.Request) error
 			}
 			due = &parsed
 		}
-		paymentID, err := s.createRecurring(tx, admin.Username, recurringInput{title: *title, cents: cents, currency: *currency, due: *due})
+		// Fields left out of the request keep what the extension proposed; an explicit null clears them.
+		input := recurringInput{title: *title, cents: cents, currency: *currency, due: *due, frequency: sg.Frequency, paymentURL: sg.PaymentURL}
+		if sg.Assignee != nil {
+			input.assigneeID = &sg.Assignee.ID
+		}
+		if frequency != nil {
+			input.frequency = *frequency
+		}
+		if f.has("assignee_id") {
+			input.assigneeID = assignee
+		}
+		if f.has("payment_url") {
+			input.paymentURL = payURL
+		}
+		if sg.Wallet != nil {
+			input.walletNetwork, input.walletAddress = &sg.Wallet.Network, &sg.Wallet.Address
+		}
+		if f.has("wallet_network") || f.has("wallet_address") {
+			input.walletNetwork, input.walletAddress = walletNetwork, walletAddress
+		}
+		if err := checkAssignee(tx, input.assigneeID); err != nil {
+			return err
+		}
+		paymentID, err := s.createRecurring(tx, admin.Username, input)
 		if err != nil {
+			return err
+		}
+		created, err := s.findRecurring(tx, paymentID)
+		if err != nil {
+			return err
+		}
+		if err := auditSanctioned(tx, admin.Username, created); err != nil {
 			return err
 		}
 		if _, err := tx.Exec("UPDATE payment_suggestions SET status='accepted',recurring_payment_id=?,updated_at=? WHERE id=?", paymentID, schedule.Timestamp(), id); err != nil {

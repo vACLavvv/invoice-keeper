@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -73,5 +74,10 @@ func TestAuditPageFilters(t *testing.T) {
 	expect(t, "other day", admin.get("/api/v1/audit-log/page?from_date=2026-01-20&to_date=2026-01-21").object(t)["total"], any(0.0))
 	expect(t, "search", admin.get("/api/v1/audit-log/page?search=recurring.cr").object(t)["total"], any(6.0))
 	expect(t, "wildcards are literal", admin.get("/api/v1/audit-log/page?search=%25_%25").object(t)["total"], any(0.0))
+	for _, field := range []string{"actor", "action", "search"} {
+		response := admin.get("/api/v1/audit-log/page?" + field + "=" + url.QueryEscape("' OR 1=1 --")).object(t)
+		expect(t, "SQL text is a literal filter: "+field, response["total"], any(0.0))
+	}
+	expect(t, "filter cannot damage journal", admin.get("/api/v1/audit-log/verify").object(t)["ok"], any(true))
 	expect(t, "bad size", admin.get("/api/v1/audit-log/page?page_size=500").status, 422)
 }

@@ -98,7 +98,7 @@ func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		result.Pages = max(1, (result.Total+size-1)/size)
-		rows, err := tx.Query("SELECT id,actor,action,entity,created_at FROM audit_log"+where+" ORDER BY id DESC LIMIT ? OFFSET ?",
+		rows, err := tx.Query("SELECT id,actor,action,entity,created_at FROM audit_log"+where+" ORDER BY id DESC LIMIT ? OFFSET ?", // #nosec G202 -- where contains only constant predicates above; all user values are bound through args
 			append(args, size, (page-1)*size)...)
 		if err != nil {
 			return err

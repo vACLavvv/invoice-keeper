@@ -123,6 +123,12 @@ var addedColumns = []struct{ table, column, definition string }{
 	// v6: reversible removal, separate from archiving (deleted_at).
 	{"recurring_payments", "removed_at", "TEXT"},
 	{"payment_occurrences", "removed_at", "TEXT"},
+	// v8: fence delivery attempts without holding SQLite's write lock over the network.
+	{"reminders", "claim_token", "TEXT"},
+	{"reminders", "dispatch_started_at", "INTEGER"},
+	{"deliveries", "claim_token", "TEXT"},
+	{"deliveries", "dispatch_started_at", "INTEGER"},
+	{"email_contacts", "claim_token", "TEXT"},
 }
 
 const frequencyColumn = "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly','once'))"
@@ -151,7 +157,7 @@ func allowOneTime(tx *sql.Tx) error {
 	return nil
 }
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
@@ -209,6 +215,23 @@ func (db *DB) initialize() error {
 			}
 		}
 		if err := allowOneTime(tx); err != nil {
+			return err
+		}
+		if version < 8 {
+			// Old sending rows may already have reached a recipient. Preserve that
+			// boundary so unlink/pause cannot cancel and later replay them.
+			for _, table := range []string{"reminders", "deliveries"} {
+				if _, err := tx.Exec("UPDATE " + table + " SET dispatch_started_at=COALESCE(attempted_at,unixepoch()) WHERE state='sending'"); err != nil { // #nosec G202 -- table is one of two constants
+					return err
+				}
+			}
+		}
+		if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS reminders_pending ON reminders(state,retry_after,occurrence_id);
+CREATE INDEX IF NOT EXISTS deliveries_pending ON deliveries(state,retry_after,occurrence_id);
+CREATE INDEX IF NOT EXISTS email_welcome_pending ON email_contacts(welcome_state,retry_after,id);`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(materializationSchema); err != nil {
 			return err
 		}
 		_, err := tx.Exec("PRAGMA user_version=" + strconv.Itoa(schemaVersion))

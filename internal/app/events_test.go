@@ -211,18 +211,25 @@ func TestEventsRevocationReconnectAndShutdown(t *testing.T) {
 
 func TestEventsOverrideOrdinaryWriteTimeout(t *testing.T) {
 	e := setup(t)
+	admin := e.client()
+	admin.signIn()
 	e.http.Close()
 	e.http = httptest.NewUnstartedServer(validateContract(t, e.server))
 	e.http.Config.WriteTimeout = 20 * time.Millisecond
 	e.server.events.heartbeat = 10 * time.Millisecond
 	e.http.Start()
-	admin := e.client()
-	admin.signIn()
 	frames, closeStream := openEventStream(t, admin, "")
 	defer closeStream()
 	nextEvent(t, frames, "ready")
 	time.Sleep(80 * time.Millisecond) // exceed ordinary timeout, with idle heartbeat traffic
-	admin.createPayment(nil)
+	// Only the stream's deadline is under test. An unrelated HTTP mutation
+	// under a 20 ms deadline can expire on a busy race-test runner.
+	if err := e.db.Write(func(tx *sql.Tx) error {
+		_, err := tx.Exec("INSERT INTO app_state(key,value) VALUES('sse-deadline-test','one')")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	nextEvent(t, frames, "changed")
 }
 

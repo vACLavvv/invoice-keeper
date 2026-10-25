@@ -177,6 +177,7 @@ type ReminderWorker struct {
 	stopping    atomic.Bool // set on shutdown: no new passes, the current one ends between messages
 	lastSuccess atomic.Int64
 	errors      atomic.Uint64
+	drainWake   chan struct{} // coalesced continuation for Run; Tick stays a bounded pass
 }
 
 // Health reports successful scheduler progress, independently of transport outcomes in the outbox.
@@ -191,26 +192,46 @@ func NewReminderWorker(db *store.DB, s *config.Settings, sender Sender, today fu
 	if today == nil {
 		today = func() time.Time { return schedule.Today(s.Location()) }
 	}
-	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: DefaultChannels(s), Today: today, VerificationSender: VerificationSender(s)}
+	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: DefaultChannels(s), Today: today, VerificationSender: VerificationSender(s), drainWake: make(chan struct{}, 1)}
 }
 
 // Tick runs one pass. A request that arrives while a pass is running schedules one more pass
 // instead of being dropped, so a payment created mid-pass is still reminded immediately.
-func (w *ReminderWorker) Tick() {
+func (w *ReminderWorker) Tick() { w.pass(true) }
+
+func (w *ReminderWorker) pass(maintenance bool) {
+	if w.stopped() {
+		return
+	}
 	w.mu.Lock()
 	if w.running {
-		w.rerun = true
+		if maintenance {
+			w.rerun = true
+		}
 		w.mu.Unlock()
 		return
 	}
 	w.running = true
 	w.mu.Unlock()
 	for {
-		if err := w.tick(); err != nil {
+		var more bool
+		var err error
+		if maintenance {
+			more, err = w.tick()
+		} else {
+			more, err = w.drainBatch()
+		}
+		if err != nil {
 			w.errors.Add(1)
 			log.Printf("Не удалось выполнить фоновую проверку платежей: %v", err)
 		} else {
 			w.lastSuccess.Store(time.Now().Unix())
+			if more {
+				select {
+				case w.drainWake <- struct{}{}:
+				default:
+				}
+			}
 		}
 		w.mu.Lock()
 		if !w.rerun {
@@ -219,6 +240,7 @@ func (w *ReminderWorker) Tick() {
 			return
 		}
 		w.rerun = false
+		maintenance = true
 		w.mu.Unlock()
 	}
 }
@@ -246,7 +268,7 @@ type stmt struct {
 	args  []any
 }
 
-func (w *ReminderWorker) tick() error {
+func (w *ReminderWorker) tick() (bool, error) {
 	today := w.Today()
 	now := time.Now().Unix()
 	err := w.DB.Write(func(tx *sql.Tx) error {
@@ -256,6 +278,9 @@ func (w *ReminderWorker) tick() error {
 		statements := []stmt{
 			{"DELETE FROM sessions WHERE expires_at<=?", []any{now}},
 			{"DELETE FROM auth_attempts WHERE reset_at<=?", []any{now}},
+			// A lost claim before the dispatch boundary is provably unsent. Revoke
+			// its token before releasing it; a delayed old worker then cannot send.
+			{"UPDATE reminders SET state='pending',claim_token=NULL,retry_after=0,error=NULL WHERE state='sending' AND claim_token IS NOT NULL AND dispatch_started_at IS NULL AND attempted_at<?", []any{now - 300}},
 			{"UPDATE reminders SET state='uncertain',error='Отправка прервана; автоматический повтор остановлен' WHERE state='sending' AND attempted_at<?", []any{now - 300}},
 			{`UPDATE reminders SET state='cancelled' WHERE state='pending' AND occurrence_id IN
 				(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0 OR r.removed_at IS NOT NULL OR o.removed_at IS NOT NULL)`, nil},
@@ -278,29 +303,43 @@ func (w *ReminderWorker) tick() error {
 				return err
 			}
 		}
-		return w.enqueueDeliveries(tx, today)
-	})
-	if err != nil {
-		return err
-	}
-	if err := w.sendEmailVerifications(); err != nil {
-		return err
-	}
-	if w.Settings.TelegramEnabled && w.Settings.TelegramChatID != "" {
-		if err := w.sendTeam(); err != nil {
+		if err := w.enqueueDeliveries(tx, today); err != nil {
 			return err
 		}
+		return w.applyTransportBackoff(tx)
+	})
+	if err != nil {
+		return false, err
 	}
-	return w.deliver()
+	return w.drainBatch()
 }
 
-// sendTeam sends pending «due» reminders to the team chat.
-func (w *ReminderWorker) sendTeam() error {
+func (w *ReminderWorker) drainBatch() (bool, error) {
+	more, err := w.sendEmailVerifications()
+	if err != nil {
+		return false, err
+	}
+	if w.Settings.TelegramEnabled && w.Settings.TelegramChatID != "" {
+		teamMore, err := w.sendTeam()
+		if err != nil {
+			return false, err
+		}
+		more = more || teamMore
+	}
+	deliveryMore, err := w.deliver()
+	return more || deliveryMore, err
+}
+
+// sendTeam commits a durable claim, then a short final eligibility check. Network
+// I/O is outside all database transactions. Once dispatch_started_at is committed,
+// the request is in flight: payment/unlink cannot retract an external message.
+func (w *ReminderWorker) sendTeam() (bool, error) {
 	for range 20 {
 		if w.stopped() {
-			return nil
+			return false, nil
 		}
 		var row ReminderRow
+		claim := security.RandomToken(24)
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
 			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
@@ -318,47 +357,80 @@ func (w *ReminderWorker) sendTeam() error {
 			if err := row.openDetails(); err != nil {
 				return err
 			}
-			_, err = tx.Exec("UPDATE reminders SET state='sending',attempts=attempts+1,attempted_at=? WHERE occurrence_id=?", time.Now().Unix(), row.OccurrenceID)
+			_, err = tx.Exec("UPDATE reminders SET state='sending',attempts=attempts+1,attempted_at=?,claim_token=?,dispatch_started_at=NULL WHERE occurrence_id=?",
+				time.Now().Unix(), claim, row.OccurrenceID)
+			return err
+		})
+		if err != nil || !found {
+			return false, err
+		}
+		maySend := false
+		err = w.DB.Write(func(tx *sql.Tx) error {
+			var owned bool
+			if err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM reminders WHERE occurrence_id=? AND state='sending' AND claim_token=? AND dispatch_started_at IS NULL)", row.OccurrenceID, claim).Scan(&owned); err != nil {
+				return err
+			}
+			if !owned {
+				return nil
+			}
+			retry, err := transportRetryAt(tx, w.transportRoute("telegram"))
+			if err != nil {
+				return err
+			}
+			if retry > time.Now().Unix() {
+				_, err = tx.Exec("UPDATE reminders SET state='pending',retry_after=MAX(retry_after,?) WHERE occurrence_id=? AND state='sending' AND claim_token=?", retry, row.OccurrenceID, claim)
+				return err
+			}
+			payable, err := stillPayable(tx, row.OccurrenceID)
+			if err != nil {
+				return err
+			}
+			if !payable || w.stopped() {
+				_, err = tx.Exec("UPDATE reminders SET state='cancelled' WHERE occurrence_id=? AND state='sending' AND claim_token=?", row.OccurrenceID, claim)
+				return err
+			}
+			_, err = tx.Exec("UPDATE reminders SET dispatch_started_at=? WHERE occurrence_id=? AND state='sending' AND claim_token=?", time.Now().Unix(), row.OccurrenceID, claim)
+			maySend = err == nil
 			return err
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
-		if !found {
-			return nil
+		if !maySend {
+			continue
 		}
-		// The committed claim survives process death. The second transaction serializes
-		// sending against payment/deletion and against other worker processes.
-		var result SendResult
+		result := w.send(row)
 		err = w.DB.Write(func(tx *sql.Tx) error {
-			var paid sql.NullString
-			var active bool
-			if err := tx.QueryRow("SELECT o.paid_at,(r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL) FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.id=?",
-				row.OccurrenceID).Scan(&paid, &active); err != nil {
-				return err
-			}
-			if paid.Valid || !active {
-				result = SendResult{State: "cancelled"}
-				_, err := tx.Exec("UPDATE reminders SET state='cancelled' WHERE occurrence_id=?", row.OccurrenceID)
-				return err
-			}
-			result = w.send(row)
 			var sentAt any
 			if result.State == "sent" {
 				sentAt = schedule.Timestamp()
 			}
-			_, err := tx.Exec("UPDATE reminders SET state=?,error=?,message_id=?,sent_at=?,retry_after=? WHERE occurrence_id=?",
-				result.State, nullable(result.Error), nullable(result.MessageID), sentAt, time.Now().Unix()+int64(result.RetryDelay), row.OccurrenceID)
+			// If the period changed while a certainly-undelivered request was in
+			// flight, do not schedule a stale retry. Sent/uncertain stay final.
+			if result.State == "pending" {
+				if err := w.deferTransport(tx, w.transportRoute("telegram"), max(60, result.RetryDelay)); err != nil {
+					return err
+				}
+				payable, err := stillPayable(tx, row.OccurrenceID)
+				if err != nil {
+					return err
+				}
+				if !payable {
+					result.State = "cancelled"
+				}
+			}
+			_, err := tx.Exec("UPDATE reminders SET state=?,error=?,message_id=?,sent_at=?,retry_after=? WHERE occurrence_id=? AND state='sending' AND claim_token=?",
+				result.State, nullable(result.Error), nullable(result.MessageID), sentAt, time.Now().Unix()+int64(max(60, result.RetryDelay)), row.OccurrenceID, claim)
 			return err
 		})
 		if err != nil {
-			return err
+			return false, err
 		}
 		if result.State == "pending" {
-			return nil
+			return false, nil
 		}
 	}
-	return nil
+	return true, nil
 }
 
 func (w *ReminderWorker) send(row ReminderRow) (result SendResult) {
@@ -382,19 +454,32 @@ func nullable(s string) any {
 	return s
 }
 
-// Run makes a pass every ReminderInterval seconds until ctx is cancelled. A pass in progress
-// stops between messages, never in the middle of one, and Run returns after it and the passes
-// started by Kick have finished.
+// Run performs maintenance every ReminderInterval and drains full ready batches
+// in between, with a short pacing delay and without rescanning the whole plan.
+// Shutdown stops between messages; Run waits for the current send and Kick passes.
 func (w *ReminderWorker) Run(ctx context.Context) {
 	stopped := context.AfterFunc(ctx, func() { w.stopping.Store(true) })
 	defer stopped()
 	ticker := time.NewTicker(time.Duration(w.Settings.ReminderInterval) * time.Second)
 	defer ticker.Stop()
-	for ctx.Err() == nil {
+	if ctx.Err() == nil {
 		w.Tick()
+	}
+	for ctx.Err() == nil {
 		select {
 		case <-ctx.Done():
 		case <-ticker.C:
+			w.Tick()
+		case <-w.drainWake:
+			// Pace continuations and keep shutdown responsive. The transport's
+			// persisted retry_after still takes precedence over this timer.
+			timer := time.NewTimer(250 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+			case <-timer.C:
+				w.pass(false)
+			}
 		}
 	}
 	w.stopping.Store(true)
@@ -404,7 +489,7 @@ func (w *ReminderWorker) Run(ctx context.Context) {
 // stopped reports a shutdown: passes leave their loops between messages.
 func (w *ReminderWorker) stopped() bool { return w.stopping.Load() }
 
-// Called inside the transaction that sends, so a committed deletion stops stale claims too.
+// Used in short preflight/finalization transactions; committed cancellation before dispatch stops a stale claim.
 func stillPayable(tx *sql.Tx, id int64) (bool, error) {
 	var eligible bool
 	err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id

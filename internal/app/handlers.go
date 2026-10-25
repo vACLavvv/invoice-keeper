@@ -20,66 +20,28 @@ var currencies = []string{"RUB", "USD", "EUR"}
 // --- payment occurrences ---
 
 type occurrenceFilter struct {
-	from, to        *time.Time
-	status          string
-	currency        string
-	search          string
-	category        string // "-" — without a category
-	assignee        string // user id, or "-" — without an assignee
-	includeArchived bool
+	from, to                                        *time.Time
+	status                                          string
+	currency                                        string
+	search                                          string
+	category                                        string // "-" — without a category
+	assignee                                        string // user id, or "-" — without an assignee
+	includeArchived                                 bool
+	view, historyFilter, dateBasis, frequency, sort string
 }
 
-func (s *Server) loadOccurrences(q store.Querier, filter occurrenceFilter) ([]Occurrence, error) {
-	var clauses []string
-	var args []any
-	if filter.from != nil {
-		clauses, args = append(clauses, "o.due_date>=?"), append(args, schedule.FormatDate(*filter.from))
-	}
-	if filter.to != nil {
-		clauses, args = append(clauses, "o.due_date<=?"), append(args, schedule.FormatDate(*filter.to))
-	}
-	if filter.currency != "" {
-		clauses, args = append(clauses, "o.currency=?"), append(args, filter.currency)
-	}
-	if !filter.includeArchived {
-		clauses = append(clauses, "r.active=1")
-	}
-	if filter.category == "-" {
-		clauses = append(clauses, "(r.category IS NULL OR r.category='')")
-	}
-	switch filter.assignee {
-	case "":
-	case "-":
-		clauses = append(clauses, "r.assignee_id IS NULL")
-	default:
-		clauses, args = append(clauses, "r.assignee_id=?"), append(args, filter.assignee)
-	}
-	query := occurrenceSelect
-	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ")
-	}
-	rows, err := q.Query(query+" ORDER BY o.due_date,o.id", args...)
+func (s *Server) occurrenceRows(q store.Querier, suffix string, args ...any) ([]Occurrence, error) {
+	rows, err := q.Query(occurrenceSelect+suffix, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	today := s.Today()
-	search := strings.ToLower(filter.search)
 	items := []Occurrence{}
+	today := s.Today()
 	for rows.Next() {
 		item, err := scanOccurrence(rows, today)
 		if err != nil {
 			return nil, err
-		}
-		if filter.status != "" && item.Status != filter.status {
-			continue
-		}
-		if search != "" && !strings.Contains(strings.ToLower(item.Title), search) {
-			continue
-		}
-		// Compared in Go: SQLite NOCASE folds only ASCII, and categories are usually Cyrillic.
-		if filter.category != "" && filter.category != "-" && (item.Category == nil || !strings.EqualFold(*item.Category, filter.category)) {
-			continue
 		}
 		items = append(items, item)
 	}
@@ -104,7 +66,9 @@ func occurrenceQuery(r *http.Request, user *User) (occurrenceFilter, error) {
 		currency:        q.choice("currency", currencies...),
 		search:          q.values.Get("search"),
 		category:        strings.TrimSpace(q.values.Get("category")),
-		includeArchived: q.boolean("include_archived", true)}
+		includeArchived: q.boolean("include_archived", true),
+		view:            q.choice("view", "open", "history", "all"), historyFilter: q.choice("history_filter", "all", "paid", "archived"),
+		dateBasis: q.choice("date_basis", "due", "history"), frequency: q.choice("frequency", "once", "recurring"), sort: q.choice("sort", "due_asc", "due_desc", "paid_desc")}
 	if len([]rune(filter.search)) > 120 {
 		q.add("search", "Максимальная длина — 120", "string_too_long")
 	}
@@ -137,19 +101,10 @@ func (s *Server) occurrenceList(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var items []Occurrence
-	err = s.DB.Write(func(tx *sql.Tx) error {
-		if err := schedule.Materialize(tx, s.Today()); err != nil {
-			return err
-		}
-		var err error
-		items, err = s.loadOccurrences(tx, filter)
-		return err
-	})
-	if err != nil {
+	if err := s.ensureMaterialized(); err != nil {
 		return err
 	}
-	return writeJSON(w, 200, items)
+	return s.occurrenceJSON(w, r, filter)
 }
 
 func (s *Server) findOccurrence(q store.Querier, id int64) (Occurrence, error) {
@@ -265,42 +220,31 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) error {
 	if err := q.err(); err != nil {
 		return err
 	}
-	var items []Occurrence
-	err := s.DB.Write(func(tx *sql.Tx) error {
-		if err := schedule.Materialize(tx, s.Today()); err != nil {
-			return err
-		}
-		var err error
-		items, err = s.loadOccurrences(tx, occurrenceFilter{from: from, to: to, includeArchived: includeArchived})
+	if err := s.ensureMaterialized(); err != nil {
 		return err
-	})
+	}
+	where, args := s.occurrenceWhere(occurrenceFilter{from: from, to: to, includeArchived: includeArchived})
+	query := "SELECT o.currency,COALESCE(SUM(o.amount_cents),0),COALESCE(SUM(CASE WHEN o.paid_at IS NOT NULL THEN o.amount_cents ELSE 0 END),0),COALESCE(SUM(CASE WHEN o.paid_at IS NULL AND o.due_date<? THEN o.amount_cents ELSE 0 END),0),COUNT(*)" + occurrenceFrom + where
+	rows, err := s.DB.Query(query+" GROUP BY o.currency", append([]any{schedule.FormatDate(s.Today())}, args...)...)
 	if err != nil {
 		return err
 	}
-	type sums struct {
-		total, paid, unpaid, overdue int64
-		count                        int
-	}
-	totals := map[string]*sums{}
-	for _, c := range currencies {
-		totals[c] = &sums{}
-	}
-	for _, item := range items {
-		t := totals[item.Currency]
-		t.total += item.amountCents
-		t.count++
-		if item.Status == "paid" {
-			t.paid += item.amountCents
-		} else {
-			t.unpaid += item.amountCents
-		}
-		if item.Status == "overdue" {
-			t.overdue += item.amountCents
-		}
-	}
+	defer rows.Close()
 	result := map[string]currencyTotals{}
-	for c, t := range totals {
-		result[c] = currencyTotals{schedule.Money(t.total), schedule.Money(t.paid), schedule.Money(t.unpaid), schedule.Money(t.overdue), t.count}
+	for _, c := range currencies {
+		result[c] = currencyTotals{"0.00", "0.00", "0.00", "0.00", 0}
+	}
+	for rows.Next() {
+		var c string
+		var total, paid, overdue int64
+		var count int
+		if err := rows.Scan(&c, &total, &paid, &overdue, &count); err != nil {
+			return err
+		}
+		result[c] = currencyTotals{schedule.Money(total), schedule.Money(paid), schedule.Money(total - paid), schedule.Money(overdue), count}
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	dateOrNil := func(d *time.Time) any {
 		if d == nil {

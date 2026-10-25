@@ -242,6 +242,14 @@ func runLoadDataset(t *testing.T, count int) loadDataset {
 		{"full occurrence list", "/api/v1/payment-occurrences"},
 		{"month summary", "/api/v1/payments/summary?from_date=2026-10-01&to_date=2026-10-31"},
 		{"year budget", "/api/v1/budget?year=2026"},
+		{"occurrence page", "/api/v1/payment-occurrences/page?view=open&page_size=25"},
+		{"occurrence deep page", fmt.Sprintf("/api/v1/payment-occurrences/page?view=open&page_size=25&page=%d", max(1, count/100))},
+		{"recurring page", "/api/v1/recurring-payments/page?page_size=25"},
+		{"overview", "/api/v1/payments/overview"},
+		{"calendar month", "/api/v1/payments/calendar?month=2026-10"},
+		{"calendar forecast", "/api/v1/payments/calendar?month=2027-01"},
+		{"calendar day page", "/api/v1/payments/calendar/day?date=2026-10-28&page_size=25"},
+		{"notification page", "/api/v1/notifications?limit=50"},
 	} {
 		metric := measureLoad(endpoint.label, 12, 3, func(int) (int64, error) {
 			status, bytes, err := call("GET", endpoint.path, nil)

@@ -14,33 +14,25 @@ type Queue = 'week' | 'all' | 'once';
 
 /** A deadline queue and a separate ledger for each currency; all figures use the live API. */
 export default function Overview() {
-  const { settings } = useSession();
+  const { settings, overview: data, overviewError: error } = useSession();
   const [paying, setPaying] = useState<Occurrence | null>(null);
   const [queue, setQueue] = useState<Queue>('week');
   const month = settings.today.slice(0, 7);
-  const { data, error } = useLoad(() => api<Occurrence[]>('/payment-occurrences'), []);
   const summary = useLoad(() => api<Summary>('/payments/summary' + query(monthRange(month))), [month]);
-  const all = data ?? [];
-  const open = all.filter((o) => o.active && o.status !== 'paid').sort((a, b) => a.due_date.localeCompare(b.due_date) || a.id - b.id);
-  const overdue = open.filter((o) => o.status === 'overdue');
   const edge = addDays(settings.today, 7);
-  const soon = open.filter((o) => o.due_date >= settings.today && o.due_date <= edge);
-  const once = open.filter((o) => o.frequency === 'once');
-  const urgent = open.filter((o) => o.due_date <= edge);
-  const selected = queue === 'week' ? urgent : queue === 'once' ? once : open;
-  const later = open.filter((o) => o.due_date > edge);
-  const recent = all.filter((o) => o.paid_at).sort((a, b) => b.paid_at!.localeCompare(a.paid_at!) || b.id - a.id).slice(0, 3);
-  const thisMonth = all.filter((o) => o.due_date.startsWith(month));
-  const paidCount = thisMonth.filter((o) => o.status === 'paid').length;
+  const selected = data?.queues[queue] ?? [];
+  const selectedTotal = data ? queue === 'week' ? data.counts.urgent : queue === 'once' ? data.counts.once : data.counts.open : 0;
+  const later = data?.later ?? [], recent = data?.recent ?? [];
+  const overdueCount = data?.counts.overdue ?? 0;
   const counts = [
-    { view: '', label: t('К оплате'), count: open.length },
-    { view: 'overdue', label: t('Просрочено'), count: overdue.length },
-    { view: 'week', label: t('В ближайшие 7 дней'), count: soon.length },
-    { view: 'once', label: t('Разовые'), count: once.length },
+    { view: '', label: t('К оплате'), count: data?.counts.open ?? 0 },
+    { view: 'overdue', label: t('Просрочено'), count: overdueCount },
+    { view: 'week', label: t('В ближайшие 7 дней'), count: data?.counts.soon ?? 0 },
+    { view: 'once', label: t('Разовые'), count: data?.counts.once ?? 0 },
   ];
   return (
     <Shell title={t('Обзор')} heading={t('Обзор платежей')}
-      subtitle={data ? (overdue.length ? t('Платежей с истёкшим сроком: {n}.', { n: overdue.length }) : t('Просроченных платежей нет. Всё идёт по плану.')) : t('Загружаем платежи…')}>
+      subtitle={data ? (overdueCount ? t('Платежей с истёкшим сроком: {n}.', { n: overdueCount }) : t('Просроченных платежей нет. Всё идёт по плану.')) : t('Загружаем платежи…')}>
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
       <div className="overview-counts" aria-label={t('Задачи команды')}>
         {counts.map((item) => <Link href={'/payments' + (item.view ? '?view=' + item.view : '')} key={item.label}>
@@ -54,7 +46,7 @@ export default function Overview() {
             <Link className="desk-link" href="/payments">{t('Все платежи')} <span aria-hidden="true">↗</span></Link>
           </div>
           <div className="queue-tabs" role="group" aria-label={t('Показать платежи')}>
-            {([{ key: 'week', label: t('Ближайшие'), count: urgent.length }, { key: 'all', label: t('Все'), count: open.length }, { key: 'once', label: t('Разовые'), count: once.length }] as const).map((item) => (
+            {([{ key: 'week', label: t('Ближайшие'), count: data?.counts.urgent ?? 0 }, { key: 'all', label: t('Все'), count: data?.counts.open ?? 0 }, { key: 'once', label: t('Разовые'), count: data?.counts.once ?? 0 }] as const).map((item) => (
               <button type="button" key={item.key} aria-pressed={queue === item.key} onClick={() => setQueue(item.key)}>
                 {item.label}<span>{data ? item.count : '—'}</span>
               </button>
@@ -72,7 +64,7 @@ export default function Overview() {
               </button>
             )) : <div className="desk-empty"><b>{t('Всё спокойно')}</b><p>{t('В этой очереди нет неоплаченных задач.')}</p><Link href="/calendar">{t('Открыть календарь')}</Link></div>}
           </div>
-          <div className="desk-panel-footer"><span>{t('Показано {n} из {total}', { n: Math.min(selected.length, 5), total: selected.length })}</span><Link className="desk-link" href={'/payments' + (queue === 'once' ? '?view=once' : '')}>{t('Перейти к платежам')} <span aria-hidden="true">→</span></Link></div>
+          <div className="desk-panel-footer"><span>{t('Показано {n} из {total}', { n: Math.min(selected.length, 5), total: selectedTotal })}</span><Link className="desk-link" href={'/payments' + (queue === 'once' ? '?view=once' : '')}>{t('Перейти к платежам')} <span aria-hidden="true">→</span></Link></div>
         </section>
         <section className="desk-panel month-ledger" aria-labelledby="plan-title">
           <div className="desk-panel-heading"><div><h2 id="plan-title">{t('План месяца')}</h2><p>{monthLabel(month)}</p></div><Link className="desk-link" href="/budget" aria-label={t('Открыть бюджет')}>↗</Link></div>
@@ -98,7 +90,7 @@ export default function Overview() {
           <WorkRows items={later.slice(0, 3)} empty={t('Других запланированных платежей пока нет.')} onOpen={setPaying} />
         </section>
         <section className="desk-panel">
-          <div className="desk-panel-heading"><div><h2>{t('Недавно оплачено')}</h2><p>{t('Закрыто {paid} из {total} за месяц', { paid: paidCount, total: thisMonth.length })}</p></div><Link className="desk-link" href="/history">{t('История')} <span aria-hidden="true">↗</span></Link></div>
+          <div className="desk-panel-heading"><div><h2>{t('Недавно оплачено')}</h2><p>{t('Закрыто {paid} из {total} за месяц', { paid: data?.counts.month_paid ?? 0, total: data?.counts.month_total ?? 0 })}</p></div><Link className="desk-link" href="/history">{t('История')} <span aria-hidden="true">↗</span></Link></div>
           <WorkRows items={recent} empty={t('Здесь появятся оплаченные задачи и прикреплённые чеки.')} onOpen={setPaying} />
         </section>
       </div>

@@ -2,12 +2,13 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState, type ReactNode } from 'react';
-import { api, type NotificationFeed, type Occurrence, type Suggestion } from '@/lib/api';
+import { api, type NotificationFeed, type Suggestion } from '@/lib/api';
 import { date } from '@/lib/format';
 import { t } from '@/lib/i18n';
 import { usePreferences } from '@/lib/preferences';
 import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+import { useBrowserNoticeDelivery } from '@/lib/use-browser-notices';
 import { ws } from './icons';
 import { CreatePaymentModal } from './PaymentModals';
 import { Modal } from './Modal';
@@ -54,15 +55,15 @@ type Props = {
 
 export function Shell({ title, heading, subtitle, action, extra, children }: Props) {
   const { pathname } = useRouter();
-  const { user, settings, isAdmin } = useSession();
+  const { user, settings, isAdmin, overview } = useSession();
   const { mode, setMode, language, setLanguage } = usePreferences();
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const open = useLoad(() => api<Occurrence[]>('/payment-occurrences?include_archived=false'), []).data;
-  const feed = useLoad(() => api<NotificationFeed>('/notifications'), []).data;
+  const feed = useLoad(() => api<NotificationFeed>('/notifications?limit=50'), []).data;
+  useBrowserNoticeDelivery(user, feed);
   const inbox = useLoad(() => (isAdmin ? api<Suggestion[]>('/payment-suggestions?status=pending') : Promise.resolve([])), [isAdmin]).data;
-  const counts = { open: open?.filter((o) => o.status !== 'paid').length, unread: feed?.unread_count, inbox: inbox?.length };
+  const counts = { open: overview?.counts.open, unread: feed?.unread_count, inbox: inbox?.length };
   const dark = mode === 'dark';
   useEffect(() => { setMenuOpen(false); }, [pathname]);
   // The workspace stylesheets lay out some pages by body[data-page] (as in the main branch).
@@ -111,7 +112,7 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
         <div className="sidebar-bottom">
           <button className="profile" type="button" onClick={logout} title={t('Выйти из учётной записи')}>
             <span className="profile-avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</span>
-            <span>{user.display_name}<small>{isAdmin ? t('Администратор') : '@' + user.username}</small></span>
+            <span>{user.display_name}{!isAdmin && <small>{'@' + user.username}</small>}</span>
             <span className="logout-icon" aria-hidden="true">⇥</span>
           </button>
         </div>

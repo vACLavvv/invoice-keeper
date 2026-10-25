@@ -124,6 +124,7 @@ func TestExtraChannelsDeliverOnceAndRetrySafely(t *testing.T) {
 	// A safe failure is retried, but not forever.
 	for range 10 {
 		e.db.Exec("UPDATE deliveries SET retry_after=0")
+		expireTransportBackoff(t, e)
 		w.Tick()
 	}
 	expect(t, "stops after 5 attempts", flaky.count(), notify.MaxDeliveryAttempts)
@@ -136,6 +137,7 @@ func TestExtraChannelsDeliverOnceAndRetrySafely(t *testing.T) {
 	e.clock.Set(schedule.Civil(2026, 2, 1))
 	w.Tick()
 	e.db.Exec("UPDATE deliveries SET retry_after=0")
+	expireTransportBackoff(t, e)
 	w.Tick()
 	expect(t, "uncertain once", kinds(broken), "overdue:2026-01-31")
 	expect(t, "email overdue", kinds(email), "due:2026-01-31,overdue:2026-01-31")

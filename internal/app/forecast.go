@@ -10,6 +10,7 @@ import (
 
 	"invoice-keeper/internal/app/audit"
 	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/store"
 )
 
 // forecastPeriod is a scheduled due date that has no payment period yet.
@@ -55,10 +56,10 @@ func (s *Server) forecast(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	items := []forecastPeriod{}
-	err := s.DB.Write(func(tx *sql.Tx) error {
-		if err := schedule.Materialize(tx, s.Today()); err != nil {
-			return err
-		}
+	if err := s.ensureMaterialized(); err != nil {
+		return err
+	}
+	err := s.readSnapshot(r.Context(), func(tx store.Querier) error {
 		payments, err := s.loadRecurring(tx, " WHERE r.active=1")
 		if err != nil {
 			return err

@@ -106,10 +106,10 @@ func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error 
 	return noContent(w)
 }
 
-// A send and unlink both hold the database write lock. A claimed row can therefore be
-// cancelled here only before its network call; the worker checks its state again before sending.
+// Only a claim whose dispatch has not started can be cancelled. In-flight sends
+// retain their state: unlink/relink must not turn an external request into a replay.
 func cancelTelegramDeliveries(tx *sql.Tx, where string, args ...any) error {
-	_, err := tx.Exec(`UPDATE deliveries SET state='cancelled' WHERE state IN ('pending','sending')
+	_, err := tx.Exec(`UPDATE deliveries SET state='cancelled' WHERE (state='pending' OR (state='sending' AND claim_token IS NOT NULL AND dispatch_started_at IS NULL))
 		AND channel IN (SELECT 'telegram:'||chat_id FROM telegram_links WHERE `+where+`)`, args...) // #nosec G202 -- caller supplies constant owner clauses, values are parameters
 	return err
 }

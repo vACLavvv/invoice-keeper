@@ -49,7 +49,7 @@ export type Notification = {
   id: string; kind: 'overdue' | 'due' | 'paid'; occurrence_id: number; title: string; amount: string; currency: Currency;
   due_date: string; paid_at: string | null; paid_by: string | null; read: boolean;
 };
-export type NotificationFeed = { items: Notification[]; unread_count: number };
+export type NotificationFeed = { items: Notification[]; unread_count: number; browser_items?: Notification[]; total?: number; page?: number; page_size?: number; pages?: number };
 export type ApiKey = {
   id: number; name: string; prefix: string; access: 'extension' | 'read' | 'write'; expires_at: string | null;
   created_at: string; last_used_at: string | null;
@@ -145,3 +145,11 @@ export function query(params: Record<string, string | undefined | null>): string
 }
 
 export type DeletedPayment = { kind: 'payment' | 'period'; recurring_payment_id: number; title: string; amount: string; currency: Currency; due_date: string | null; paid_at: string | null; removed_at: string; active: boolean };
+
+export type Overview = {
+  counts: { open: number; overdue: number; soon: number; once: number; urgent: number; month_paid: number; month_total: number };
+  queues: { week: Occurrence[]; all: Occurrence[]; once: Occurrence[] };
+  later: Occurrence[]; recent: Occurrence[];
+};
+export type CalendarDay = { date: string; count: number; totals: Partial<Record<Currency, string>>; items: (Occurrence | Forecast)[] };
+export type CalendarView = { month: string; days: CalendarDay[]; totals: Partial<Record<Currency, string>> };

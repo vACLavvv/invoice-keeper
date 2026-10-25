@@ -120,15 +120,10 @@ func (s *Server) recurringList(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.currentUser(r); err != nil {
 		return err
 	}
-	var items []recurringItem
-	err := s.DB.Write(func(tx *sql.Tx) error {
-		if err := schedule.Materialize(tx, s.Today()); err != nil {
-			return err
-		}
-		var err error
-		items, err = s.loadRecurring(tx, " ORDER BY r.active DESC,r.id DESC")
+	if err := s.ensureMaterialized(); err != nil {
 		return err
-	})
+	}
+	items, err := s.loadRecurring(s.DB, " ORDER BY r.active DESC,r.id DESC")
 	if err != nil {
 		return err
 	}
@@ -503,6 +498,17 @@ func (s *Server) recurringPause(w http.ResponseWriter, r *http.Request) error {
 		inPause := `SELECT o.id FROM payment_occurrences o WHERE o.recurring_payment_id=? AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date>=?
 			AND (? IS NULL OR o.due_date<=?) AND NOT EXISTS (SELECT 1 FROM receipts x WHERE x.occurrence_id=o.id)`
 		args := []any{id, schedule.FormatDate(today), untilValue, untilValue}
+		// Pause physically removes unsaved periods. Never erase an in-flight
+		// outbox row: resuming could otherwise send the same external message twice.
+		for _, table := range []string{"reminders", "deliveries"} {
+			var sending bool
+			if err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM "+table+" WHERE state='sending' AND (dispatch_started_at IS NOT NULL OR claim_token IS NULL) AND occurrence_id IN ("+inPause+"))", args...).Scan(&sending); err != nil { // #nosec G202 -- constant table names and predicates; bound values
+				return err
+			}
+			if sending {
+				return fail(409, "Отправка напоминания уже началась. Повторите паузу через несколько секунд.")
+			}
+		}
 		for _, table := range []string{"reminders", "personal_reminders", "deliveries"} {
 			if _, err := tx.Exec("DELETE FROM "+table+" WHERE occurrence_id IN ("+inPause+")", args...); err != nil { // #nosec G202 -- table is one of three constant names, values are parameters
 				return err

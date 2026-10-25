@@ -3,13 +3,12 @@ package app
 // botBackend gives the bots (internal/app/bot) access to payments without importing the server.
 
 import (
+	"context"
 	"errors"
-	"fmt"
-	"invoice-keeper/internal/app/schedule"
-	"strings"
 	"time"
 
 	"invoice-keeper/internal/app/bot"
+	"invoice-keeper/internal/app/store"
 )
 
 type botBackend struct{ s *Server }
@@ -47,31 +46,23 @@ func (b botBackend) LinkTelegram(code string, from bot.User, chatID int64) (stri
 
 // PaymentPage shares the web ledger's dates, deletion rules and separate currencies.
 func (b botBackend) PaymentPage(onlyOverdue bool, page int) (bot.PaymentPage, error) {
-	until := b.s.Today().AddDate(0, 0, 7)
-	items, err := b.s.loadOccurrences(b.s.DB, occurrenceFilter{to: &until})
-	if err != nil {
-		return bot.PaymentPage{}, err
+	result := bot.PaymentPage{Items: []bot.PaymentItem{}}
+	if err := b.s.ensureMaterialized(); err != nil {
+		return result, err
 	}
-	result := bot.PaymentPage{}
-	totals := map[string]int64{}
-	for _, o := range items {
-		if o.Status != "overdue" && (onlyOverdue || o.Status != "unpaid") {
-			continue
+	today := b.s.Today()
+	where, args := messengerWhere(onlyOverdue, today)
+	err := b.s.readSnapshot(context.Background(), func(q store.Querier) error {
+		total, totals, err := messengerTotals(q, where, args)
+		if err != nil {
+			return err
 		}
-		result.Items = append(result.Items, bot.PaymentItem{ID: o.ID, Title: o.Title, Amount: o.Amount, Currency: o.Currency, DueDate: o.DueDate, Status: o.Status})
-		totals[o.Currency] += o.amountCents
-	}
-	result.Total = len(result.Items)
-	result.Pages = max(1, (result.Total+4)/5)
-	result.Page = min(max(page, 0), result.Pages-1)
-	start := result.Page * 5
-	result.Items = result.Items[start:min(start+5, result.Total)]
-	var parts []string
-	for _, c := range currencies {
-		if totals[c] > 0 {
-			parts = append(parts, fmt.Sprintf("%s %s", schedule.Money(totals[c]), c))
-		}
-	}
-	result.Totals = strings.Join(parts, " · ")
-	return result, nil
+		result.Total = total
+		result.Pages = max(1, (total+4)/5)
+		result.Page = min(max(page, 0), result.Pages-1)
+		result.Totals = messengerTotalText(totals)
+		result.Items, err = messengerRows(q, where, args, today, 5, result.Page*5)
+		return err
+	})
+	return result, err
 }

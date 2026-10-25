@@ -19,6 +19,7 @@ import (
 
 	"invoice-keeper/internal/app/audit"
 	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/store"
 )
 
 var statusLabels = map[string]string{"paid": "Оплачено", "unpaid": "К оплате", "overdue": "Просрочено"}
@@ -58,26 +59,43 @@ func (s *Server) occurrencesExport(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	items, err := s.loadOccurrences(s.DB, filter)
-	if err != nil {
+	if err := s.ensureMaterialized(); err != nil {
 		return err
 	}
-	rows := [][]string{{"Название", "Категория", "Ответственный", "Сумма", "Валюта", "Срок", "Статус", "Дата оплаты", "Просрочка, дн.", "Периодичность"}}
-	for _, o := range items {
-		category, assignee, paid := "", "", ""
-		if o.Category != nil {
-			category = *o.Category
+	return s.spoolOccurrenceResponse(w, r, "text/csv; charset=utf-8", "invoice-keeper-"+schedule.FormatDate(s.Today())+".csv", func(out io.Writer) error {
+		if _, err := io.WriteString(out, "\uFEFF"); err != nil {
+			return err
 		}
-		if o.Assignee != nil {
-			assignee = o.Assignee.DisplayName
+		writer := csv.NewWriter(out)
+		writer.Comma = ';'
+		writer.UseCRLF = true
+		if err := writer.Write([]string{"Название", "Категория", "Ответственный", "Сумма", "Валюта", "Срок", "Статус", "Дата оплаты", "Просрочка, дн.", "Периодичность"}); err != nil {
+			return err
 		}
-		if o.PaidAt != nil {
-			paid = schedule.FullDate(*o.PaidAt)
+		err := s.readSnapshot(r.Context(), func(q store.Querier) error {
+			return s.eachOccurrence(q, filter, func(o Occurrence) error {
+				if err := r.Context().Err(); err != nil {
+					return err
+				}
+				category, assignee, paid := "", "", ""
+				if o.Category != nil {
+					category = *o.Category
+				}
+				if o.Assignee != nil {
+					assignee = o.Assignee.DisplayName
+				}
+				if o.PaidAt != nil {
+					paid = schedule.FullDate(*o.PaidAt)
+				}
+				return writer.Write([]string{cell(o.Title), cell(category), cell(assignee), excelMoney(o.Amount), o.Currency, schedule.FullDate(o.DueDate), statusLabels[o.Status], paid, itoa(int64(o.DaysOverdue)), frequencyLabels[o.Frequency]})
+			})
+		})
+		if err != nil {
+			return err
 		}
-		rows = append(rows, []string{cell(o.Title), cell(category), cell(assignee), excelMoney(o.Amount), o.Currency, schedule.FullDate(o.DueDate),
-			statusLabels[o.Status], paid, itoa(int64(o.DaysOverdue)), frequencyLabels[o.Frequency]})
-	}
-	return writeCSV(w, "invoice-keeper-"+schedule.FormatDate(s.Today())+".csv", rows)
+		writer.Flush()
+		return writer.Error()
+	})
 }
 
 func (s *Server) importTemplate(w http.ResponseWriter, r *http.Request) error {

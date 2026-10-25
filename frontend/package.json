@@ -7,7 +7,9 @@
     "typecheck": "tsc --noEmit",
     "i18n": "node scripts/i18n-check.mjs",
     "test:timezone": "node --test scripts/date-timezone-check.mjs",
-    "test:live": "node --test scripts/live-updates-check.mjs"
+    "test:live": "node --test scripts/live-updates-check.mjs",
+    "test:browser-notices": "node --test scripts/browser-notices-check.mjs",
+    "test:async-load": "node --test scripts/async-load-check.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

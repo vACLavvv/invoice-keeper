@@ -313,6 +313,9 @@ function TokensTile() {
 
   return (
     <Tile>
+      <TokenDetails>
+        <summary><span>{t('Интеграции и API')}<small>{t('Для подключения внешних сервисов. В обычной работе не требуется.')}</small></span></summary>
+        <div className="token-content">
       <TileTitle>{t('токены API')}</TileTitle>
       <Muted>{t('Для скриптов и интеграций вместо пароля: заголовок Authorization: Bearer ik_… Токен действует с вашими правами; пароль, вход и токены по нему не изменить.')}</Muted>
       {!data ? <Muted>{t('Загружаем…')}</Muted> : tokens.length === 0 ? <Muted>{t('Токенов пока нет.')}</Muted> : (
@@ -382,6 +385,8 @@ function TokensTile() {
           )}
         </Modal>
       )}
+        </div>
+      </TokenDetails>
     </Tile>
   );
 }
@@ -427,4 +432,14 @@ const Secret = styled.code`
   color: ${({ theme }) => theme.color.strong};
   word-break: break-all;
   user-select: all;
+`;
+
+const TokenDetails = styled.details`
+  min-width: 0;
+  summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; list-style: none; cursor: pointer; font-size: var(--text-body); font-weight: 550; }
+  summary::-webkit-details-marker { display: none; }
+  summary small { display: block; margin-top: 8px; color: var(--desk-muted); font-size: 14px; line-height: 1.6; font-weight: 400; }
+  summary::after { content: ''; width: 9px; height: 9px; flex: 0 0 9px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); margin: 0 4px 5px; }
+  &[open] summary::after { transform: rotate(225deg); margin-top: 8px; }
+  .token-content { display: grid; gap: 18px; padding-top: 24px; }
 `;

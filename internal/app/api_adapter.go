@@ -239,7 +239,7 @@ func (a apiAdapter) AuditPage(w http.ResponseWriter, r *http.Request, _ api.Audi
 	a.s.serveAPI(w, r, a.s.auditPage)
 }
 
-func (a apiAdapter) ListNotifications(w http.ResponseWriter, r *http.Request) {
+func (a apiAdapter) ListNotifications(w http.ResponseWriter, r *http.Request, _ api.ListNotificationsParams) {
 	a.s.serveAPI(w, r, a.s.notificationList)
 }
 
@@ -278,4 +278,23 @@ func (a apiAdapter) ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 
 func (a apiAdapter) StreamEvents(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.eventStream)
+}
+
+func (a apiAdapter) ListOccurrencesPage(w http.ResponseWriter, r *http.Request, _ api.ListOccurrencesPageParams) {
+	a.s.serveAPI(w, r, a.s.occurrencePage)
+}
+func (a apiAdapter) ListRecurringPage(w http.ResponseWriter, r *http.Request, _ api.ListRecurringPageParams) {
+	a.s.serveAPI(w, r, a.s.recurringPage)
+}
+func (a apiAdapter) ListPaymentCategories(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.paymentCategories)
+}
+func (a apiAdapter) PaymentsOverview(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.paymentOverview)
+}
+func (a apiAdapter) PaymentsCalendar(w http.ResponseWriter, r *http.Request, _ api.PaymentsCalendarParams) {
+	a.s.serveAPI(w, r, a.s.paymentCalendar)
+}
+func (a apiAdapter) PaymentsCalendarDay(w http.ResponseWriter, r *http.Request, _ api.PaymentsCalendarDayParams) {
+	a.s.serveAPI(w, r, a.s.paymentCalendarDay)
 }

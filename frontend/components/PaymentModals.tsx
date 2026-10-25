@@ -16,8 +16,7 @@ type Close = { onClose: () => void };
 function usePaymentChoices() {
   const { isAdmin } = useSession();
   const users = useLoad(() => (isAdmin ? api<TeamUser[]>('/users') : Promise.resolve([])), [isAdmin]).data ?? [];
-  const payments = useLoad(() => api<Recurring[]>('/recurring-payments'), []).data ?? [];
-  const categories = [...new Set(payments.map((p) => p.category).filter(Boolean) as string[])].sort();
+  const categories = useLoad(() => api<string[]>('/payment-categories'), []).data ?? [];
   return { users, categories };
 }
 

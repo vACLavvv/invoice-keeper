@@ -1,5 +1,18 @@
 // English texts for t(): the key is the Russian original. `node scripts/i18n-check.mjs` lists missing keys.
 export const en: Record<string, string> = {
+  'Подождите…': 'Please wait…',
+  'Новые события по платежам': 'New payment updates',
+  'Откройте уведомления, чтобы посмотреть новые напоминания и оплаты.': 'Open notifications to see new reminders and payment updates.',
+  'Напоминания включены': 'Reminders are enabled',
+  'Новые события появятся здесь, пока панель открыта.': 'New updates will appear here while the panel is open.',
+  'Тест отправлен. Если его не видно, проверьте уведомления браузера и режим «Не беспокоить» в системе.': 'Test sent. If it is not visible, check browser notifications and your system’s Do Not Disturb mode.',
+  'Новые события приходят на любой странице открытой панели. Расширение для этого не требуется.': 'New updates arrive on any page while the panel is open. No browser extension is required.',
+  'Разрешите уведомления в настройках этого сайта в браузере, затем вернитесь сюда.': 'Allow notifications for this site in your browser settings, then return here.',
+  'Браузер не смог показать уведомление. Проверьте разрешения браузера и системы; для уведомлений при закрытой панели используйте Telegram или почту.': 'The browser could not show a notification. Check browser and system permissions; use Telegram or email when the panel is closed.',
+  'Браузер не сохраняет настройку уведомлений. Она действует только в этой вкладке.': 'The browser cannot save the notification setting. It applies only in this tab.',
+  'Страницы уведомлений': 'Notification pages',
+  'Интеграции и API': 'Integrations and API',
+  'Для подключения внешних сервисов. В обычной работе не требуется.': 'For connecting external services. Not needed for everyday use.',
   'Платёж не найден': 'Payment not found',
   'Платежи со сроком в этом месяце минус отмеченное как оплаченное. Валюты считаем отдельно.': 'Payments due this month minus amounts marked as paid. Currencies are counted separately.',
   'Оплату отмечает команда. Баланс и списания в банке не проверяются.': 'The team marks payments as paid. Bank balances and transactions are not checked.',

@@ -13,7 +13,7 @@ export function startLiveUpdates(refresh: () => void): () => void {
     refresh();
   }
   function schedule() {
-    if (!stopped && scheduled === null) scheduled = setTimeout(flush, 250);
+    if (!stopped && scheduled === null) scheduled = setTimeout(flush, 1000);
   }
   function invalidate() { pending = true; schedule(); }
   function connect() {

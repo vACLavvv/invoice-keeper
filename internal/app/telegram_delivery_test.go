@@ -42,6 +42,7 @@ func personalDeliveryState(t *testing.T, e *harness, kind, chat string) string {
 
 func retryPersonalTelegram(t *testing.T, e *harness) {
 	t.Helper()
+	expireTransportBackoff(t, e)
 	if _, err := e.db.Exec("UPDATE deliveries SET retry_after=0 WHERE channel LIKE 'telegram:%'"); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +326,11 @@ func TestPauseCleansUpPersonalAndOtherDeliveryQueues(t *testing.T) {
 			worker := notify.NewReminderWorker(e.db, personalTelegramSettings(e), sender, e.clock.Today)
 			worker.Channels = map[string]notify.Sender{"webhook": sender}
 			worker.Tick()
-			expect(t, "personal and webhook for both payments", sent.count(), 4)
+			wantSends := 4
+			if state == "pending" {
+				wantSends = 2 // a failed destination backs off the rest of its queue
+			}
+			expect(t, "personal and webhook for both payments", sent.count(), wantSends)
 			expect(t, "pause succeeds with deliveries", admin.post("/api/v1/recurring-payments/"+id(paused)+"/pause", nil).status, 200)
 			var remaining int
 			if err := e.db.QueryRow("SELECT COUNT(*) FROM deliveries").Scan(&remaining); err != nil {
@@ -333,7 +338,7 @@ func TestPauseCleansUpPersonalAndOtherDeliveryQueues(t *testing.T) {
 			}
 			expect(t, "other payment keeps both deliveries", remaining, 2)
 			worker.Tick()
-			expect(t, "paused payment sends nothing further", sent.count(), 4)
+			expect(t, "paused payment sends nothing further", sent.count(), wantSends)
 		})
 	}
 }

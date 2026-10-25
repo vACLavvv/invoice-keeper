@@ -454,5 +454,5 @@ func TestMigrationAllowsOneTime(t *testing.T) {
 		"title": "Новый", "amount": "1", "currency": "RUB", "first_due_date": "2026-02-01", "frequency": "once"}).status, 201)
 	var version int
 	e.db.QueryRow("PRAGMA user_version").Scan(&version)
-	expect(t, "schema version", version, 7)
+	expect(t, "schema version", version, 8)
 }

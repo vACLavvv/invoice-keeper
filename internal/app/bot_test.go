@@ -213,13 +213,25 @@ func TestTodoAndOverdueCommands(t *testing.T) {
 
 	tb.Handle(message(ourChat, "/todo"))
 	todo := tg.sent("sendMessage")[0]["text"].(string)
-	for _, want := range []string{"Аренда", "100.10 RUB", "Просрочено", "Сервер", "24.00 USD", "2026-01-30", "100.10 RUB · 24.00 USD"} {
+	for _, want := range []string{"Аренда", "100.10 RUB", "Просрочено", "Платёж 1 из 2", "100.10 RUB · 24.00 USD"} {
 		if !strings.Contains(todo, want) {
 			t.Fatalf("/todo lacks %q:\n%s", want, todo)
 		}
 	}
-	if strings.Contains(todo, "Далёкий") {
+	if strings.Contains(todo, "Далёкий") || strings.Contains(todo, "Сервер") {
 		t.Fatal("/todo must cover only 7 days")
+	}
+	callback := pressPaid(ourChat, "1")
+	callback.CallbackQuery.Data = "nav:todo:1"
+	tb.Handle(callback)
+	next := tg.sent("editMessageText")[0]["text"].(string)
+	for _, want := range []string{"Сервер", "24.00 USD", "30.01.2026", "Платёж 2 из 2"} {
+		if !strings.Contains(next, want) {
+			t.Fatalf("second card missing %q: %s", want, next)
+		}
+	}
+	if strings.Contains(next, "Аренда") {
+		t.Fatal("second card includes first payment")
 	}
 	tb.Handle(message(ourChat, "/overdue"))
 	overdue := tg.sent("sendMessage")[1]["text"].(string)
@@ -259,18 +271,18 @@ func TestTelegramMenuPaginationEscapesTitlesAndRejectsForeignNavigation(t *testi
 	tb.Handle(message(ourChat, "/todo"))
 	first := tg.sent("sendMessage")[1]
 	text := first["text"].(string)
-	if strings.Contains(text, "<script>") || !strings.Contains(text, "&lt;script&gt;") || !strings.Contains(text, "Страница 1 из 2") {
+	if strings.Contains(text, "<script>") || !strings.Contains(text, "&lt;script&gt;") || !strings.Contains(text, "Платёж 1 из 7") {
 		t.Fatalf("unsafe or unpaged list: %s", text)
 	}
-	if strings.Count(fmt.Sprint(first["reply_markup"]), "paid:") != 5 {
-		t.Fatal("first page should have five payment actions")
+	if strings.Count(fmt.Sprint(first["reply_markup"]), "paid:") != 1 {
+		t.Fatal("first card should have exactly one payment action")
 	}
 	callback := pressPaid(ourChat, "1")
 	callback.CallbackQuery.Data = "nav:todo:1"
 	tb.Handle(callback)
 	second := tg.sent("editMessageText")[0]
-	if !strings.Contains(second["text"].(string), "Страница 2 из 2") || strings.Count(fmt.Sprint(second["reply_markup"]), "paid:") != 2 {
-		t.Fatal("second page should have remaining two actions")
+	if !strings.Contains(second["text"].(string), "Платёж 2 из 7") || strings.Count(fmt.Sprint(second["reply_markup"]), "paid:") != 1 {
+		t.Fatal("second card should have exactly one payment action")
 	}
 	callback.CallbackQuery.Message.Chat.ID = 555
 	tb.Handle(callback)
@@ -306,4 +318,38 @@ func TestPaidButtonChangesOnePeriodAndOneAuditRecord(t *testing.T) {
 		}
 	}
 	expect(t, "one payment audit despite double click", audits, 1)
+}
+
+func TestTelegramPaymentCardAdvancesAndClampsAfterPayment(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	for _, title := range []string{"Первый", "Второй", "Третий"} {
+		c.createPayment(map[string]any{"title": title, "first_due_date": "2026-01-30", "frequency": "once"})
+	}
+	items := c.get("/api/v1/payment-occurrences").list(t)
+	tb, tg := botFor(e)
+	callback := pressPaid(ourChat, id(items[0]))
+	callback.CallbackQuery.Data = "paid:" + id(items[0]) + ":todo:0"
+	tb.Handle(callback)
+	edits := tg.sent("editMessageText")
+	if len(edits) != 1 || !strings.Contains(edits[0]["text"].(string), "Второй") || !strings.Contains(edits[0]["text"].(string), "Платёж 1 из 2") {
+		t.Fatalf("did not advance: %v", edits)
+	}
+	// Repeating a stale card action must refresh without paying the new first item.
+	tb.Handle(callback)
+	expect(t, "next remains unpaid", c.get("/api/v1/payment-occurrences/" + id(items[1])).object(t)["paid_at"], nil)
+	callback.CallbackQuery.Data = "paid:" + id(items[2]) + ":todo:1"
+	tb.Handle(callback)
+	edits = tg.sent("editMessageText")
+	if !strings.Contains(edits[len(edits)-1]["text"].(string), "Платёж 1 из 1") {
+		t.Fatal("last position not clamped")
+	}
+	callback.CallbackQuery.Data = "paid:" + id(items[1]) + ":todo:0"
+	tb.Handle(callback)
+	edits = tg.sent("editMessageText")
+	last := edits[len(edits)-1]
+	if !strings.Contains(last["text"].(string), "Всё спокойно") || strings.Contains(fmt.Sprint(last["reply_markup"]), "paid:") {
+		t.Fatal("empty list retained payment button")
+	}
 }

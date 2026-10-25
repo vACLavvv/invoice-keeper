@@ -1,3 +1,4 @@
+import { SkeletonRows } from '@/components/Skeleton';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import styled from 'styled-components';
@@ -67,7 +68,7 @@ function TelegramTile() {
       <TileTitle>{t('Привязка Telegram')}</TileTitle>
       <Muted>{t('Привяжите Telegram, чтобы отмечать оплату от своего имени — в группе и в личном чате. Сюда же придут личные напоминания и сообщения о входе в аккаунт.')}</Muted>
       {(error || loadError) && <Notice $tone="error" role="alert"><span>{error || loadError}</span></Notice>}
-      {!data ? (loadError ? <Button type="button" $variant="secondary" onClick={refresh}>{t('Повторить')}</Button> : <Muted>{t('Загружаем…')}</Muted>) : !data.available ? (
+      {!data ? (loadError ? <Button type="button" $variant="secondary" onClick={refresh}>{t('Повторить')}</Button> : <SkeletonRows compact rows={2} />) : !data.available ? (
         <Notice $tone="warning"><span>{t('На сервере не настроен Telegram-бот (TELEGRAM_BOT_TOKEN).')}</span></Notice>
       ) : data.linked ? (
         <Row $between $wrap>
@@ -176,7 +177,7 @@ function TwoFactorTile() {
     <Tile>
       <TileTitle>{t('двухфакторный вход')}</TileTitle>
       <Muted>{t('Кроме пароля при входе потребуется код из приложения-аутентификатора: Google Authenticator, Яндекс Ключ, 1Password, Bitwarden.')}</Muted>
-      {!data ? <Muted>{t('Загружаем…')}</Muted> : data.enabled ? (
+      {!data ? <SkeletonRows compact rows={2} /> : data.enabled ? (
         <Row $between $wrap>
           <Pill $status="active">{t('включён')}</Pill>
           <Button type="button" $small $variant="secondary" onClick={() => setDisabling(true)}>{t('выключить')}</Button>
@@ -260,7 +261,7 @@ function SessionsTile() {
     <Tile>
       <TileTitle>{t('активные сессии')}</TileTitle>
       <Muted>{t('Где выполнен вход в вашу учётную запись. Незнакомое устройство — завершите сессию и смените пароль.')}</Muted>
-      {!data ? <Muted>{t('Загружаем…')}</Muted> : (
+      {!data ? <SkeletonRows compact rows={2} /> : (
         <List>
           {data.map((s) => (
             <Item key={s.id}>
@@ -318,7 +319,7 @@ function TokensTile() {
         <div className="token-content">
       <TileTitle>{t('токены API')}</TileTitle>
       <Muted>{t('Для скриптов и интеграций вместо пароля: заголовок Authorization: Bearer ik_… Токен действует с вашими правами; пароль, вход и токены по нему не изменить.')}</Muted>
-      {!data ? <Muted>{t('Загружаем…')}</Muted> : tokens.length === 0 ? <Muted>{t('Токенов пока нет.')}</Muted> : (
+      {!data ? <SkeletonRows compact rows={2} /> : tokens.length === 0 ? <Muted>{t('Токенов пока нет.')}</Muted> : (
         <List>
           {tokens.map((k) => (
             <Item key={k.id}>

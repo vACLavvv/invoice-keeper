@@ -1,3 +1,4 @@
+import { SkeletonRows } from '@/components/Skeleton';
 import { DeletePaymentModal } from '@/components/DeletePaymentModal';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
@@ -190,7 +191,7 @@ export function Ledger({ mode }: { mode: Mode }) {
             {filterCount > 0 && <button type="button" className="text-button filter-reset" onClick={() => { setKind(''); setCurrency(''); setCategory(''); setAssignee(''); setHistoryFilter('all'); }}>{t('Сбросить фильтры')}</button>}
         </div>
         <div id="occurrence-table" className="table-wrap" aria-live="polite">
-          {!data ? <div className="empty-state">{t('Загружаем платежи…')}</div> : items.length === 0 ? (
+          {!data ? <SkeletonRows label={t('Загружаем платежи…')} /> : items.length === 0 ? (
             <div className="empty-state">
               <b>{anyFilter ? t('Подходящих платежей нет') : history ? t('История пока пуста') : t('Открытых задач нет')}</b>
               {anyFilter ? t('Измените поиск, тип, валюту или период.') : history ? t('Здесь появятся оплаченные и архивные задачи.') : t('Все текущие задачи закрыты. Новые платежи появятся здесь.')}

@@ -77,7 +77,7 @@ func TestMessengerLargeListKeepsExactTotalsAndBoundedPages(t *testing.T) {
 		if onlyOverdue {
 			items, sums = overdue, overdueTotals
 		}
-		pages := (len(items) + 4) / 5
+		pages := len(items)
 		var got []bot.PaymentItem
 		for p := 0; p < pages; p++ {
 			page, err := backend.PaymentPage(onlyOverdue, p)
@@ -88,7 +88,7 @@ func TestMessengerLargeListKeepsExactTotalsAndBoundedPages(t *testing.T) {
 			expect(t, "total amounts", page.Totals, totalText(sums))
 			expect(t, "page", page.Page, p)
 			expect(t, "pages", page.Pages, pages)
-			if len(page.Items) > 5 {
+			if len(page.Items) != 1 {
 				t.Fatal("unbounded bot page")
 			}
 			got = append(got, page.Items...)
@@ -101,7 +101,7 @@ func TestMessengerLargeListKeepsExactTotalsAndBoundedPages(t *testing.T) {
 			t.Fatal(err)
 		}
 		expect(t, "page beyond end clamps", last.Page, pages-1)
-		if !reflect.DeepEqual(last.Items, items[(pages-1)*5:]) {
+		if !reflect.DeepEqual(last.Items, items[pages-1:]) {
 			t.Fatal("last page differs")
 		}
 		first, err := backend.PaymentPage(onlyOverdue, -1)

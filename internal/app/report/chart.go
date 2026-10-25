@@ -23,9 +23,10 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/image/vector"
 )
 
-const Width, Height = 1200, 1120
+const Width, Height = 1080, 1560
 
 type Category struct {
 	Name          string
@@ -151,13 +152,15 @@ func Render(data Data) ([]byte, error) {
 		}
 		return faces[key]
 	}
-	bg := color.RGBA{245, 246, 248, 255}
-	ink := color.RGBA{32, 35, 40, 255}
-	muted := color.RGBA{76, 85, 98, 255}
-	teal := color.RGBA{18, 122, 126, 255}
-	track := color.RGBA{220, 229, 232, 255}
+	// Portrait layout keeps the figures readable in Telegram's phone preview.
+	// One currency per image; the accent always means an explicitly paid amount.
+	ink := color.RGBA{32, 34, 38, 255}
+	muted := color.RGBA{76, 83, 91, 255}
+	teal := color.RGBA{18, 122, 116, 255}
+	track := color.RGBA{222, 234, 232, 255}
+	line := color.RGBA{222, 225, 229, 255}
 	img := image.NewRGBA(image.Rect(0, 0, Width, Height))
-	draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
 	rect := func(x, y, w, h int, c color.Color) {
 		draw.Draw(img, image.Rect(x, y, x+w, y+h), &image.Uniform{c}, image.Point{}, draw.Src)
 	}
@@ -183,79 +186,129 @@ func Render(data Data) ([]byte, error) {
 	right := func(x, y int, value string, size int, heavy bool, c color.Color) {
 		text(x-font.MeasureString(face(size, heavy), value).Ceil(), y, value, size, heavy, c, 0)
 	}
+	center := func(x, y int, value string, size int, heavy bool, c color.Color) {
+		text(x-font.MeasureString(face(size, heavy), value).Ceil()/2, y, value, size, heavy, c, 0)
+	}
 
-	text(48, 56, "invoicekeeper", 25, true, ink, 0)
-	right(1152, 56, "ОТЧЁТ ПО ПЛАТЕЖАМ", 18, false, muted)
-	text(48, 131, MonthLabel(data.Month), 48, true, ink, 900)
-	rect(1030, 94, 122, 48, ink)
-	text(1063, 127, data.Currency, 25, true, color.White, 0)
+	text(56, 61, "invoicekeeper", 28, true, ink, 0)
+	right(1024, 61, "Отчёт за месяц", 28, false, muted)
+	text(56, 141, MonthLabel(data.Month), 54, true, ink, 790)
+	roundedRect(img, 884, 94, 140, 60, 16, ink)
+	center(954, 135, data.Currency, 32, true, color.White)
+	rect(56, 181, 968, 2, line)
+
+	text(56, 248, "План на месяц", 34, false, muted, 600)
+	amount := Money(data.Planned)
+	text(52, 333, amount, fit(amount, 74, 26, 610), true, ink, 610)
+	text(56, 382, "По срокам платежей", 29, false, muted, 610)
+	fraction := float64(0)
+	if data.Planned > 0 {
+		fraction = float64(data.Paid) / float64(data.Planned)
+	}
+	ring(img, 868, 316, 116, 94, 1, track)
+	ring(img, 868, 316, 116, 94, fraction, teal)
+	progress := "—"
+	if data.Planned > 0 {
+		percent := math.Round(fraction*1000) / 10
+		if data.Paid < data.Planned && percent >= 100 {
+			percent = 99.9
+		}
+		progress = strings.ReplaceAll(strconv.FormatFloat(percent, 'f', -1, 64), ".", ",") + "%"
+	}
+	center(868, 320, progress, fit(progress, 56, 40, 194), true, teal)
+	center(868, 361, "оплачено", 27, false, muted)
 
 	remaining := data.Planned - data.Paid
-	labels := []string{"План на месяц", "Отмечено как оплаченное", "Осталось оплатить"}
-	values := []int64{data.Planned, data.Paid, remaining}
-	for i := range values {
-		x := 48 + i*376
-		rect(x, 178, 352, 154, color.White)
-		labelSize := 23
-		if i == 1 {
-			labelSize = 21
-		}
-		text(x+24, 220, labels[i], labelSize, false, muted, 304)
-		amount := Money(values[i])
-		size := fit(amount, 40, 18, 304)
-		c := ink
-		if i == 1 {
-			c = teal
-		}
-		text(x+24, 285, amount, size, true, c, 304)
-	}
-	percent := 0
-	if data.Planned > 0 {
-		percent = int(math.Round(100 * float64(data.Paid) / float64(data.Planned)))
-	}
-	text(48, 385, "Выполнено по отметкам команды", 24, false, muted, 0)
-	right(1152, 385, fmt.Sprintf("%d%%", percent), 28, true, teal)
-	rect(48, 405, 1104, 16, track)
-	if data.Planned > 0 {
-		rect(48, 405, int(math.Round(1104*float64(data.Paid)/float64(data.Planned))), 16, teal)
-	}
+	text(56, 477, "Оплачено", 32, false, muted, 430)
+	text(56, 539, Money(data.Paid), fit(Money(data.Paid), 52, 24, 438), true, teal, 438)
+	rect(526, 451, 2, 98, line)
+	text(570, 477, "Осталось оплатить", 32, false, muted, 454)
+	text(570, 539, Money(remaining), fit(Money(remaining), 52, 24, 454), true, ink, 454)
+	rect(56, 585, 968, 2, line)
 
-	text(48, 488, "План по категориям", 30, true, ink, 0)
-	rect(755, 468, 14, 14, teal)
-	text(778, 483, "Оплачено", 20, false, muted, 0)
-	rect(917, 468, 14, 14, track)
-	text(940, 483, "Осталось оплатить", 20, false, muted, 212)
+	text(56, 651, "Расходы по категориям", 40, true, ink, 968)
+	roundedRect(img, 56, 682, 22, 22, 6, teal)
+	text(91, 704, "Оплачено", 28, false, muted, 350)
+	roundedRect(img, 367, 682, 22, 22, 6, track)
+	text(402, 704, "Осталось оплатить", 28, false, muted, 622)
 	items := TopCategories(data.Categories)
 	maxAmount := int64(0)
 	for _, item := range items {
 		maxAmount = max(maxAmount, item.Planned)
 	}
 	if len(items) == 0 || data.Planned == 0 {
-		rect(48, 522, 1104, 436, color.White)
-		text(91, 694, "В этом месяце платежей нет", 36, true, ink, 1000)
-		text(91, 742, "Выберите другой месяц или валюту кнопками под отчётом.", 24, false, muted, 1000)
+		text(56, 898, "В этом месяце платежей нет", 42, true, ink, 968)
+		text(56, 961, "Выберите другой месяц или валюту", 33, false, muted, 968)
+		text(56, 1008, "кнопками под отчётом.", 33, false, muted, 968)
 	} else {
 		for i, item := range items {
-			y := 548 + i*76
+			y := 776 + i*104
 			amount := Money(item.Planned)
-			amountSize := fit(amount, 24, 18, 430)
+			amountSize := fit(amount, 36, 24, 420)
 			amountWidth := font.MeasureString(face(amountSize, true), amount).Ceil()
-			text(48, y, item.Name, 25, false, ink, min(740, 1080-amountWidth-30))
-			right(1152, y, amount, amountSize, true, ink)
-			bar := int(math.Round(1104 * float64(item.Planned) / float64(maxAmount)))
-			paid := int(math.Round(1104 * float64(min(item.Paid, item.Planned)) / float64(maxAmount)))
-			rect(48, y+15, bar, 14, track)
-			rect(48, y+15, paid, 14, teal)
+			text(56, y, item.Name, 36, false, ink, min(590, 880-amountWidth-40))
+			right(1024, y, amount, amountSize, true, ink)
+			barWidth := int(math.Round(968 * float64(item.Planned) / float64(maxAmount)))
+			paidWidth := int(math.Round(968 * float64(item.Paid) / float64(maxAmount)))
+			roundedRect(img, 56, y+22, barWidth, 24, 12, track)
+			roundedRect(img, 56, y+22, paidWidth, 24, 12, teal)
 		}
 	}
-	rect(48, 1000, 1104, 1, track)
-	text(48, 1041, "По срокам платежей. Отметки команды, без проверки банковского счёта.", 21, false, muted, 1104)
+	rect(56, 1390, 968, 2, line)
+	text(56, 1443, "План платежей, не баланс банковского счёта.", 28, false, muted, 968)
 	stamp := data.GeneratedAt.Format("02.01.2006 · 15:04")
-	text(48, 1080, "Сформировано "+stamp+" · "+data.Timezone, 20, false, muted, 1104)
+	text(56, 1490, stamp+" · "+data.Timezone, 27, false, muted, 968)
 	var out bytes.Buffer
 	encoder := png.Encoder{CompressionLevel: png.BestSpeed}
 	if err := encoder.Encode(&out, img); err != nil {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// Rasterized paths provide smooth edges without a heavyweight rendering runtime.
+func roundedRect(img *image.RGBA, x, y, w, h, radius int, c color.Color) {
+	if w <= 0 || h <= 0 {
+		return
+	}
+	r := float32(min(radius, w/2, h/2))
+	left, top, right, bottom := float32(0), float32(0), float32(w), float32(h)
+	path := vector.NewRasterizer(w, h)
+	path.MoveTo(left+r, top)
+	path.LineTo(right-r, top)
+	path.QuadTo(right, top, right, top+r)
+	path.LineTo(right, bottom-r)
+	path.QuadTo(right, bottom, right-r, bottom)
+	path.LineTo(left+r, bottom)
+	path.QuadTo(left, bottom, left, bottom-r)
+	path.LineTo(left, top+r)
+	path.QuadTo(left, top, left+r, top)
+	path.ClosePath()
+	path.Draw(img, image.Rect(x, y, x+w, y+h), &image.Uniform{c}, image.Point{})
+}
+
+func ring(img *image.RGBA, cx, cy, outer, inner int, fraction float64, c color.Color) {
+	if fraction <= 0 {
+		return
+	}
+	fraction = min(1, fraction)
+	steps := max(1, int(math.Ceil(360*fraction)))
+	bounds := image.Rect(cx-outer, cy-outer, cx+outer+1, cy+outer+1)
+	path := vector.NewRasterizer(bounds.Dx(), bounds.Dy())
+	point := func(i, r int) (float32, float32) {
+		angle := -math.Pi/2 + 2*math.Pi*fraction*float64(i)/float64(steps)
+		return float32(float64(outer) + float64(r)*math.Cos(angle)), float32(float64(outer) + float64(r)*math.Sin(angle))
+	}
+	x, y := point(0, outer)
+	path.MoveTo(x, y)
+	for i := 1; i <= steps; i++ {
+		x, y = point(i, outer)
+		path.LineTo(x, y)
+	}
+	for i := steps; i >= 0; i-- {
+		x, y = point(i, inner)
+		path.LineTo(x, y)
+	}
+	path.ClosePath()
+	path.Draw(img, bounds, &image.Uniform{c}, image.Point{})
 }

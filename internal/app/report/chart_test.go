@@ -23,7 +23,17 @@ func TestRenderBoundedAndEmpty(t *testing.T) {
 	large.Categories = []Category{{strings.Repeat("Очень длинное название ", 12), large.Planned, large.Paid}}
 	empty := example()
 	empty.Currency, empty.Planned, empty.Paid, empty.Categories = "EUR", 0, 0, nil
-	for _, data := range []Data{example(), large, empty} {
+	unpaid := example()
+	unpaid.Paid = 0
+	for i := range unpaid.Categories {
+		unpaid.Categories[i].Paid = 0
+	}
+	paid := example()
+	paid.Paid = paid.Planned
+	for i := range paid.Categories {
+		paid.Categories[i].Paid = paid.Categories[i].Planned
+	}
+	for _, data := range []Data{example(), large, empty, unpaid, paid} {
 		raw, err := Render(data)
 		if err != nil {
 			t.Fatal(err)
@@ -99,5 +109,15 @@ func TestRenderRejectsInvalidData(t *testing.T) {
 				t.Fatal("accepted invalid report")
 			}
 		})
+	}
+}
+
+func BenchmarkRenderMonthlyReport(b *testing.B) {
+	data := example()
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := Render(data); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

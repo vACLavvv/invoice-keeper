@@ -22,12 +22,12 @@ export function useBrowserNoticeDelivery(user: User, feed: NotificationFeed | nu
     browserNoticeState(account, user.username);
     controller.current = startBrowserNotices(account, {
       load: () => api<NotificationFeed>('/notifications?limit=50'),
-      show: (items) => {
-        if (items.length > 3) return showBrowserNotice(account, t('Новые события по платежам'), t('Откройте уведомления, чтобы посмотреть новые напоминания и оплаты.'), 'summary');
+      show: (items, isCurrent) => {
+        if (items.length > 3) return showBrowserNotice(account, t('Новые события по платежам'), t('Откройте уведомления, чтобы посмотреть новые напоминания и оплаты.'), 'summary', isCurrent);
         const item = items[0];
         const status = item.kind === 'paid' ? t('Оплачено {date}', { date: longDate(item.paid_at) })
           : item.kind === 'overdue' ? t('Просрочено — срок прошёл') : t('Ожидает оплаты');
-        return showBrowserNotice(account, item.title, `${money(item.amount)} ${symbols[item.currency]} · ${t('срок {date}', { date: longDate(item.due_date) })}\n${status}`, item.id);
+        return showBrowserNotice(account, item.title, `${money(item.amount)} ${symbols[item.currency]} · ${t('срок {date}', { date: longDate(item.due_date) })}\n${status}`, item.id, isCurrent);
       },
     });
     return () => { controller.current?.stop(); controller.current = null; };

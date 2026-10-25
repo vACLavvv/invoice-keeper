@@ -64,7 +64,7 @@ const sanctionsJoin = ` LEFT JOIN sanctioned_addresses x ON x.address_key=r.wall
 func (row ReminderRow) overdue() bool { return row.Kind == "overdue" }
 
 type SendResult struct {
-	State      string // sent | pending (safe to retry) | uncertain (never retried)
+	State      string // sent | pending (safe to retry) | failed (certain rejection) | uncertain (never retried)
 	Error      string
 	MessageID  string
 	RetryDelay int
@@ -125,7 +125,7 @@ func TelegramSender(s *config.Settings, baseURL string) Sender {
 		}
 		defer response.Body.Close()
 		var result struct {
-			OK     bool `json:"ok"`
+			OK     *bool `json:"ok"`
 			Result struct {
 				MessageID int64 `json:"message_id"`
 			} `json:"result"`
@@ -136,17 +136,26 @@ func TelegramSender(s *config.Settings, baseURL string) Sender {
 		if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 			return SendResult{State: "uncertain", Error: "Неоднозначный ответ Telegram"}
 		}
-		if response.StatusCode == 200 && result.OK && result.Result.MessageID != 0 {
+		if result.OK == nil {
+			return SendResult{State: "uncertain", Error: "Неоднозначный ответ Telegram"}
+		}
+		if response.StatusCode == 200 && *result.OK && result.Result.MessageID != 0 {
 			return SendResult{State: "sent", MessageID: itoa(result.Result.MessageID)}
 		}
-		if response.StatusCode == 429 && !result.OK {
+		if response.StatusCode == 429 && !*result.OK {
 			delay := result.Parameters.RetryAfter
 			if delay == 0 {
 				delay = 60
 			}
 			return SendResult{State: "pending", Error: "Telegram ограничил частоту запросов", RetryDelay: max(1, delay)}
 		}
-		return SendResult{State: "uncertain", Error: fmt.Sprintf("Telegram отклонил запрос (HTTP %d); проверьте настройки", response.StatusCode)}
+		if !*result.OK && response.StatusCode >= 500 {
+			return SendResult{State: "pending", Error: "Telegram временно отклонил отправку", RetryDelay: max(60, result.Parameters.RetryAfter)}
+		}
+		if !*result.OK && response.StatusCode >= 400 && response.StatusCode < 500 {
+			return SendResult{State: "failed", Error: fmt.Sprintf("Telegram отклонил запрос (HTTP %d); проверьте настройки", response.StatusCode)}
+		}
+		return SendResult{State: "uncertain", Error: "Неоднозначный ответ Telegram; автоматический повтор остановлен"}
 	}
 }
 
@@ -175,12 +184,15 @@ type ReminderWorker struct {
 	rerun       bool
 	kicks       sync.WaitGroup
 	stopping    atomic.Bool // set on shutdown: no new passes, the current one ends between messages
+	startedAt   atomic.Int64
 	lastSuccess atomic.Int64
 	errors      atomic.Uint64
 	drainWake   chan struct{} // coalesced continuation for Run; Tick stays a bounded pass
 }
 
 // Health reports successful scheduler progress, independently of transport outcomes in the outbox.
+func (w *ReminderWorker) StartedAt() int64 { return w.startedAt.Load() }
+
 func (w *ReminderWorker) Health() (lastSuccess int64, errors uint64) {
 	return w.lastSuccess.Load(), w.errors.Load()
 }
@@ -401,6 +413,14 @@ func (w *ReminderWorker) sendTeam() (bool, error) {
 		}
 		result := w.send(row)
 		err = w.DB.Write(func(tx *sql.Tx) error {
+			var attempts int
+			if err := tx.QueryRow("SELECT attempts FROM reminders WHERE occurrence_id=? AND state='sending' AND claim_token=?", row.OccurrenceID, claim).Scan(&attempts); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return nil
+				}
+				return err
+			}
+			delay := 0
 			var sentAt any
 			if result.State == "sent" {
 				sentAt = schedule.Timestamp()
@@ -408,7 +428,8 @@ func (w *ReminderWorker) sendTeam() (bool, error) {
 			// If the period changed while a certainly-undelivered request was in
 			// flight, do not schedule a stale retry. Sent/uncertain stay final.
 			if result.State == "pending" {
-				if err := w.deferTransport(tx, w.transportRoute("telegram"), max(60, result.RetryDelay)); err != nil {
+				delay = RetryDelay(attempts, result.RetryDelay)
+				if err := w.deferTransport(tx, w.transportRoute("telegram"), delay); err != nil {
 					return err
 				}
 				payable, err := stillPayable(tx, row.OccurrenceID)
@@ -417,10 +438,12 @@ func (w *ReminderWorker) sendTeam() (bool, error) {
 				}
 				if !payable {
 					result.State = "cancelled"
+				} else if attempts >= MaxDeliveryAttempts {
+					result.State = "failed"
 				}
 			}
 			_, err := tx.Exec("UPDATE reminders SET state=?,error=?,message_id=?,sent_at=?,retry_after=? WHERE occurrence_id=? AND state='sending' AND claim_token=?",
-				result.State, nullable(result.Error), nullable(result.MessageID), sentAt, time.Now().Unix()+int64(max(60, result.RetryDelay)), row.OccurrenceID, claim)
+				result.State, nullable(result.Error), nullable(result.MessageID), sentAt, nextRetryAt(result.State, delay), row.OccurrenceID, claim)
 			return err
 		})
 		if err != nil {
@@ -441,7 +464,7 @@ func (w *ReminderWorker) send(row ReminderRow) (result SendResult) {
 	}()
 	result = w.Sender(row)
 	switch result.State {
-	case "sent", "pending", "uncertain":
+	case "sent", "pending", "uncertain", "failed":
 		return result
 	}
 	return SendResult{State: "uncertain", Error: "Ошибка отправки; автоматический повтор остановлен"}
@@ -458,6 +481,7 @@ func nullable(s string) any {
 // in between, with a short pacing delay and without rescanning the whole plan.
 // Shutdown stops between messages; Run waits for the current send and Kick passes.
 func (w *ReminderWorker) Run(ctx context.Context) {
+	w.startedAt.CompareAndSwap(0, time.Now().Unix())
 	stopped := context.AfterFunc(ctx, func() { w.stopping.Store(true) })
 	defer stopped()
 	ticker := time.NewTicker(time.Duration(w.Settings.ReminderInterval) * time.Second)
@@ -490,7 +514,7 @@ func (w *ReminderWorker) Run(ctx context.Context) {
 func (w *ReminderWorker) stopped() bool { return w.stopping.Load() }
 
 // Used in short preflight/finalization transactions; committed cancellation before dispatch stops a stale claim.
-func stillPayable(tx *sql.Tx, id int64) (bool, error) {
+func stillPayable(tx store.Querier, id int64) (bool, error) {
 	var eligible bool
 	err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
  WHERE o.id=? AND o.paid_at IS NULL AND o.removed_at IS NULL AND r.active=1 AND r.removed_at IS NULL)`, id).Scan(&eligible)

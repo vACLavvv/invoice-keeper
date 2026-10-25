@@ -31,7 +31,7 @@ func transportRetryAt(tx *sql.Tx, route string) (int64, error) {
 // Otherwise a large queue would bypass retry_after by immediately choosing its
 // next payment. Persisted cooldown also covers another worker or a restart.
 func (w *ReminderWorker) deferTransport(tx *sql.Tx, route string, delay int) error {
-	retry := time.Now().Unix() + int64(max(1, delay))
+	retry := retryDeadline(delay)
 	if _, err := tx.Exec(`INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE
 		SET value=excluded.value WHERE CAST(app_state.value AS INTEGER)<CAST(excluded.value AS INTEGER)`, backoffPrefix+route, strconv.FormatInt(retry, 10)); err != nil {
 		return err

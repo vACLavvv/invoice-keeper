@@ -1,3 +1,4 @@
+import { SkeletonRows, SkeletonBar } from '@/components/Skeleton';
 import Link from 'next/link';
 import { useState } from 'react';
 import styled from 'styled-components';
@@ -36,7 +37,7 @@ export default function Overview() {
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
       <div className="overview-counts" aria-label={t('Задачи команды')}>
         {counts.map((item) => <Link href={'/payments' + (item.view ? '?view=' + item.view : '')} key={item.label}>
-          <span>{item.label}</span><strong>{data ? item.count : '—'}</strong>
+          <span>{item.label}</span><strong>{data ? item.count : <SkeletonBar $width="58px" $height="36px" aria-hidden="true" />}</strong>
         </Link>)}
       </div>
       <div className="overview-desk">
@@ -53,7 +54,7 @@ export default function Overview() {
             ))}
           </div>
           <div className="deadline-rows" aria-live="polite" aria-busy={!data}>
-            {!data ? <div className="desk-empty">{t('Загружаем платежи…')}</div> : selected.length ? selected.slice(0, 5).map((o) => (
+            {!data ? <SkeletonRows rows={5} label={t('Загружаем платежи…')} /> : selected.length ? selected.slice(0, 5).map((o) => (
               <button type="button" className="deadline-row" key={o.id} onClick={() => setPaying(o)}>
                 <time className="deadline-date" dateTime={o.due_date}><b>{o.due_date.slice(-2)}</b><span>{date(o.due_date, { month: 'short' }).replace('.', '')}</span></time>
                 <span className="deadline-copy"><b>{o.title}</b><small>{kindLabel(o.frequency)}{o.assignee ? ' · ' + o.assignee.display_name : ''}</small></span>
@@ -73,7 +74,7 @@ export default function Overview() {
             const totals = summary.data?.currencies[c];
             const total = Number(totals?.total ?? 0), paid = Number(totals?.paid ?? 0);
             return <Link href={'/payments?currency=' + c} className="currency-ledger-row" key={c}>
-              <div className="currency-ledger-heading"><span>{c}</span><strong>{totals ? money(totals.unpaid) : '—'} <small>{symbols[c]}</small></strong></div>
+              <div className="currency-ledger-heading"><span>{c}</span><strong>{totals ? money(totals.unpaid) : <SkeletonBar $width="100px" $height="28px" aria-hidden="true" />} <small>{symbols[c]}</small></strong></div>
               <progress value={paid} max={total || 1} aria-label={t('План оплат в {currency}', { currency: c })} />
               <div className="currency-ledger-caption"><span>{t('Оплачено')} {totals ? money(totals.paid) : '—'} {symbols[c]}</span><span>{t('из')} {totals ? money(totals.total) : '—'} {symbols[c]}</span></div>
             </Link>;
@@ -87,11 +88,11 @@ export default function Overview() {
       <div className="overview-secondary">
         <section className="desk-panel">
           <div className="desk-panel-heading"><div><h2>{t('Дальше по плану')}</h2><p>{t('После {date}', { date: date(edge) })}</p></div><Link className="desk-link" href="/calendar">{t('Календарь')} <span aria-hidden="true">↗</span></Link></div>
-          <WorkRows items={later.slice(0, 3)} empty={t('Других запланированных платежей пока нет.')} onOpen={setPaying} />
+          {!data ? <SkeletonRows rows={3} /> : <WorkRows items={later.slice(0, 3)} empty={t('Других запланированных платежей пока нет.')} onOpen={setPaying} />}
         </section>
         <section className="desk-panel">
           <div className="desk-panel-heading"><div><h2>{t('Недавно оплачено')}</h2><p>{t('Закрыто {paid} из {total} за месяц', { paid: data?.counts.month_paid ?? 0, total: data?.counts.month_total ?? 0 })}</p></div><Link className="desk-link" href="/history">{t('История')} <span aria-hidden="true">↗</span></Link></div>
-          <WorkRows items={recent} empty={t('Здесь появятся оплаченные задачи и прикреплённые чеки.')} onOpen={setPaying} />
+          {!data ? <SkeletonRows rows={3} /> : <WorkRows items={recent} empty={t('Здесь появятся оплаченные задачи и прикреплённые чеки.')} onOpen={setPaying} />}
         </section>
       </div>
       {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}

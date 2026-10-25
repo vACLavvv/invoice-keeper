@@ -618,6 +618,14 @@
                   "$ref": "#/components/schemas/RecurringPayment"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -631,8 +639,50 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
+          }
+        ]
       }
     },
     "/api/v1/recurring-payments/{payment_id}": {
@@ -662,6 +712,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -683,6 +743,14 @@
                   "$ref": "#/components/schemas/RecurringPayment"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -699,6 +767,36 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -741,11 +839,29 @@
               ],
               "default": "archive"
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Платёж архивирован или удалён"
+            "description": "Платёж архивирован или удалён",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -761,6 +877,36 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -792,6 +938,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -813,6 +969,14 @@
                   "$ref": "#/components/schemas/RecurringPayment"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -832,6 +996,26 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -863,6 +1047,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
@@ -872,6 +1066,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RecurringPayment"
+                }
+              }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -893,6 +1095,26 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1768,6 +1990,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -1789,6 +2021,14 @@
                   "$ref": "#/components/schemas/Occurrence"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -1805,6 +2045,36 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3349,6 +3619,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -3370,6 +3650,14 @@
                   "$ref": "#/components/schemas/Occurrence"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -3389,6 +3677,26 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3663,11 +3971,29 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Выполнено (повторный вызов также 204)"
+            "description": "Выполнено (повторный вызов также 204)",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3686,6 +4012,26 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3726,11 +4072,29 @@
               "type": "string"
             },
             "description": "Срок периода в формате YYYY-MM-DD, 2000–2100."
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Выполнено (повторный вызов также 204)"
+            "description": "Выполнено (повторный вызов также 204)",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3749,6 +4113,26 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3789,11 +4173,29 @@
               "type": "string"
             },
             "description": "Срок периода в формате YYYY-MM-DD, 2000–2100."
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Выполнено (повторный вызов также 204)"
+            "description": "Выполнено (повторный вызов также 204)",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3812,6 +4214,26 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -4648,6 +5070,184 @@
           }
         }
       }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "tags": [
+          "Monitoring"
+        ],
+        "summary": "Метрики Prometheus",
+        "description": "Технические и агрегированные бизнес-метрики, только с отдельным METRICS_TOKEN. /metrics остаётся совместимым алиасом.",
+        "security": [
+          {
+            "MetricsToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нужен отдельный ключ метрик"
+          },
+          "404": {
+            "description": "Метрики отключены"
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures": {
+      "get": {
+        "operationId": "listDeliveryFailures",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Ошибки доставки (только администратор)",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "failed",
+                "uncertain"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница ошибок",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryFailurePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только администратор"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures/retry": {
+      "post": {
+        "operationId": "retryDeliveryFailure",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Повторить подтверждённо неотправленное уведомление",
+        "description": "Только failed и актуальный failure_token. Неопределённые результаты не повторяются: сообщение могло дойти. Проверяются текущая привязка и статус платежа. Повтор фиксируется в журнале.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "queue",
+                  "occurrence_id",
+                  "failure_token"
+                ],
+                "properties": {
+                  "queue": {
+                    "type": "string",
+                    "enum": [
+                      "reminders",
+                      "deliveries"
+                    ]
+                  },
+                  "occurrence_id": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "type": "string"
+                  },
+                  "failure_token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Возвращено в очередь"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только администратор / CSRF"
+          },
+          "404": {
+            "description": "Не найдено"
+          },
+          "409": {
+            "description": "Повтор запрещён или запись уже изменилась"
+          },
+          "422": {
+            "description": "Неверный запрос"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4669,6 +5269,11 @@
         "scheme": "bearer",
         "bearerFormat": "ik_…",
         "description": "Ключ API из панели («Аккаунт» → «Токены API» или «Расширение»): Authorization: Bearer ik_…"
+      },
+      "MetricsToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Отдельный METRICS_TOKEN; не даёт доступ к бизнес-API."
       }
     },
     "responses": {
@@ -5966,7 +6571,8 @@
               "sending",
               "sent",
               "uncertain",
-              "cancelled"
+              "cancelled",
+              "failed"
             ],
             "description": "`uncertain` — результат неизвестен, автоматического повтора нет (без дублей)"
           },
@@ -7323,6 +7929,124 @@
           "pages"
         ],
         "additionalProperties": false
+      },
+      "DeliveryFailure": {
+        "type": "object",
+        "required": [
+          "queue",
+          "occurrence_id",
+          "kind",
+          "channel",
+          "title",
+          "due_date",
+          "state",
+          "error",
+          "attempts",
+          "attempted_at",
+          "retry_after",
+          "can_retry",
+          "failure_token"
+        ],
+        "properties": {
+          "queue": {
+            "type": "string",
+            "enum": [
+              "reminders",
+              "deliveries",
+              "email_verification"
+            ]
+          },
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "contact_id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "uncertain"
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "attempted_at": {
+            "type": "integer",
+            "nullable": true
+          },
+          "retry_after": {
+            "type": "integer"
+          },
+          "can_retry": {
+            "type": "boolean"
+          },
+          "failure_token": {
+            "type": "string"
+          }
+        }
+      },
+      "DeliveryFailurePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages",
+          "counts"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryFailure"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "failed",
+              "uncertain"
+            ],
+            "properties": {
+              "failed": {
+                "type": "integer"
+              },
+              "uncertain": {
+                "type": "integer"
+              }
+            }
+          }
+        }
       }
     }
   }

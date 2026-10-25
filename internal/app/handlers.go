@@ -165,7 +165,7 @@ func (s *Server) occurrenceUpdate(w http.ResponseWriter, r *http.Request) error 
 		return fail(422, "Фактическая дата оплаты не может быть в будущем")
 	}
 	var updated Occurrence
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 200, &updated, func(tx *sql.Tx) error {
 		current, err := s.findOccurrence(tx, id)
 		if err != nil {
 			return err

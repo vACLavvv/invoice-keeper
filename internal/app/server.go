@@ -169,6 +169,11 @@ func (s *Server) routes() http.Handler {
 	swagger, _ := fs.Sub(s.assets, "web/swagger")
 	mux.Handle("GET /_next/", nextAssets(app))
 	mux.Handle("GET /favicon.svg", files(app))
+	mux.Handle("GET /manifest.webmanifest", files(app))
+	mux.Handle("GET /notification-worker.js", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		files(app).ServeHTTP(w, r)
+	}))
 	mux.Handle("GET /swagger-assets/", http.StripPrefix("/swagger-assets", files(swagger)))
 
 	handle("/", s.notFound)

@@ -1,3 +1,5 @@
+import { DeliveryFailures } from '@/components/DeliveryFailures';
+import { SkeletonRows, SkeletonBar } from '@/components/Skeleton';
 import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { ws } from '@/components/icons';
@@ -13,7 +15,7 @@ import { useBrowserNoticeState } from '@/lib/use-browser-notices';
 
 /** «Ничего не упустить»: personal feed with read marks and optional browser notifications. */
 export default function Notifications() {
-  const { user, refresh } = useSession();
+  const { user, refresh, isAdmin } = useSession();
   const toast = useToast();
   const [page, setPage] = useState(1);
   const { data: loaded, error } = useLoad(async () => ({ page, feed: await api<NotificationFeed>(`/notifications?limit=50&page=${page}`) }), [page]);
@@ -23,6 +25,7 @@ export default function Notifications() {
   }, [data, page]);
   const [paying, setPaying] = useState<Occurrence | null>(null);
   const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState<'idle' | 'checking' | 'accepted' | 'seen' | 'missing' | 'failed'>('idle');
   const browser = useBrowserNoticeState(user);
 
   async function mark(body: object, done?: string) {
@@ -42,9 +45,11 @@ export default function Notifications() {
     finally { setBusy(false); }
   }
 
-  function testBrowser() {
-    const shown = showBrowserNotice(browser.account, t('Напоминания включены'), t('Новые события появятся здесь, пока панель открыта.'), 'test');
-    if (shown) toast(t('Тест отправлен. Если его не видно, проверьте уведомления браузера и режим «Не беспокоить» в системе.'));
+  async function testBrowser() {
+    if (busy) return;
+    setBusy(true); setTest('checking');
+    const accepted = await showBrowserNotice(browser.account, t('Проверка уведомлений Invoice Keeper'), t('Если вы видите это системное уведомление, напоминания настроены.'), `test:${Date.now()}`);
+    setTest(accepted ? 'accepted' : 'failed'); setBusy(false);
   }
 
   async function open(n: Notification) {
@@ -67,17 +72,30 @@ export default function Notifications() {
           {browser.permission === 'denied' && <p>{t('Разрешите уведомления в настройках этого сайта в браузере, затем вернитесь сюда.')}</p>}
         </div>
         <BrowserActions>
-          {browser.enabled && browser.permission === 'granted' && <button type="button" className="button secondary" onClick={testBrowser}>{t('Проверить')}</button>}
+          {browser.enabled && browser.permission === 'granted' && <button type="button" className="button secondary" onClick={() => void testBrowser()} disabled={busy}>{t('Проверить')}</button>}
           <button type="button" className="button secondary" onClick={toggleBrowser} disabled={busy || browser.permission === 'unsupported' || browser.permission === 'denied'}>
             {busy ? t('Подождите…') : browser.permission === 'unsupported' ? t('Недоступно в этом браузере') : browser.permission === 'denied' ? t('Заблокировано в браузере') : browser.enabled && browser.permission === 'granted' ? t('Выключить') : t('Включить')}
           </button>
         </BrowserActions>
       </div>
+      {test !== 'idle' && <TestResult role="status" aria-live="polite">
+        <b>{test === 'checking' ? t('Проверяем системные уведомления…') : test === 'seen' ? t('Системное уведомление появилось') : test === 'failed' ? t('Браузер отклонил запрос уведомления') : t('Браузер принял запрос уведомления')}</b>
+        {test === 'checking' && <SkeletonBar $width="200px" aria-hidden="true" />}
+        {(test === 'accepted' || test === 'missing') && <p>{t('Проверьте центр уведомлений устройства. Сайт не может определить, показала ли система баннер.')}</p>}
+        {test === 'accepted' && <BrowserActions><button type="button" className="button secondary" onClick={() => setTest('seen')}>{t('Уведомление появилось')}</button><button type="button" className="text-button" onClick={() => setTest('missing')}>{t('Не появилось')}</button></BrowserActions>}
+        {(test === 'missing' || test === 'failed') && <ol>
+          <li>{t('Разрешите уведомления для этого сайта в браузере и для самого браузера в настройках устройства.')}</li>
+          <li>{t('Проверьте режим «Не беспокоить» или «Фокусирование» и включите баннеры уведомлений.')}</li>
+          <li>{t('На iPhone и iPad добавьте сайт на экран «Домой» и открывайте его оттуда. Разрешение запрашивается кнопкой «Включить».')}</li>
+        </ol>}
+      </TestResult>}
       {browser.error === 'delivery' && <div className="notice notice-error" role="alert">{t('Браузер не смог показать уведомление. Проверьте разрешения браузера и системы; для уведомлений при закрытой панели используйте Telegram или почту.')}</div>}
       {browser.error === 'storage' && <div className="notice" role="status">{t('Браузер не сохраняет настройку уведомлений. Она действует только в этой вкладке.')}</div>}
+      {browser.permission === 'unsupported' && <div className="notice" role="status">{t('На iPhone и iPad добавьте сайт на экран «Домой» и открывайте его оттуда. Разрешение запрашивается кнопкой «Включить».')}</div>}
+      {isAdmin && <DeliveryFailures />}
       {error && <div className="notice notice-error" role="alert">{error}</div>}
       <div className="notification-list">
-        {!data ? <div className="ledger empty-state">{t('Загружаем…')}</div> : data.items.length === 0 ? (
+        {!data ? <div className="ledger"><SkeletonRows /></div> : data.items.length === 0 ? (
           <div className="ledger empty-state"><b>{t('Важное появится здесь')}</b>{t('Когда до срока останется 3 дня, добавим напоминание.')}</div>
         ) : data.items.map((n) => (
           <article key={n.id} className={`notification-card ${n.read ? 'read' : 'unread'} ${n.kind}`}>
@@ -124,4 +142,11 @@ const Pagination = styled.nav`
   flex-wrap: wrap;
   margin-top: 22px;
   span { text-align: center; }
+`;
+
+const TestResult = styled.div`
+  display: grid; gap: 12px; padding: 20px; margin-top: 14px;
+  border: 1px solid var(--desk-border); border-radius: var(--desk-radius); background: var(--desk-surface);
+  p { margin: 0; line-height: 1.55; max-width: 78ch; }
+  ol { margin: 0; padding-left: 22px; } li { padding: 5px 0; line-height: 1.55; }
 `;

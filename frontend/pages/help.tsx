@@ -86,12 +86,14 @@ export default function Help() {
         <span><b>{t('Документация API')}</b><span>{t('Методы, параметры и примеры запросов для интеграций.')}</span></span>
         <span aria-hidden="true">↗</span>
       </DocsLink>
-      <SectionTitle id="help-faq">{t('частые вопросы')}</SectionTitle>
-      <DisclosureList aria-labelledby="help-faq">
-        {faq.map(([q, a]) => (
-          <details key={q}><summary>{q}</summary><p>{a}</p></details>
-        ))}
-      </DisclosureList>
+      <HelpGroup>
+        <summary id="help-faq"><span>{t('частые вопросы')}</span></summary>
+        <DisclosureList aria-labelledby="help-faq">
+          {faq.map(([q, a]) => (
+            <details key={q}><summary>{q}</summary><p>{a}</p></details>
+          ))}
+        </DisclosureList>
+      </HelpGroup>
       <SectionTitle id="help-security">{t('безопасность')}</SectionTitle>
       <DisclosureList aria-labelledby="help-security">
         {security.map(([title, paragraphs]) => (
@@ -259,4 +261,21 @@ const DocsLink = styled.a`
   > span:first-child > span { font-size: 15px; line-height: 1.5; color: var(--desk-muted); }
   > span:last-child { font-size: 22px; }
   &:hover { border-color: var(--desk-control); background: var(--desk-raised); }
+`;
+
+const HelpGroup = styled.details`
+  margin-top: 28px;
+  > summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    padding: 18px 20px; min-height: 64px; cursor: pointer; list-style: none;
+    border: 1px solid var(--desk-border); border-radius: var(--desk-radius);
+    background: var(--desk-surface); color: var(--desk-ink); font-size: 20px; font-weight: 600;
+    > span::first-letter { text-transform: uppercase; }
+    &::-webkit-details-marker { display: none; }
+    &::after { content: ''; width: 9px; height: 9px; flex-shrink: 0; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); margin-right: 4px; }
+    &:hover { background: var(--desk-raised); }
+  }
+  &[open] > summary { border-radius: var(--desk-radius) var(--desk-radius) 0 0; }
+  &[open] > summary::after { transform: rotate(225deg); }
+  > div { border-top: 0; border-radius: 0 0 var(--desk-radius) var(--desk-radius); }
 `;

@@ -32,7 +32,7 @@ PRAGMA user_version=7;`)
 	}
 	defer db.Close()
 	var version int
-	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 8 {
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != schemaVersion {
 		t.Fatalf("migration version=%d: %v", version, err)
 	}
 	for _, table := range []string{"reminders", "deliveries"} {

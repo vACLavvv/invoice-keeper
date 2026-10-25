@@ -51,7 +51,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, h handlerFunc)
 	if corsRoutes[r.Pattern] {
 		h = cors(h)
 	}
-	onlyQuery(query[r.Pattern], h).ServeHTTP(w, r)
+	onlyQuery(query[r.Pattern], s.withIdempotency(h)).ServeHTTP(w, r)
 }
 
 // parameterError renders a parameter the generated wrapper could not parse (e.g. a non-numeric id)

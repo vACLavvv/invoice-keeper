@@ -250,7 +250,7 @@ func (s *Server) recurringCreate(w http.ResponseWriter, r *http.Request) error {
 		input.frequency = *frequency
 	}
 	var created recurringItem
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 201, &created, func(tx *sql.Tx) error {
 		if err := checkAssignee(tx, assignee); err != nil {
 			return err
 		}
@@ -332,7 +332,7 @@ func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var updated recurringItem
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 200, &updated, func(tx *sql.Tx) error {
 		if _, err := s.findRecurring(tx, id); err != nil {
 			return err
 		}
@@ -426,7 +426,7 @@ func (s *Server) recurringDelete(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 204, nil, func(tx *sql.Tx) error {
 		var active bool
 		err := tx.QueryRow("SELECT active FROM recurring_payments WHERE id=? AND removed_at IS NULL", id).Scan(&active)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -473,7 +473,7 @@ func (s *Server) recurringPause(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var updated recurringItem
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 200, &updated, func(tx *sql.Tx) error {
 		current, err := s.findRecurring(tx, id)
 		if err != nil {
 			return err
@@ -545,7 +545,7 @@ func (s *Server) recurringResume(w http.ResponseWriter, r *http.Request) error {
 	}
 	today := s.Today()
 	var updated recurringItem
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 200, &updated, func(tx *sql.Tx) error {
 		current, err := s.findRecurring(tx, id)
 		if err != nil {
 			return err

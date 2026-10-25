@@ -57,11 +57,11 @@ func (a apiAdapter) ListRecurringPayments(w http.ResponseWriter, r *http.Request
 	a.s.serveAPI(w, r, a.s.recurringList)
 }
 
-func (a apiAdapter) CreateRecurringPayment(w http.ResponseWriter, r *http.Request) {
+func (a apiAdapter) CreateRecurringPayment(w http.ResponseWriter, r *http.Request, _ api.CreateRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringCreate)
 }
 
-func (a apiAdapter) UpdateRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) UpdateRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.UpdateRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringUpdate)
 }
 
@@ -69,11 +69,11 @@ func (a apiAdapter) ArchiveRecurringPayment(w http.ResponseWriter, r *http.Reque
 	a.s.serveAPI(w, r, a.s.recurringDelete)
 }
 
-func (a apiAdapter) PauseRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) PauseRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.PauseRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringPause)
 }
 
-func (a apiAdapter) ResumeRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) ResumeRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.ResumeRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringResume)
 }
 
@@ -117,7 +117,7 @@ func (a apiAdapter) GetOccurrence(w http.ResponseWriter, r *http.Request, _ int)
 	a.s.serveAPI(w, r, a.s.occurrenceGet)
 }
 
-func (a apiAdapter) UpdateOccurrence(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) UpdateOccurrence(w http.ResponseWriter, r *http.Request, _ int, _ api.UpdateOccurrenceParams) {
 	a.s.serveAPI(w, r, a.s.occurrenceUpdate)
 }
 
@@ -231,7 +231,7 @@ func (a apiAdapter) ListForecast(w http.ResponseWriter, r *http.Request, _ api.L
 	a.s.serveAPI(w, r, a.s.forecast)
 }
 
-func (a apiAdapter) CreatePeriod(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) CreatePeriod(w http.ResponseWriter, r *http.Request, _ int, _ api.CreatePeriodParams) {
 	a.s.serveAPI(w, r, a.s.periodCreate)
 }
 
@@ -247,16 +247,16 @@ func (a apiAdapter) MarkNotifications(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.notificationRead)
 }
 
-func (a apiAdapter) RestoreRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) RestoreRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.RestoreRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringRestore)
 }
 func (a apiAdapter) ListDeletedPayments(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.deletedPaymentList)
 }
-func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
+func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string, _ api.DeletePeriodParams) {
 	a.s.serveAPI(w, r, a.s.periodDelete)
 }
-func (a apiAdapter) RestorePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
+func (a apiAdapter) RestorePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string, _ api.RestorePeriodParams) {
 	a.s.serveAPI(w, r, a.s.periodRestore)
 }
 
@@ -297,4 +297,14 @@ func (a apiAdapter) PaymentsCalendar(w http.ResponseWriter, r *http.Request, _ a
 }
 func (a apiAdapter) PaymentsCalendarDay(w http.ResponseWriter, r *http.Request, _ api.PaymentsCalendarDayParams) {
 	a.s.serveAPI(w, r, a.s.paymentCalendarDay)
+}
+
+func (a apiAdapter) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.prometheusMetrics)
+}
+func (a apiAdapter) ListDeliveryFailures(w http.ResponseWriter, r *http.Request, _ api.ListDeliveryFailuresParams) {
+	a.s.serveAPI(w, r, a.s.deliveryFailures)
+}
+func (a apiAdapter) RetryDeliveryFailure(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.retryDeliveryFailure)
 }

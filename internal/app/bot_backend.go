@@ -58,10 +58,10 @@ func (b botBackend) PaymentPage(onlyOverdue bool, page int) (bot.PaymentPage, er
 			return err
 		}
 		result.Total = total
-		result.Pages = max(1, (total+4)/5)
+		result.Pages = max(1, total)
 		result.Page = min(max(page, 0), result.Pages-1)
 		result.Totals = messengerTotalText(totals)
-		result.Items, err = messengerRows(q, where, args, today, 5, result.Page*5)
+		result.Items, err = messengerRows(q, where, args, today, 1, result.Page)
 		return err
 	})
 	return result, err

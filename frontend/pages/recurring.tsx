@@ -1,3 +1,4 @@
+import { SkeletonRows } from '@/components/Skeleton';
 import { DeletePaymentModal } from '@/components/DeletePaymentModal';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
@@ -65,7 +66,7 @@ export default function RecurringPage() {
         {linkedID && <Link className="text-button" href="/recurring">{t('Все платежи')} →</Link>}
       </div>
       <div id="recurring-table" className="ledger table-wrap cards">
-        {!data ? <div className="empty-state">{t('Загружаем…')}</div> : data.items.length === 0 ? (
+        {!data ? <SkeletonRows /> : data.items.length === 0 ? (
           <div className="empty-state"><b>{t('Начните с регулярного платежа')}</b>{t('Добавьте аренду, сервер или подписку.')}</div>
         ) : (
           <table>

@@ -1,3 +1,4 @@
+import { SkeletonRows } from '@/components/Skeleton';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import styled from 'styled-components';
@@ -13,7 +14,7 @@ import { useLoad, useSession } from '@/lib/session';
 // Built on render, so the labels follow the current language.
 const reminderStates = (): Record<Reminder['state'], [string, 'paid' | 'unpaid' | 'overdue' | 'archived']> => ({
   pending: [t('Ожидает'), 'unpaid'], sending: [t('Отправляется'), 'unpaid'], sent: [t('Отправлено'), 'paid'],
-  uncertain: [t('Нужна проверка'), 'overdue'], cancelled: [t('Отменено'), 'archived'],
+  failed: [t('Ошибка отправки'), 'overdue'], uncertain: [t('Нужна проверка'), 'overdue'], cancelled: [t('Отменено'), 'archived'],
 });
 
 const deliveryStates = (): Record<Delivery['state'], [string, 'paid' | 'unpaid' | 'overdue' | 'archived']> => ({
@@ -157,7 +158,7 @@ function AuditLog() {
       <p className="audit-context-note">{t('Названия и состояние платежей показаны на текущий момент.')}</p>
       {error && <div className="notice notice-error" role="alert">{error} · {t('Список не обновлён.')}</div>}
       <div className="ledger table-wrap cards" aria-live="polite">
-        {!data ? <div className="empty-state">{t('Загружаем историю…')}</div> : data.items.length === 0 ? (
+        {!data ? <SkeletonRows label={t('Загружаем историю…')} /> : data.items.length === 0 ? (
           <div className="empty-state"><b>{t('Записей нет')}</b>{t('Измените даты или фильтры.')}</div>
         ) : (
           <table>
@@ -204,7 +205,7 @@ function DeliveryLog() {
       {(reminders.error || deliveries.error) && <div className="notice notice-error" role="alert">{reminders.error || deliveries.error}</div>}
       <h2 className="section-title">{t('Напоминания в Telegram')}</h2>
       <div className="ledger table-wrap cards">
-        {!reminders.data ? <div className="empty-state">{t('Загружаем…')}</div> : reminders.data.length === 0 ? (
+        {!reminders.data ? <SkeletonRows /> : reminders.data.length === 0 ? (
           <div className="empty-state">{t('Отправок пока нет. Здесь появится состояние каждого напоминания.')}</div>
         ) : (
           <table>
@@ -227,7 +228,7 @@ function DeliveryLog() {
       </div>
       <h2 className="section-title">{t('Доставка через другие каналы')}</h2>
       <div className="ledger table-wrap cards">
-        {!deliveries.data ? <div className="empty-state">{t('Загружаем…')}</div> : deliveries.data.length === 0 ? (
+        {!deliveries.data ? <SkeletonRows /> : deliveries.data.length === 0 ? (
           <div className="empty-state">{t('Здесь появятся повторные напоминания о просрочке и отправки в MAX, на почту и в webhook.')}</div>
         ) : (
           <table>
@@ -281,7 +282,7 @@ function SanctionsCard() {
         <Muted>
           {t('Кошельки получателей сверяются со списком SDN Минфина США. Ловятся только адреса, которые опубликовал OFAC; это не оценка риска по истории транзакций. Список скачивается раз в сутки и только пока хотя бы у одного платежа указан кошелёк.')}
         </Muted>
-        {!data ? <Muted>{t('Загружаем…')}</Muted> : (
+        {!data ? <SkeletonRows compact rows={2} /> : (
           <Row $between $wrap>
             <span>
               {data.addresses > 0

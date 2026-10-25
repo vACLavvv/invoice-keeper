@@ -14,6 +14,7 @@ import (
 	"invoice-keeper/internal/app/config"
 	"invoice-keeper/internal/app/schedule"
 	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/store"
 )
 
 // MaxDeliveryAttempts stops retrying a certainly-undelivered message (no connection, server busy).
@@ -245,12 +246,13 @@ func (w *ReminderWorker) deliver() (bool, error) {
 			if err != nil {
 				return err
 			}
-			state, sentAt, delay := result.State, any(nil), int64(result.RetryDelay)
+			state, sentAt, delay := result.State, any(nil), 0
 			switch {
 			case state == "sent":
 				sentAt = schedule.Timestamp()
 			case state == "pending":
-				if err := w.deferTransport(tx, w.transportRoute(channel), max(60, result.RetryDelay)); err != nil {
+				delay = RetryDelay(attempts, result.RetryDelay)
+				if err := w.deferTransport(tx, w.transportRoute(channel), delay); err != nil {
 					return err
 				}
 				eligible, err := w.deliveryEligible(tx, row, channel)
@@ -262,10 +264,9 @@ func (w *ReminderWorker) deliver() (bool, error) {
 				} else if attempts >= MaxDeliveryAttempts {
 					state = "failed"
 				}
-				delay = max(delay, 60) // never again in the same pass
 			}
 			_, err = tx.Exec("UPDATE deliveries SET state=?,sent_at=?,error=?,retry_after=? WHERE occurrence_id=? AND kind=? AND channel=? AND state='sending' AND claim_token=?",
-				state, sentAt, nullable(result.Error), time.Now().Unix()+delay, row.OccurrenceID, row.Kind, channel, claim)
+				state, sentAt, nullable(result.Error), nextRetryAt(state, delay), row.OccurrenceID, row.Kind, channel, claim)
 			return err
 		})
 		if err != nil {
@@ -275,7 +276,10 @@ func (w *ReminderWorker) deliver() (bool, error) {
 	return true, nil
 }
 
-func (w *ReminderWorker) deliveryEligible(tx *sql.Tx, row ReminderRow, channel string) (bool, error) {
+func (w *ReminderWorker) deliveryEligible(tx store.Querier, row ReminderRow, channel string) (bool, error) {
+	if row.Kind == "overdue" && !w.Settings.OverdueReminders {
+		return false, nil
+	}
 	eligible, err := stillPayable(tx, row.OccurrenceID)
 	if err != nil || !eligible {
 		return eligible, err
@@ -307,7 +311,7 @@ func (w *ReminderWorker) sendWith(sender Sender, row ReminderRow) (result SendRe
 	}()
 	result = sender(row)
 	switch result.State {
-	case "sent", "pending", "uncertain":
+	case "sent", "pending", "uncertain", "failed":
 		return result
 	}
 	return SendResult{State: "uncertain", Error: "Ошибка отправки; автоматический повтор остановлен"}

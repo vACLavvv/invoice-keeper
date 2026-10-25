@@ -19,7 +19,7 @@ function lockManager() {
   } };
 }
 function environment(storage = new Map(), locks = lockManager(), blockedStorage = false) {
-  const handlers = new Map(), documentHandlers = new Map(), timers = new Set(), calls = [];
+  const handlers = new Map(), documentHandlers = new Map(), timers = new Set(), timeouts = new Set(), calls = [];
   let failConstruct = false, failStorageWrites = false;
   const add = (where, key, fn) => { if (!where.has(key)) where.set(key, new Set()); where.get(key).add(fn); };
   const remove = (where, key, fn) => where.get(key)?.delete(fn);
@@ -47,10 +47,12 @@ function environment(storage = new Map(), locks = lockManager(), blockedStorage 
     addEventListener:(k,fn)=>add(documentHandlers,k,fn),
     removeEventListener:(k,fn)=>remove(documentHandlers,k,fn),
   };
+  const navigator = { locks };
   const exports = {};
-  vm.runInNewContext(code, { exports, module:{exports}, window, document, navigator:{locks}, CustomEvent, Date,
+  vm.runInNewContext(code, { exports, module:{exports}, window, document, navigator, CustomEvent, Date,
+    setTimeout:(fn)=>{timeouts.add(fn);return fn;},clearTimeout:(fn)=>timeouts.delete(fn),
     setInterval: (fn)=>{timers.add(fn);return fn;},clearInterval:(fn)=>timers.delete(fn) });
-  return { api:exports, storage, calls, timers, window, Notification,
+  return { api:exports, storage, calls, timers, timeouts, window, navigator, Notification,
     fail(value=true){failConstruct=value;},
     failWrites(value=true){failStorageWrites=value;},
     storageEvent(key){window.dispatchEvent({type:'storage',key});},
@@ -132,11 +134,11 @@ for (const existingBaseline of [false, true]) {
 }
 
 const failing=environment();await failing.api.enableBrowserNotices(account,true);failing.fail();
-assert.equal(failing.api.showBrowserNotice(account,'Title','Body','id'),false);
+assert.equal(await failing.api.showBrowserNotice(account,'Title','Body','id'),false);
 assert.equal(failing.api.browserNoticeState(account).enabled,false);
 assert.equal(failing.api.browserNoticeState(account).error,'delivery');
 failing.fail(false);await failing.api.enableBrowserNotices(account,true);
-assert.equal(failing.api.showBrowserNotice(account,'Title','Body','id'),true);
+assert.equal(await failing.api.showBrowserNotice(account,'Title','Body','id'),true);
 assert.equal(failing.calls[0].options.tag,`invoice-keeper:${account}:id`);
 failing.calls[0].onclick();assert.equal(failing.calls[0].closed,true);
 failing.Notification.permission='default';failing.Notification.requested='denied';
@@ -155,3 +157,71 @@ const fallback=environment(new Map(),{request:async()=>{throw Error('lock unavai
 let fallbackCount=0;const cf=fallback.api.startBrowserNotices(account,{load:async()=>feed(),show:()=>{fallbackCount++;return true;}});
 await cf.offer(feed('old'));await cf.offer(feed('old','new'));await cf.offer(feed('old','new'));assert.equal(fallbackCount,1,'lock failure keeps delivery usable and tags/IDs prevent repeat refresh');cf.stop();
 console.log('browser reminders: baseline, fresh events, burst summary, cross-tab/account dedup, background polling, permission/storage failure and cleanup pass');
+
+// Service workers support mobile presentation and acceptance is asynchronous.
+const worker=environment(); await worker.api.enableBrowserNotices(account,true);
+let workerCalls=0, registrations=0, finish;
+worker.navigator.serviceWorker={register:async(path,options)=>{
+  assert.equal(path,'/notification-worker.js');assert.equal(options.scope,'/');registrations++;
+  return {active:{state:'activated'},showNotification:async(title,options)=>{
+    assert.equal(options.renotify,true);assert.equal(options.data.url,'/notifications');workerCalls++;
+    await new Promise((resolve)=>{finish=resolve;});
+  }};
+}};
+let completed=false;
+const presentation=worker.api.showBrowserNotice(account,'Title','Body','new').then((ok)=>{completed=true;return ok;});
+for(let i=0;i<10;i++)await Promise.resolve();
+assert.equal(completed,false,'must wait for showNotification acceptance');
+assert.equal(worker.calls.length,0,'mobile-compatible worker is preferred over constructor');
+finish();assert.equal(await presentation,true);assert.equal(workerCalls,1);assert.equal(worker.timeouts.size,0);
+const secondPresentation=worker.api.showBrowserNotice(account,'Title','Body','next');
+for(let i=0;i<10;i++)await Promise.resolve();finish();await secondPresentation;
+assert.equal(registrations,1,'registration is shared across notifications');
+
+const rejected=environment();await rejected.api.enableBrowserNotices(account,true);
+rejected.navigator.serviceWorker={register:async()=>({active:{},showNotification:async()=>{throw Error('permission revoked');}})};
+assert.equal(await rejected.api.showBrowserNotice(account,'Title','Body','new'),false);
+assert.equal(rejected.api.browserNoticeState(account).error,'delivery');
+assert.equal(rejected.calls.length,0,'a rejected worker request must not retry with a constructor and risk duplicate delivery');
+
+const waiting=environment();await waiting.api.enableBrowserNotices(account,true);
+let listener;
+waiting.navigator.serviceWorker={register:async()=>({installing:{state:'installing',addEventListener:(_,fn)=>{listener=fn;},removeEventListener:()=>{listener=null;}}})};
+const timed=waiting.api.showBrowserNotice(account,'Title','Body','id');
+for(let i=0;i<5;i++)await Promise.resolve();
+for(const timeout of waiting.timeouts)timeout();
+assert.equal(await timed,false,'blocked activation has a bounded timeout');
+assert.equal(listener,null,'activation listener is removed after timeout');
+assert.equal(waiting.timeouts.size,0);
+
+// Failed asynchronous presentation is not marked as seen and is eligible later.
+const asyncNotices=environment();await asyncNotices.api.enableBrowserNotices(account,true);
+let accepted=false, attempts=0;
+const asyncController=asyncNotices.api.startBrowserNotices(account,{load:async()=>feed(),show:async()=>{attempts++;return accepted;}});
+await asyncController.offer(feed('baseline'));await asyncController.offer(feed('baseline','new'));accepted=true;
+await asyncController.offer(feed('baseline','new'));await asyncController.offer(feed('baseline','new'));
+assert.equal(attempts,2);asyncController.stop();
+console.log('notification worker: asynchronous acceptance, reuse, no constructor retry, activation timeout and unseen failures pass');
+
+const clickHandlers = new Map();
+let navigated = '', focused = false, opened = '';
+let windows = [{url:'https://keeper.example/payments',navigate:async(url)=>{navigated=url;},focus:async()=>{focused=true;}}];
+const self = {location:{origin:'https://keeper.example'},addEventListener:(name,handler)=>clickHandlers.set(name,handler),skipWaiting:async()=>{},clients:{claim:async()=>{},matchAll:async()=>windows,openWindow:async(url)=>{opened=url;}}};
+vm.runInNewContext(readFileSync(new URL('../public/notification-worker.js',import.meta.url),'utf8'),{self,URL});
+let clickTask, closed=false;
+clickHandlers.get('notificationclick')({notification:{close:()=>{closed=true;},data:{url:'https://evil.example'}},waitUntil:(task)=>{clickTask=task;}});
+await clickTask;assert.equal(navigated,'https://keeper.example/notifications');assert.equal(focused,true);assert.equal(closed,true);
+windows=[];clickHandlers.get('notificationclick')({notification:{close(){}},waitUntil:(task)=>{clickTask=task;}});await clickTask;
+assert.equal(opened,'https://keeper.example/notifications','click target is fixed to this origin and never notification-controlled');
+assert.equal(clickHandlers.has('fetch'),false,'worker must not cache or intercept financial requests');
+assert.equal(clickHandlers.has('push'),false,'no promise of notifications while the panel is closed');
+console.log('notification worker click routing and network isolation pass');
+
+const stopped=environment();await stopped.api.enableBrowserNotices(account,true);
+let finishRegistration, presentedAfterStop=0;
+stopped.navigator.serviceWorker={register:()=>new Promise((resolve)=>{finishRegistration=()=>resolve({active:{},showNotification:async()=>{presentedAfterStop++;}});})};
+const stoppingController=stopped.api.startBrowserNotices(account,{load:async()=>feed(),show:(items,current)=>stopped.api.showBrowserNotice(account,'Title','Body',items[0].id,current)});
+await stoppingController.offer(feed('base'));const offerDuringActivation=stoppingController.offer(feed('base','new'));
+for(let i=0;i<5;i++)await Promise.resolve();stoppingController.stop();finishRegistration();await offerDuringActivation;
+assert.equal(presentedAfterStop,0,'logout/unmount while worker activates must prevent stale financial notification');
+console.log('notification delivery cancels after unmount while worker activates');

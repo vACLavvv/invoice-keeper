@@ -130,7 +130,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		if rec.status == 0 {
 			rec.status = http.StatusOK
 		}
-		if r.URL.Path != "/metrics" && r.URL.Path != "/healthz" && r.URL.Path != "/api/v1/events" {
+		if r.URL.Path != "/metrics" && r.URL.Path != "/api/v1/metrics" && r.URL.Path != "/healthz" && r.URL.Path != "/api/v1/events" {
 			s.metrics.observe(rec.status, time.Since(start))
 		}
 		if !s.Settings.LogRequests {

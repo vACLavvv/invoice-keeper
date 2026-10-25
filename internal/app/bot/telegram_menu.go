@@ -5,6 +5,8 @@ import (
 	"html"
 	"strconv"
 	"strings"
+
+	"invoice-keeper/internal/app/schedule"
 )
 
 func (b *Telegram) navigation() [][]map[string]string {
@@ -49,20 +51,20 @@ func (b *Telegram) payments(chatID, messageID int64, onlyOverdue bool, page int)
 	if p.Total == 0 {
 		text.WriteString("\nВсё спокойно: неоплаченных платежей в этом разделе нет. ✅\n")
 	}
-	for i, o := range p.Items {
+	for _, o := range p.Items {
 		label := "К оплате"
 		if o.Status == "overdue" {
 			label = "Просрочено"
 		}
-		title := []rune(o.Title)
-		if len(title) > 100 {
-			title = append(title[:99], '…')
+		title := []rune(strings.Join(strings.Fields(o.Title), " "))
+		if len(title) > 160 {
+			title = append(title[:159], '…')
 		}
-		fmt.Fprintf(&text, "\n<b>%d. %s</b>\n%s %s · %s\nСрок: %s\n", p.Page*5+i+1, html.EscapeString(string(title)), o.Amount, o.Currency, label, o.DueDate)
-		buttons = append(buttons, []map[string]string{{"text": fmt.Sprintf("✓ Оплачено · %d", p.Page*5+i+1), "callback_data": "paid:" + itoa(o.ID)}})
+		fmt.Fprintf(&text, "\nПлатёж %d из %d\n\n<b>%s</b>\n<b>%s %s</b>\n\nСрок: %s\n%s\n", p.Page+1, p.Total, html.EscapeString(string(title)), o.Amount, o.Currency, schedule.FullDate(o.DueDate), label)
+		buttons = append(buttons, []map[string]string{{"text": "✓ Отметить оплату", "callback_data": fmt.Sprintf("paid:%d:%s:%d", o.ID, kind, p.Page)}})
 	}
 	if p.Total > 0 {
-		fmt.Fprintf(&text, "\n<b>Всего в разделе:</b> %s\nСтраница %d из %d · платежей: %d", p.Totals, p.Page+1, p.Pages, p.Total)
+		fmt.Fprintf(&text, "\nВсего в разделе: %s", p.Totals)
 	}
 	pager := []map[string]string{}
 	if p.Page > 0 {
@@ -73,7 +75,10 @@ func (b *Telegram) payments(chatID, messageID int64, onlyOverdue bool, page int)
 		pager = append(pager, map[string]string{"text": "Далее →", "callback_data": fmt.Sprintf("nav:%s:%d", kind, p.Page+1)})
 	}
 	buttons = append(buttons, pager)
-	buttons = append(buttons, b.navigation()...)
+	buttons = append(buttons, []map[string]string{{"text": "← Главное меню", "callback_data": "nav:menu"}})
+	if b.settings.PublicBaseURL != "" {
+		buttons = append(buttons, []map[string]string{{"text": "Открыть панель", "url": b.settings.PublicBaseURL + "/payments"}})
+	}
 	text.WriteString("\n\n«Оплачено» фиксирует сегодняшнюю дату только у выбранного периода. Исправить её можно в панели.")
 	return b.screen(chatID, messageID, text.String(), buttons)
 }
@@ -90,7 +95,7 @@ func (b *Telegram) navigate(c *Callback) error {
 		return nil
 	}
 	page, err := strconv.Atoi(parts[2])
-	if err != nil || page < 0 || page > 100000 {
+	if err != nil || page < 0 || page > 1000000 {
 		return nil
 	}
 	return b.payments(c.Message.Chat.ID, c.Message.MessageID, parts[1] == "overdue", page)

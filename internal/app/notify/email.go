@@ -134,6 +134,7 @@ func (w *ReminderWorker) sendEmailVerifications() (bool, error) {
 		}
 		result := w.sendWith(func(ReminderRow) SendResult { return w.VerificationSender(to, name, link) }, ReminderRow{})
 		state := result.State
+		delay := RetryDelay(attempts+1, result.RetryDelay)
 		if state == "pending" && attempts+1 >= MaxDeliveryAttempts {
 			state = "failed"
 		}
@@ -143,13 +144,13 @@ func (w *ReminderWorker) sendEmailVerifications() (bool, error) {
 		}
 		err = w.DB.Write(func(tx *sql.Tx) error {
 			if result.State == "pending" {
-				if err := w.deferTransport(tx, "email", max(60, result.RetryDelay)); err != nil {
+				if err := w.deferTransport(tx, "email", delay); err != nil {
 					return err
 				}
 			}
 			_, err := tx.Exec(`UPDATE email_contacts SET welcome_state=?,token_secret=?,retry_after=?,error=?
 				WHERE id=? AND token_hash=? AND claim_token=? AND welcome_state='sending' AND verified_at IS NULL`,
-				state, keepSecret, time.Now().Unix()+int64(max(60, result.RetryDelay)), nullable(result.Error), id, hash, claim)
+				state, keepSecret, nextRetryAt(state, delay), nullable(result.Error), id, hash, claim)
 			return err
 		})
 		if err != nil {

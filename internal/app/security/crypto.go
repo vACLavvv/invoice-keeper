@@ -177,9 +177,13 @@ func encryptExisting(tx *sql.Tx) error {
 		id    int64
 		value string
 	}
-	textColumns := []struct{ table, column string }{{"recurring_payments", "payment_details"}, {"receipts", "url"}, {"email_contacts", "token_secret"}}
+	textColumns := []struct{ table, column string }{{"recurring_payments", "payment_details"}, {"receipts", "url"}, {"email_contacts", "token_secret"}, {"idempotency_keys", "response"}}
 	for _, c := range textColumns {
-		rows, err := tx.Query("SELECT id," + c.column + " FROM " + c.table + " WHERE " + c.column + " IS NOT NULL AND " + c.column + " NOT LIKE 'enc:v1:%'") // #nosec G202 -- constant names
+		identifier := "id"
+		if c.table == "idempotency_keys" {
+			identifier = "rowid"
+		}
+		rows, err := tx.Query("SELECT " + identifier + "," + c.column + " FROM " + c.table + " WHERE " + c.column + " IS NOT NULL AND " + c.column + " NOT LIKE 'enc:v1:%'") // #nosec G202 -- constant names
 		if err != nil {
 			return err
 		}
@@ -194,7 +198,7 @@ func encryptExisting(tx *sql.Tx) error {
 		}
 		rows.Close()
 		for _, p := range todo {
-			if _, err := tx.Exec("UPDATE "+c.table+" SET "+c.column+"=? WHERE id=?", EncryptText(c.table+"."+c.column, p.value), p.id); err != nil { // #nosec G202 -- constant names
+			if _, err := tx.Exec("UPDATE "+c.table+" SET "+c.column+"=? WHERE "+identifier+"=?", EncryptText(c.table+"."+c.column, p.value), p.id); err != nil { // #nosec G202 -- constant names
 				return err
 			}
 		}

@@ -1,3 +1,4 @@
+import { SkeletonRows, SkeletonBar } from '@/components/Skeleton';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import styled from 'styled-components';
@@ -43,7 +44,7 @@ export default function CalendarPage() {
         <MonthSwitcher />
         <MonthlyTotal aria-live="polite" aria-busy={!data && !loaded.error}>
           <span className="month-total-label">{t('Итого за месяц')}</span>
-          <div className="month-total-values">{loaded.error ? <span>{t('Не удалось рассчитать итог')}</span> : !data ? <span>{t('Загружаем…')}</span>
+          <div className="month-total-values">{loaded.error ? <span>{t('Не удалось рассчитать итог')}</span> : !data ? <SkeletonBar $width="150px" $height="24px" aria-label={t('Загружаем…')} />
             : Object.keys(data.totals).length ? currencies.filter((c) => data.totals[c] !== undefined).map((c) => <strong key={c}>{money(data.totals[c]!)} {symbols[c]}</strong>) : <strong>0</strong>}</div>
         </MonthlyTotal>
       </CalendarToolbar>
@@ -56,6 +57,7 @@ export default function CalendarPage() {
             const day = `${month}-${String(i + 1).padStart(2, '0')}`, entry = byDate.get(day);
             return <div key={day} className={`calendar-day${day === settings.today ? ' today' : ''}`}>
               <span className="calendar-number">{i + 1}</span>
+              {!data && !loaded.error && i % 3 === 1 && <SkeletonBar $width="80%" $height="32px" aria-hidden="true" />}
               {entry?.items.map((item) => <button key={itemKey(item)} type="button" className={`calendar-item ${isOccurrence(item) ? item.status : 'unpaid projection'}`} onClick={() => setPaying(item)} title={`${item.title} · ${money(item.amount)} ${symbols[item.currency]}`}>{item.title}</button>)}
               {entry && <>{more(entry)}<strong className="calendar-day-total">{t('Итого:')} {totalText(entry.totals)}</strong></>}
             </div>;
@@ -64,7 +66,7 @@ export default function CalendarPage() {
         </div>
       </CalendarViewport>
       <Agenda aria-label={t('Платежи по датам')}>
-        {!data ? <div className="empty-state">{loaded.error ?? t('Загружаем…')}</div> : !data.days.length ? <div className="ledger empty-state"><b>{t('На этот месяц платежей нет')}</b>{t('Выберите другой месяц или добавьте платёж.')}</div> : data.days.map((day) => <section className="agenda-day" key={day.date}>
+        {!data ? (loaded.error ? <div className="empty-state">{loaded.error}</div> : <SkeletonRows />) : !data.days.length ? <div className="ledger empty-state"><b>{t('На этот месяц платежей нет')}</b>{t('Выберите другой месяц или добавьте платёж.')}</div> : data.days.map((day) => <section className="agenda-day" key={day.date}>
           <h2><time dateTime={day.date}>{date(day.date, { day: 'numeric', month: 'long', weekday: 'short' })}</time>{day.date === settings.today && <span>{t('Сегодня')}</span>}</h2>
           {day.items.map((item) => <PaymentButton key={itemKey(item)} item={item} onOpen={setPaying} />)}
           {more(day)}
@@ -88,7 +90,7 @@ function DayPayments({ day, onOpen, onClose }: { day: string; onOpen: (item: Occ
   return <SelectedDay id="calendar-selected-day" className="ledger">
     <div className="desk-panel-heading"><h2>{date(day, { day: 'numeric', month: 'long', year: 'numeric' })}</h2><button type="button" className="text-button" onClick={onClose}>{t('Закрыть')}</button></div>
     {error && <div className="notice notice-error" role="alert">{error}</div>}
-    {!data ? <p>{t('Загружаем…')}</p> : data.items.map((item) => <PaymentButton key={itemKey(item)} item={item} onOpen={onOpen} />)}
+    {!data ? <SkeletonRows compact rows={3} /> : data.items.map((item) => <PaymentButton key={itemKey(item)} item={item} onOpen={onOpen} />)}
     <Pagination data={data} onChange={setPage} />
   </SelectedDay>;
 }

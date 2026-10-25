@@ -76,17 +76,60 @@ export function subscribeBrowserNotices(account: string, onChange: () => void): 
   };
 }
 
-export function showBrowserNotice(account: string, title: string, body: string, id: string): boolean {
-  if (permission() !== 'granted') return false;
+let workerRegistration: Promise<ServiceWorkerRegistration> | null = null;
+
+async function notificationWorker(): Promise<ServiceWorkerRegistration> {
+  if (!workerRegistration) {
+    let removeActivationListener = () => {};
+    const activate = async () => {
+      const registration = await navigator.serviceWorker.register('/notification-worker.js', { scope: '/', updateViaCache: 'none' });
+      if (!registration.active) {
+        const worker = registration.installing ?? registration.waiting;
+        if (!worker) throw new Error('No notification worker');
+        await new Promise<void>((resolve, reject) => {
+          const changed = () => {
+            if (worker.state === 'activated' || worker.state === 'redundant') {
+              worker.removeEventListener('statechange', changed);
+              if (worker.state === 'activated') resolve(); else reject(new Error('Notification worker unavailable'));
+            }
+          };
+          removeActivationListener = () => worker.removeEventListener('statechange', changed);
+          worker.addEventListener('statechange', changed);
+          changed();
+        });
+      }
+      return registration;
+    };
+    // Never hang the test button (or the cross-tab delivery lock) on a blocked worker.
+    let timer: ReturnType<typeof setTimeout>;
+    workerRegistration = Promise.race([
+      activate(),
+      new Promise<ServiceWorkerRegistration>((_, reject) => { timer = setTimeout(() => reject(new Error('Notification worker timeout')), 8000); }),
+    ]).finally(() => { clearTimeout(timer); removeActivationListener(); })
+      .catch((error) => { workerRegistration = null; throw error; });
+  }
+  return workerRegistration;
+}
+
+/** Resolves only after the browser accepts the request. OS banner visibility
+ * cannot be verified by a website: Focus modes and system settings still apply. */
+export async function showBrowserNotice(account: string, title: string, body: string, id: string, isCurrent: () => boolean = () => true): Promise<boolean> {
+  if (permission() !== 'granted' || !isCurrent()) return false;
+  const failed = () => { errors.set(account, 'delivery'); setEnabled(account, false); };
   try {
-    const notice = new window.Notification(title, { body, tag: `invoice-keeper:${account}:${id}`, icon: '/favicon.svg' });
-    notice.onclick = () => { window.focus(); window.location.assign('/notifications'); notice.close(); };
+    const options = { body, tag: `invoice-keeper:${account}:${id}`, icon: '/favicon.svg', renotify: true, data: { url: '/notifications' } };
+    if ('serviceWorker' in navigator) {
+      const registration = await notificationWorker();
+      if (permission() !== 'granted' || !isCurrent()) return false;
+      await registration.showNotification(title, options);
+    } else {
+      const notice = new window.Notification(title, options);
+      notice.onclick = () => { window.focus(); window.location.assign('/notifications'); notice.close(); };
+      notice.onerror = failed;
+    }
     return true;
   } catch {
-    // Some browsers expose Notification but cannot construct one (notably mobile).
-    // Stop automatic attempts and expose the failure next to the opt-in control.
-    errors.set(account, 'delivery');
-    setEnabled(account, false);
+    failed();
     return false;
   }
 }
@@ -111,10 +154,10 @@ function writeSeen(account: string, ids: Map<string, number>) {
 
 type DeliveryOptions = {
   load: () => Promise<NotificationFeed>;
-  show: (items: Notification[]) => boolean;
+  show: (items: Notification[], isCurrent: () => boolean) => boolean | Promise<boolean>;
 };
 
-/** Runs across the whole panel. No browser extension or service worker is involved.
+/** Runs across the whole open panel; the worker presents notifications, not background polling.
  * Shared IDs are protected by Web Locks where available; stable Notification tags
  * also coalesce the same item in browsers without Web Locks. No financial data is stored. */
 export function startBrowserNotices(account: string, options: DeliveryOptions) {
@@ -134,7 +177,7 @@ export function startBrowserNotices(account: string, options: DeliveryOptions) {
       while (pending && !stopped) {
         const current = pending;
         pending = null;
-        const deliver = () => {
+        const deliver = async () => {
           if (!enabled()) return;
           const items = current.browser_items ?? current.items;
           const previous = readSeen(account);
@@ -148,10 +191,10 @@ export function startBrowserNotices(account: string, options: DeliveryOptions) {
           const fresh = items.filter((item) => !item.read && !ids.has(item.id));
           // A burst becomes one summary; never create hundreds of system windows.
           if (fresh.length > 3) {
-            if (options.show(fresh)) for (const item of fresh) ids.set(item.id, now);
+            if (await options.show(fresh, enabled)) for (const item of fresh) ids.set(item.id, now);
           } else {
             for (const item of fresh) {
-              if (!enabled() || !options.show([item])) break;
+              if (!enabled() || !await options.show([item], enabled)) break;
               ids.set(item.id, now);
             }
           }
@@ -160,8 +203,8 @@ export function startBrowserNotices(account: string, options: DeliveryOptions) {
         };
         if (navigator.locks?.request) {
           try { await navigator.locks.request('invoice-keeper:notices:' + account, deliver); }
-          catch { if (!stopped) deliver(); } // Private browsing may reject Web Locks.
-        } else deliver();
+          catch { if (!stopped) await deliver(); } // Private browsing may reject Web Locks.
+        } else await deliver();
       }
     } finally { draining = false; }
   }

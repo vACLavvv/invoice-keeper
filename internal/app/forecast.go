@@ -149,7 +149,7 @@ func (s *Server) periodCreate(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var created Occurrence
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 201, &created, func(tx *sql.Tx) error {
 		payment, err := s.findRecurring(tx, id)
 		if err != nil {
 			return err

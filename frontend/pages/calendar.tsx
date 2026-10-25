@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import styled from 'styled-components';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { PayModal } from '@/components/PaymentModals';
 import { Shell } from '@/components/Shell';
@@ -30,6 +31,8 @@ export default function CalendarPage() {
         <MonthSwitcher />
         <span className="muted">{forecast.length > 0 ? t('Пунктиром — будущие сроки по графику. Нажмите, чтобы оплатить заранее.') : t('План расходов по датам и валютам')}</span>
       </div>
+      <ScrollHint>{t('Прокрутите календарь по горизонтали, чтобы увидеть остальные дни недели.')}</ScrollHint>
+      <CalendarViewport role="region" aria-label={t('Календарь оплат')} tabIndex={0}>
       <div className="calendar">
         {weekdays().map((d) => <div key={d} className="calendar-weekday">{d}</div>)}
         {Array.from({ length: leading }, (_, i) => <div key={'lead' + i} className="calendar-day blank" aria-hidden="true" />)}
@@ -62,7 +65,45 @@ export default function CalendarPage() {
         })}
         {Array.from({ length: trailing }, (_, i) => <div key={'tail' + i} className="calendar-day blank" aria-hidden="true" />)}
       </div>
+      </CalendarViewport>
       {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}
     </Shell>
   );
 }
+
+const ScrollHint = styled.p`
+  display: none;
+  @media (max-width: 720px) {
+    display: block;
+    margin: 0 0 10px;
+    color: var(--desk-muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+`;
+
+const CalendarViewport = styled.div`
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border-radius: var(--desk-radius);
+  &:focus-visible {
+    outline: 2px solid var(--apple-blue);
+    outline-offset: 3px;
+  }
+  .calendar { min-width: 700px; }
+  .calendar-day-total {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--desk-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 720px) {
+    .calendar-day { min-height: 120px; padding: 8px 6px; }
+    .calendar-weekday { font-size: 13px; }
+    .calendar-number { font-size: 14px; width: 28px; height: 28px; }
+    .calendar-item { font-size: 13px; line-height: 1.5; padding: 8px 6px; min-height: 44px; }
+    .calendar-item strong { font-size: 13px; }
+  }
+`;

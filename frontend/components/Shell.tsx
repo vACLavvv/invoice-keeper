@@ -109,7 +109,6 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
           {navigation}
         </nav>
         <div className="sidebar-bottom">
-          <a className="docs-link" href="/api/v1/docs" target="_blank" rel="noopener">{t('Документация API')} <span>↗</span></a>
           <button className="profile" type="button" onClick={logout} title={t('Выйти из учётной записи')}>
             <span className="profile-avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</span>
             <span>{user.display_name}<small>{isAdmin ? t('Администратор') : '@' + user.username}</small></span>

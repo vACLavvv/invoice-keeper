@@ -188,9 +188,9 @@ export function Ledger({ mode }: { mode: Mode }) {
                             title={o.payment_details ? t('Оплатить · {details}', { details: o.payment_details }) : t('Открыть ссылку на оплату')}>{t('Оплатить ↗')}</a>
                         )}
                         {isAdmin && <button type="button" className="row-action delete" onClick={() => setDeleting(o)}>{t('Удалить')}</button>}
-                        <button type="button" className="row-action edit" onClick={() => setReceipts(o)} title={t('Чеки и ссылки')}>
+                        {(o.status === 'paid' || !o.active) && <button type="button" className="row-action edit" onClick={() => setReceipts(o)} title={t('Чеки и ссылки')}>
                           {t('Чеки')}{o.receipts > 0 ? ` · ${o.receipts}` : ''}
-                        </button>
+                        </button>}
                         <button type="button" className={`row-action${o.status === 'paid' || !o.active ? ' edit' : ''}`} onClick={() => setPaying(o)}>
                           {!o.active ? t('Открыть запись') : o.status === 'paid' ? t('Изменить ↗') : t('Отметить оплату')}
                         </button>

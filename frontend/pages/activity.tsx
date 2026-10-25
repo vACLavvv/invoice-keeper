@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { Shell } from '@/components/Shell';
-import { Button, Card, Empty, Input, Muted, Notice, Pill, Row, Select, SectionTitle as Title, TableWrap } from '@/components/ui';
+import { Button, Card, Field, Input, Muted, Notice, Row, Select } from '@/components/ui';
 import { ScreeningPill, walletNetworks } from '@/components/Wallet';
 import { api, query, type AuditCheck, type AuditPage, type Delivery, type Reminder, type SanctionsStatus, type Screening, type WalletNetwork } from '@/lib/api';
 import { useToast } from '@/lib/toast';
@@ -43,6 +43,8 @@ const actions = (): Record<string, string> => ({
   'suggestion.create': t('Расширение предложило платёж'), 'suggestion.accept': t('Предложение принято'), 'suggestion.reject': t('Предложение отклонено'),
 });
 
+const actorLabel = (actor: string) => actor === 'email-confirmation' ? t('Подтверждение почты') : actor;
+
 type Tab = 'actions' | 'delivery' | 'sanctions';
 type Filters = { from_date?: string; to_date?: string; actor?: string; action?: string; search?: string };
 
@@ -59,15 +61,23 @@ export default function Activity() {
   const tabs: [Tab, string][] = [['actions', t('Действия')], ['delivery', t('Доставка')], ['sanctions', t('Санкции OFAC')]];
   return (
     <Shell title={t('Журнал')} heading={t('Журнал')} subtitle={t('Действия команды, доставка уведомлений и состояние сервиса.')} action={<></>}>
-      <div className="log-tabs" role="tablist" aria-label={t('Журналы')}>
+      <div className="log-tabs" role="tablist" aria-label={t('Журналы')} onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const current = tabs.findIndex(([key]) => key === tab);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+          : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        setTab(tabs[next][0]);
+        event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+      }}>
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)}>{label}</button>
+          <button key={key} type="button" role="tab" id={`log-tab-${key}`} aria-controls={`log-panel-${key}`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)}>{label}</button>
         ))}
       </div>
-      {tab === 'actions' && <AuditLog />}
-      {tab === 'delivery' && <DeliveryLog />}
+      {tab === 'actions' && <div role="tabpanel" id="log-panel-actions" aria-labelledby="log-tab-actions"><AuditLog /></div>}
+      {tab === 'delivery' && <div role="tabpanel" id="log-panel-delivery" aria-labelledby="log-tab-delivery"><DeliveryLog /></div>}
       {tab === 'sanctions' && (
-        <section>
+        <section role="tabpanel" id="log-panel-sanctions" aria-labelledby="log-tab-sanctions">
           <div className="section-heading audit-heading"><div><h2 className="section-title">{t('Санкционный список OFAC')}</h2><p className="muted">{t('Сверка криптокошельков получателей и ручная проверка адреса.')}</p></div></div>
           <SanctionsCard />
         </section>
@@ -90,7 +100,7 @@ function AuditLog() {
   const first = data?.total ? (data.page - 1) * data.page_size + 1 : 0;
 
   return (
-    <section>
+    <AuditSection>
       <div className="section-heading audit-heading">
         <div><h2 className="section-title">{t('Журнал действий')}</h2><p className="muted">{t('Кто изменил данные и что произошло. История сохраняется после перезапуска.')}</p></div>
         <button type="button" className="button secondary" onClick={() => { setPage(1); setReload((n) => n + 1); }}>{t('Обновить')}</button>
@@ -114,7 +124,7 @@ function AuditLog() {
         <label>{t('С даты')}<input name="from_date" type="date" min="2000-01-01" max="2100-12-31" /></label>
         <label>{t('По дату')}<input name="to_date" type="date" min="2000-01-01" max="2100-12-31" /></label>
         <label>{t('Пользователь')}
-          <select name="actor"><option value="">{t('Все пользователи')}</option>{data?.actors.map((a) => <option key={a} value={a}>{a}</option>)}</select>
+          <select name="actor"><option value="">{t('Все пользователи')}</option>{data?.actors.map((a) => <option key={a} value={a}>{actorLabel(a)}</option>)}</select>
         </label>
         <label>{t('Действие')}
           <select name="action"><option value="">{t('Все действия')}</option>{data?.actions.map((a) => <option key={a} value={a}>{actions()[a] ?? a}</option>)}</select>
@@ -132,13 +142,13 @@ function AuditLog() {
           <div className="empty-state"><b>{t('Записей нет')}</b>{t('Измените даты или фильтры.')}</div>
         ) : (
           <table>
-            <thead><tr><th>{t('ВРЕМЯ')}</th><th>{t('ПОЛЬЗОВАТЕЛЬ')}</th><th>{t('ДЕЙСТВИЕ / ОБЪЕКТ')}</th><th>{t('РЕЗУЛЬТАТ')}</th></tr></thead>
+            <thead><tr><th>{t('ВРЕМЯ')}</th><th>{t('ПОЛЬЗОВАТЕЛЬ')}</th><th>{t('Действие')}</th><th>{t('РЕЗУЛЬТАТ')}</th></tr></thead>
             <tbody>
               {data.items.map((a) => (
                 <tr key={a.id}>
                   <td className="date-cell">{time.format(new Date(a.created_at))}</td>
-                  <td className="audit-actor" data-label={t('Кто')}>{a.actor}</td>
-                  <td className="audit-detail" data-label={t('Действие')}><b>{actions()[a.action] ?? a.action}</b><small>{a.entity}</small></td>
+                  <td className="audit-actor" data-label={t('Кто')}>{actorLabel(a.actor)}</td>
+                  <td className="audit-detail" data-label={t('Действие')}><b>{actions()[a.action] ?? a.action}</b></td>
                   <td data-label={t('Результат')}><span className={`pill ${a.action === 'wallet.sanctioned' ? 'overdue' : 'paid'}`}>{a.action === 'wallet.sanctioned' ? t('Внимание') : t('Успешно')}</span></td>
                 </tr>
               ))}
@@ -154,7 +164,7 @@ function AuditLog() {
           <button type="button" className="button secondary" disabled={!data || page >= data.pages} onClick={() => setPage((p) => p + 1)}>{t('Далее')}</button>
         </div>
       </div>
-    </section>
+    </AuditSection>
   );
 }
 
@@ -229,6 +239,7 @@ function SanctionsCard() {
   const toast = useToast();
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<{ address: string; screening: Screening } | null>(null);
   const { data } = useLoad(() => api<SanctionsStatus>('/sanctions'), [version]);
 
@@ -268,6 +279,8 @@ function SanctionsCard() {
         <CheckForm onSubmit={async (e) => {
           e.preventDefault();
           const form = new FormData(e.currentTarget);
+          setChecking(true);
+          setResult(null);
           try {
             const answer = await api<{ address: string; screening: Screening }>('/sanctions/check', {
               method: 'POST', body: { network: form.get('network') as WalletNetwork, address: String(form.get('address') ?? '').trim() },
@@ -276,14 +289,16 @@ function SanctionsCard() {
           } catch (err) {
             setResult(null);
             toast((err as Error).message, true);
+          } finally {
+            setChecking(false);
           }
         }}>
-          <Select name="network" defaultValue="TRON" aria-label={t('Сеть')}>{walletNetworks.map((n) => <option key={n}>{n}</option>)}</Select>
-          <Input name="address" required maxLength={100} spellCheck={false} placeholder={t('Проверить адрес кошелька')} aria-label={t('Адрес кошелька')} />
-          <Button type="submit" $variant="secondary">{t('Проверить')}</Button>
+          <Field>{t('Сеть')}<Select name="network" defaultValue="TRON" aria-label={t('Сеть')}>{walletNetworks.map((n) => <option key={n}>{n}</option>)}</Select></Field>
+          <Field>{t('Адрес кошелька')}<Input name="address" required maxLength={100} spellCheck={false} placeholder={t('Проверить адрес кошелька')} /></Field>
+          <Button type="submit" $variant="secondary" disabled={checking}>{checking ? t('Проверяем…') : t('Проверить')}</Button>
         </CheckForm>
         {result && (
-          <Row $gap={1} $wrap>
+          <Row $gap={1} $wrap role="status">
             <ScreeningPill wallet={result.screening} />
             {result.screening.match_name && <Muted>{t('Совпадение: {name}', { name: result.screening.match_name })}</Muted>}
           </Row>
@@ -301,7 +316,41 @@ const Box = styled.div.attrs({ className: 'work-panel' })`
 
 const CheckForm = styled.form`
   display: grid;
-  grid-template-columns: 10rem 1fr auto;
-  gap: 0.8rem;
-  ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }
+  grid-template-columns: minmax(140px, 170px) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 8px;
+  label { min-width: 0; }
+  select, input { width: 100%; min-width: 0; }
+  button { min-height: 44px; }
+  @media (max-width: 900px) {
+    grid-template-columns: minmax(120px, 150px) minmax(0, 1fr);
+    button { grid-column: 1 / -1; justify-self: end; }
+  }
+  @media (max-width: 480px) {
+    grid-template-columns: minmax(0, 1fr);
+    button { width: 100%; }
+  }
+`;
+
+const AuditSection = styled.section`
+  .audit-detail, .audit-actor, .date-cell {
+    color: var(--desk-ink);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  .audit-detail > b { font-weight: 550; }
+  .audit-detail { max-width: 420px; }
+  .audit-filters label { color: var(--desk-ink); font-size: 14px; }
+  .audit-filters input, .audit-filters select { font-size: 15px; }
+  .audit-caption, .audit-pagination { font-size: 14px; color: var(--desk-muted); }
+  .audit-pagination .button { min-height: 42px; font-size: 14px; }
+  .audit-heading p { font-size: 15px; line-height: 1.6; }
+  @media (max-width: 600px) {
+    .audit-filters { grid-template-columns: minmax(0, 1fr); }
+    .audit-filters input, .audit-filters select { font-size: 16px; }
+    .audit-search-label, .audit-filter-actions { grid-column: auto; }
+    .audit-pagination > div { width: 100%; justify-content: space-between; gap: 8px; }
+    .audit-pagination > div > span { font-size: 13px; text-align: center; }
+  }
 `;

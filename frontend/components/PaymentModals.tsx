@@ -1,5 +1,5 @@
 import { DeletePaymentModal } from '@/components/DeletePaymentModal';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { api, type Forecast, type ImportResult, type Occurrence, type Receipt, type Recurring, type TeamUser } from '@/lib/api';
 import { currencies, date, frequencies, frequencyName, longDate, moneyWith, type Frequency } from '@/lib/format';
@@ -39,25 +39,19 @@ function AssigneeField({ value, users }: { value?: number | null; users: TeamUse
         <option value="">{t('Не назначен')}</option>
         {users.map((u) => <option key={u.id} value={u.id}>{u.display_name} · @{u.username}</option>)}
       </Select>
-      <small>{t('Личные напоминания по платежу уходят ответственному, если он привязал Telegram')}</small>
+      <small>{t('Личные напоминания отправляются ответственному в подключённый Telegram и на подтверждённую почту.')}</small>
     </Field>
   );
 }
 
-/** Where to pay: a link to the bill or the service cabinet and free-form details. */
-function PaymentLinkFields({ payment }: { payment?: Recurring }) {
+/** Optional link to the bill or service cabinet belongs with the other extra fields. */
+function PaymentLinkField({ payment }: { payment?: Recurring }) {
   return (
-    <>
-      <Field>
-        {t('Ссылка на оплату')}
-        <Input name="payment_url" type="url" defaultValue={payment?.payment_url ?? ''} maxLength={500} placeholder="https://" />
-        <small>{t('Кабинет или счёт: в напоминаниях появится кнопка «💳 Оплатить»')}</small>
-      </Field>
-      <Field>
-        {t('Реквизиты')}
-        <Input name="payment_details" defaultValue={payment?.payment_details ?? ''} maxLength={500} placeholder={t('Например, ИНН, номер договора или счёта')} />
-      </Field>
-    </>
+    <Field>
+      {t('Ссылка на оплату')} <Muted>{t('необязательно')}</Muted>
+      <Input name="payment_url" type="url" defaultValue={payment?.payment_url ?? ''} maxLength={500} placeholder="https://" />
+      <small>{t('Кабинет или счёт: в напоминаниях появится кнопка «💳 Оплатить»')}</small>
+    </Field>
   );
 }
 
@@ -68,9 +62,18 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
   return (
     <Field as="div">
       {label}
-      <Segmented role="radiogroup" aria-label={label}>
+      <Segmented role="radiogroup" aria-label={label} onKeyDown={(e) => {
+        const current = options.findIndex(([option]) => option === value);
+        const next = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (current + 1) % options.length
+          : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (current + options.length - 1) % options.length
+          : e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : -1;
+        if (next < 0) return;
+        e.preventDefault();
+        onChange(options[next][0]);
+        e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+      }}>
         {options.map(([option, title, hint]) => (
-          <Segment key={option} type="button" role="radio" aria-checked={value === option} $selected={value === option} onClick={() => onChange(option)}>
+          <Segment key={option} type="button" role="radio" aria-checked={value === option} tabIndex={value === option ? 0 : -1} $selected={value === option} onClick={() => onChange(option)}>
             <b>{title}</b>
             <small>{hint}</small>
           </Segment>
@@ -103,7 +106,12 @@ function DescriptionField({ value }: { value?: string | null }) {
 
 /** The fields of the chosen method; the other method's values are cleared on save. */
 function MethodFields({ method, payment }: { method: Method; payment?: Recurring }) {
-  if (method === 'fiat') return <PaymentLinkFields payment={payment} />;
+  if (method === 'fiat') return (
+    <Field>
+      {t('Реквизиты')} <Muted>{t('необязательно')}</Muted>
+      <Input name="payment_details" defaultValue={payment?.payment_details ?? ''} maxLength={500} placeholder={t('Например, ИНН, номер договора или счёта')} />
+    </Field>
+  );
   return (
     <>
       <WalletFields wallet={payment?.wallet} required />
@@ -179,7 +187,7 @@ export function CreatePaymentModal({ onClose, kind: initialKind = 'regular' }: C
             <Input name="first_due_date" type="date" min="2000-01-01" max="2100-12-31" defaultValue={settings.today} required />
           </Field>
         ) : (
-          <FormRow>
+          <ScheduleRow>
             <Field>
               {t('Первая дата оплаты')}
               <Input name="first_due_date" type="date" min="2000-01-01" max="2100-12-31" defaultValue={settings.today} required />
@@ -188,10 +196,11 @@ export function CreatePaymentModal({ onClose, kind: initialKind = 'regular' }: C
               {t('Повтор')}
               <Select name="frequency" defaultValue="monthly">{frequencies.map((f) => <option key={f} value={f}>{frequencyName(f)}</option>)}</Select>
             </Field>
-          </FormRow>
+          </ScheduleRow>
         )}
         <MethodFields method={method} />
         <Group>{t('дополнительно')}</Group>
+        {method === 'fiat' && <PaymentLinkField />}
         <CategoryField categories={categories} />
         {users.length > 0 && <AssigneeField users={users} />}
         <InfoBox>
@@ -244,6 +253,7 @@ export function EditPaymentModal({ payment, onClose }: Close & { payment: Recurr
         {method === 'fiat' && payment.wallet && <Muted>{t('При сохранении кошелёк будет удалён.')}</Muted>}
         {method === 'crypto' && (payment.payment_url || payment.payment_details) && <Muted>{t('При сохранении ссылка на оплату и реквизиты будут удалены.')}</Muted>}
         <Group>{t('дополнительно')}</Group>
+        {method === 'fiat' && <PaymentLinkField payment={payment} />}
         <CategoryField value={payment.category} categories={categories} />
         <AssigneeField value={payment.assignee?.id} users={users} />
       </ModalForm>
@@ -287,6 +297,7 @@ export function PauseModal({ payment, onClose }: Close & { payment: Recurring })
 export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occurrence | Forecast }) {
   const { settings, refresh, isAdmin } = useSession();
   const [deleting, setDeleting] = useState(false);
+  const [receiptsBlocked, setReceiptsBlocked] = useState(false);
   const toast = useToast();
   const ahead = !('id' in o);
   const paid = !ahead && o.paid_at !== null;
@@ -295,6 +306,7 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
     <Modal title={ahead ? t('Оплатить заранее') : paid ? t('Изменить оплату') : t('Отметить оплату')} onClose={onClose}>
       <ModalForm
         onSubmit={async (data, submitter) => {
+          if (receiptsBlocked) throw new Error(t('Прикрепите выбранный чек или уберите его перед сохранением оплаты.'));
           const undo = submitter?.value === 'undo';
           if (ahead) {
             await api(`/recurring-payments/${o.recurring_payment_id}/periods`, { method: 'POST', body: { due_date: o.due_date, paid_at: data.get('paid_at') } });
@@ -307,9 +319,9 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
         }}
         actions={<>
           {paid
-            ? <Button type="submit" name="action" value="undo" formNoValidate $variant="secondary">{t('Отменить оплату')}</Button>
+            ? <Button type="submit" name="action" value="undo" formNoValidate $variant="secondary" disabled={receiptsBlocked}>{t('Отменить оплату')}</Button>
             : <Button type="button" $variant="secondary" onClick={onClose}>{t('Назад')}</Button>}
-          <Button type="submit" name="action" value="save">{paid ? t('Сохранить дату') : t('Подтвердить оплату')}</Button>
+          <Button type="submit" name="action" value="save" disabled={receiptsBlocked}>{paid ? t('Сохранить дату') : t('Подтвердить оплату')}</Button>
         </>}
       >
         <InfoBox>
@@ -328,6 +340,13 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
           <Input name="paid_at" type="date" defaultValue={(!ahead && o.paid_at) || settings.today} max={settings.today} required />
           <small>{t('Оплата в день срока — вовремя. Исправление даты пересчитает просрочку, срок не изменится.')}</small>
         </Field>
+        {ahead
+          ? <ReceiptHint>{t('Чек можно прикрепить после сохранения оплаты: откройте этот платёж в истории.')}</ReceiptHint>
+          : <ReceiptSection>
+              <h3>{t('Чеки и ссылки')}</h3>
+              <ReceiptHint>{t('Необязательно. Чеки сохраняются сразу и остаются у этого периода, даже если закрыть окно.')}</ReceiptHint>
+              <ReceiptsPanel occurrence={o} onBlockedChange={setReceiptsBlocked} />
+            </ReceiptSection>}
       </ModalForm>
     </Modal>
   );
@@ -364,18 +383,26 @@ function size(bytes: number | null) {
   return bytes > 1 << 20 ? `${(bytes / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 }
 
-/** Receipts of one period: links and files (PDF, PNG, JPEG, WebP up to 5 MB). */
-export function ReceiptsModal({ occurrence: o, onClose }: Close & { occurrence: Occurrence }) {
+/** Receipts of one period. This panel has no form so it can also live inside PayModal. */
+function ReceiptsPanel({ occurrence: o, onBlockedChange }: { occurrence: Occurrence; onBlockedChange?: (blocked: boolean) => void }) {
   const { user, isAdmin, refresh } = useSession();
   const toast = useToast();
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [url, setUrl] = useState('');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const { data: receipts } = useLoad(() => api<Receipt[]>(`/payment-occurrences/${o.id}/receipts`), [version]);
+  const urlRef = useRef<HTMLInputElement>(null);
+  const running = useRef(false);
+  const { data: receipts, error: loadError } = useLoad(() => api<Receipt[]>(`/payment-occurrences/${o.id}/receipts`), [version]);
+  const blocked = busy || url.trim() !== '' || pendingFile !== null;
+  useEffect(() => { onBlockedChange?.(blocked); }, [blocked, onBlockedChange]);
   const reload = () => { setVersion((v) => v + 1); refresh(); };
 
   async function run(action: () => Promise<unknown>, done: string) {
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -385,15 +412,42 @@ export function ReceiptsModal({ occurrence: o, onClose }: Close & { occurrence: 
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
 
+  function addLink() {
+    const link = url.trim();
+    if (!link || !urlRef.current?.reportValidity()) return;
+    run(async () => {
+      await api(`/payment-occurrences/${o.id}/receipts`, { method: 'POST', body: { url: link } });
+      setUrl('');
+    }, t('Ссылка прикреплена'));
+  }
+
+  function addFile(file: File) {
+    setPendingFile(file);
+    if (file.size > 5 * 1024 * 1024) {
+      setError(t('Файл слишком большой. Выберите файл до 5 МБ.'));
+      return;
+    }
+    const body = new FormData();
+    body.append('file', file);
+    run(async () => {
+      await api(`/payment-occurrences/${o.id}/receipts`, { method: 'POST', body });
+      setPendingFile(null);
+    }, t('Файл прикреплён'));
+  }
+
   return (
-    <Modal title={t('Чеки и ссылки')} onClose={onClose}>
-      <InfoBox><b>{o.title}</b><br />{moneyWith(o.amount, o.currency)} · {t('срок {date}', { date: longDate(o.due_date) })}</InfoBox>
-      <List>
-        {!receipts ? <Muted>{t('Загружаем…')}</Muted> : receipts.length === 0 ? <Muted>{t('Пока ничего не прикреплено')}</Muted> : receipts.map((r) => (
+    <>
+      {loadError && <Notice $tone="error" role="alert">
+        {loadError}
+        <Button type="button" $variant="secondary" $small disabled={busy} onClick={() => setVersion((v) => v + 1)}>{t('Повторить')}</Button>
+      </Notice>}
+      <List aria-live="polite">
+        {!receipts ? (!loadError && <ReceiptHint>{t('Загружаем…')}</ReceiptHint>) : receipts.length === 0 ? <ReceiptHint>{t('Пока ничего не прикреплено')}</ReceiptHint> : receipts.map((r) => (
           <Item key={r.id}>
             <span>
               {r.kind === 'link'
@@ -403,33 +457,50 @@ export function ReceiptsModal({ occurrence: o, onClose }: Close & { occurrence: 
             </span>
             {(isAdmin || r.created_by === user.username) && (
               <Button type="button" $small $variant="ghost" disabled={busy}
-                onClick={() => run(() => api(`/receipts/${r.id}`, { method: 'DELETE' }), t('Чек удалён'))}>{t('удалить')}</Button>
+                onClick={() => run(() => api(`/receipts/${r.id}`, { method: 'DELETE' }), t('Чек удалён'))}>{t('Удалить')}</Button>
             )}
           </Item>
         ))}
       </List>
-      <AddForm onSubmit={(e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        const url = String(new FormData(form).get('url') ?? '').trim();
-        if (url) run(() => api(`/payment-occurrences/${o.id}/receipts`, { method: 'POST', body: { url } }).then(() => form.reset()), t('Ссылка прикреплена'));
-      }}>
-        <Input name="url" type="url" placeholder={t('Ссылка на чек или счёт')} maxLength={500} />
-        <Button type="submit" $variant="secondary" disabled={busy}>{t('Добавить')}</Button>
-      </AddForm>
-      <Row $between $wrap>
-        <Muted>{t('Файл: PDF, PNG, JPEG или WebP до 5 МБ')}</Muted>
-        <Button type="button" disabled={busy} onClick={() => fileRef.current?.click()}>{t('Загрузить файл')}</Button>
-        <input ref={fileRef} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" hidden onChange={(e) => {
+      <AddRow>
+        <Field>
+          {t('Ссылка на чек или счёт')}
+          <Input ref={urlRef} type="url" placeholder="https://" maxLength={500} value={url} disabled={busy}
+            onChange={(e) => { setUrl(e.target.value); setError(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }} />
+        </Field>
+        <Button type="button" $variant="secondary" disabled={busy || !url.trim()} onClick={addLink}>{t('Прикрепить')}</Button>
+      </AddRow>
+      <UploadRow>
+        <ReceiptHint>{t('Файл: PDF, PNG, JPEG или WebP до 5 МБ')}</ReceiptHint>
+        <Button type="button" $variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}>{t('Загрузить файл')}</Button>
+        <input ref={fileRef} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" hidden disabled={busy} onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = '';
-          if (!file) return;
-          const body = new FormData();
-          body.append('file', file);
-          run(() => api(`/payment-occurrences/${o.id}/receipts`, { method: 'POST', body }), t('Файл прикреплён'));
+          if (file) addFile(file);
         }} />
-      </Row>
+      </UploadRow>
+      {pendingFile && <PendingReceipt role="status">
+        <span>{busy ? t('Загружаем…') : t('Файл не прикреплён')}: <b>{pendingFile.name}</b></span>
+        {!busy && <Row $wrap>
+          <Button type="button" $small $variant="secondary" onClick={() => addFile(pendingFile)}>{t('Повторить')}</Button>
+          <Button type="button" $small $variant="ghost" onClick={() => { setPendingFile(null); setError(null); }}>{t('Убрать')}</Button>
+        </Row>}
+      </PendingReceipt>}
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
+      {onBlockedChange && blocked && !busy && <ReceiptHint>{t('Прикрепите выбранный чек или уберите его перед сохранением оплаты.')}</ReceiptHint>}
+    </>
+  );
+}
+
+/** A quick receipt entry remains available for already paid and archived records. */
+export function ReceiptsModal({ occurrence: o, onClose }: Close & { occurrence: Occurrence }) {
+  return (
+    <Modal title={t('Чеки и ссылки')} onClose={onClose}>
+      <InfoBox><b>{o.title}</b><br />{moneyWith(o.amount, o.currency)} · {t('срок {date}', { date: longDate(o.due_date) })}</InfoBox>
+      <ReceiptSection>
+        <ReceiptsPanel occurrence={o} />
+      </ReceiptSection>
     </Modal>
   );
 }
@@ -533,8 +604,8 @@ const Segment = styled.button<{ $selected: boolean }>`
   border: 1px solid ${({ theme }) => theme.color.line};
   background: ${({ theme }) => theme.color.tile};
   color: ${({ theme }) => theme.color.muted};
-  b { color: ${({ theme }) => theme.color.text}; font-weight: 500; }
-  small { font-size: 1.3rem; }
+  b { color: var(--ink); font-size: 16px; font-weight: 550; }
+  small { color: var(--desk-muted); font-size: 14px; line-height: 1.5; }
   &:hover { border-color: ${({ theme }) => theme.color.faint}; }
   ${({ $selected, theme }) => $selected && css`
     border-color: ${theme.color.accent};
@@ -543,20 +614,49 @@ const Segment = styled.button<{ $selected: boolean }>`
   `}
 `;
 
+const ScheduleRow = styled(FormRow)`
+  &.form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  @media (max-width: 480px) { &.form-row { grid-template-columns: minmax(0, 1fr); } }
+`;
+
 const Group = styled.div`
-  margin-top: 0.4rem;
-  padding-top: 1.4rem;
-  border-top: 1px solid ${({ theme }) => theme.color.line};
-  color: ${({ theme }) => theme.color.muted};
-  font-size: 1.3rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  &::first-letter { text-transform: uppercase; }
+`;
+
+const ReceiptSection = styled.section`
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  h3 { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); }
+`;
+
+const ReceiptHint = styled.p`
+  margin: 0;
+  color: var(--desk-muted);
+  font-size: 14px;
+  line-height: 1.55;
+`;
+
+const PendingReceipt = styled.div`
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 `;
 
 const List = styled.div`
   display: grid;
   gap: 0.6rem;
-  margin: 1.6rem 0;
+  margin: 0;
 `;
 
 const Item = styled.div`
@@ -567,14 +667,28 @@ const Item = styled.div`
   padding: 1rem 1.2rem;
   border-radius: ${({ theme }) => theme.radius.md};
   background: ${({ theme }) => theme.color.tile};
-  a { color: ${({ theme }) => theme.color.accent}; word-break: break-all; }
-  small { display: block; color: ${({ theme }) => theme.color.muted}; }
+  min-width: 0;
+  > span { min-width: 0; }
+  a { color: var(--apple-blue); overflow-wrap: anywhere; font-size: 15px; }
+  small { display: block; margin-top: 4px; color: var(--desk-muted); font-size: 13px; }
+  button { flex: 0 0 auto; }
 `;
 
-const AddForm = styled.form`
+const AddRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  @media (max-width: 480px) { grid-template-columns: minmax(0, 1fr); }
+`;
+
+const UploadRow = styled.div`
   display: flex;
-  gap: 0.8rem;
-  margin-bottom: 1.2rem;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  button { flex-shrink: 0; }
 `;
 
 // Row check results can be long: let them wrap instead of widening the table.

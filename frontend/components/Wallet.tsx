@@ -65,7 +65,7 @@ export function walletBody(data: FormData) {
 
 const WalletRow = styled.div`
   display: grid;
-  grid-template-columns: 12rem 1fr;
+  grid-template-columns: minmax(160px, .4fr) minmax(0, 1fr);
   align-items: start;
   gap: 1.2rem;
   ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }

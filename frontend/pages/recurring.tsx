@@ -45,7 +45,7 @@ export default function RecurringPage() {
           <div className="empty-state"><b>{t('Начните с регулярного платежа')}</b>{t('Добавьте аренду, сервер или подписку.')}</div>
         ) : (
           <table>
-            <thead><tr><th>{t('ПЛАТЁЖ')}</th><th>{t('СУММА')}</th><th>{t('ПОВТОРЕНИЕ')}</th><th>{t('БЛИЖАЙШИЙ СРОК')}</th><th>{t('СОСТОЯНИЕ')}</th>{isAdmin && <th />}</tr></thead>
+            <thead><tr><th>{t('Платёж')}</th><th>{t('Сумма')}</th><th>{t('Повторение')}</th><th>{t('Ближайший срок')}</th><th>{t('Состояние')}</th>{isAdmin && <th className="recurring-actions-heading">{t('Действия')}</th>}</tr></thead>
             <tbody>
               {data.map((r) => (
                 <tr key={r.id}>
@@ -77,18 +77,18 @@ export default function RecurringPage() {
                     </span>
                   </td>
                   {isAdmin && (
-                    <td>
-                      {r.active ? (
-                        <div className="row-action-group">
-                          {r.payment_url && !r.wallet?.sanctioned && <a className="row-action edit" href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('Оплатить ↗')}</a>}
+                    <td className="recurring-actions-cell">
+                      <div className="recurring-actions">
+                        {r.active && <>
                           <button type="button" className="row-action edit" onClick={() => setModal({ kind: 'edit', payment: r })}>{t('Изменить')}</button>
                           {r.frequency !== 'once' && (r.paused
                             ? <button type="button" className="row-action" onClick={() => resume(r)}>{t('Возобновить')}</button>
                             : <button type="button" className="row-action edit" onClick={() => setModal({ kind: 'pause', payment: r })}>{t('Пауза')}</button>)}
-                          <button type="button" className="row-action delete" onClick={() => setModal({ kind: 'archive', payment: r })}>{t('Прекратить ↗')}</button>
-                        </div>
-                      ) : null}
-                      <button type="button" className="row-action delete" onClick={() => setModal({ kind: 'delete', payment: r })}>{t('Удалить')}</button>
+                          <button type="button" className="row-action edit" onClick={() => setModal({ kind: 'archive', payment: r })}>{t('В архив')}</button>
+                        </>}
+                        <button type="button" className="row-action delete" onClick={() => setModal({ kind: 'delete', payment: r })}>{t('Удалить')}</button>
+                        {r.active && r.payment_url && !r.wallet?.sanctioned && <a className="row-action recurring-payment-link" href={r.payment_url} target="_blank" rel="noopener noreferrer">{t('Оплатить ↗')}</a>}
+                      </div>
                     </td>
                   )}
                 </tr>

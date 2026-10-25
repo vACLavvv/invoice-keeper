@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import styled from 'styled-components';
 import { InfoBox, Modal, ModalForm } from '@/components/Modal';
 import { Shell } from '@/components/Shell';
 import { ws } from '@/components/icons';
@@ -32,7 +33,7 @@ export default function Team() {
     >
       {error && <Notice $tone="error" role="alert">{error}</Notice>}
       <Notice>{t('Администратор задаётся в .env и здесь не отображается. Участники видят платежи, отмечают оплату и исправляют даты.')}</Notice>
-      <div id="users-table" className="ledger table-wrap cards">
+      <TeamTable id="users-table" className="ledger table-wrap cards">
         {!data ? <div className="empty-state">{t('Загружаем…')}</div> : data.length === 0 ? (
           <div className="empty-state"><b>{t('Пригласите команду')}</b>{t('Создайте учётную запись для коллеги.')}<br />{t('Администратор не отображается в этом списке.')}</div>
         ) : (
@@ -41,9 +42,9 @@ export default function Team() {
             <tbody>
               {data.map((u) => (
                 <tr key={u.id}>
-                  <td><b>{u.display_name}</b></td>
-                  <td className="date-cell" data-label={t('Логин')}>{u.username}</td>
-                  <td data-label={t('Электронная почта')}>
+                  <td className="member-name"><b>{u.display_name}</b></td>
+                  <td className="date-cell member-login" data-label={t('Логин')}>{u.username}</td>
+                  <td className="member-email" data-label={t('Электронная почта')}>
                     <div>{u.email || t('Не указана')}</div>
                     {u.email && <small className="muted">{u.email_verified_at ? t('Подтверждена') : t('Ожидает подтверждения')}</small>}
                   </td>
@@ -66,12 +67,29 @@ export default function Team() {
             </tbody>
           </table>
         )}
-      </div>
+      </TeamTable>
       {editing && <UserModal user={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {deleting && <DeleteModal user={deleting} onClose={() => setDeleting(null)} />}
     </Shell>
   );
 }
+
+const TeamTable = styled.div`
+  .member-name, .member-login, .member-email {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .member-name { max-width: 220px; }
+  .member-email { max-width: 260px; }
+  .member-email small { display: block; margin-top: 4px; font-size: 13px; }
+  .row-action-group { flex-wrap: wrap; min-width: 150px; max-width: 250px; gap: 8px; }
+  .row-action { white-space: normal; text-align: center; }
+  @media (max-width: 720px) {
+    .member-name, .member-email { max-width: none; }
+    .member-email { grid-column: 1 / -1; }
+    .row-action-group { min-width: 0; max-width: none; justify-content: flex-start; margin-top: 8px; }
+  }
+`;
 
 function UserModal({ user, onClose }: { user: TeamUser | null; onClose: () => void }) {
   const { refresh } = useSession();

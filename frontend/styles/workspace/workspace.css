@@ -267,7 +267,7 @@ td { padding: 18px; font-size: 13px; }
 @media (max-width: 600px) {
   .workspace-breadcrumb { display: none; }
   .topbar { min-height: 58px; }
-  .topbar-right { width: 100%; gap: 10px; }
+  .topbar-right { gap: 10px; }
   .topbar-right #today-label { margin-right: auto; order: -1; font-size: 11px; }
   .theme-toggle, .bell-button { min-width: 42px; min-height: 42px; height: 42px; border-radius: 11px; }
   .theme-toggle svg, .bell-button svg { width: 18px; height: 18px; }

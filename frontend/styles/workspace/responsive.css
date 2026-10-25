@@ -11,6 +11,13 @@ img, video { max-width: 100%; }
 .form-info, .notice, .confirm-copy { overflow-wrap: anywhere; }
 html:has(dialog[open]) { overflow: hidden; }
 dialog { overscroll-behavior: contain; }
+/* The native dialog owns scrolling; a normal block owns content sizing.
+   Keep the form grid out of fieldset's intrinsic layout. */
+dialog.workspace-dialog { position: fixed; inset: 0; margin: auto; padding: 0; overflow: auto; }
+.modal-content { box-sizing: border-box; width: 100%; min-width: 0; padding: 28px 30px; overflow-wrap: anywhere; }
+.modal-content > form, .modal-form, .modal-form > *, .modal-header > div { min-width: 0; }
+.modal-form { width: 100%; grid-template-columns: minmax(0, 1fr); }
+.modal-form input, .modal-form select, .modal-form textarea { min-width: 0; }
 .modal-header h2 { overflow-wrap: anywhere; }
 
 /* Search stays visible; secondary filters have their own area and labels. */
@@ -29,10 +36,11 @@ dialog { overscroll-behavior: contain; }
 .mobile-preferences .lang-toggle { display: inline-flex; }
 
 @media (max-width: 1100px) {
-  .topbar { gap: 12px; }
+  .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .topbar > .topbar-right { width: auto; min-width: 0; justify-self: end; }
   .mobile-brand { min-width: 0; gap: 6px; }
-  .mobile-brand > a { min-width: 0; white-space: nowrap; }
-  .menu-toggle, .topbar-right { flex-shrink: 0; }
+  .mobile-brand > a { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .menu-toggle, .topbar-right > * { flex-shrink: 0; }
   .page-heading, body[data-page='overview'] .page-heading, body:not([data-page='overview']) .page-heading {
     grid-template-columns: minmax(0, 1fr); min-height: 0; gap: 16px;
   }
@@ -87,7 +95,8 @@ dialog { overscroll-behavior: contain; }
   .mobile-brand > a { font-size: 18px; }
   .topbar-right { gap: 0; }
   .topbar > .topbar-right .lang-toggle, .workspace-date { display: none; }
-  .topbar .theme-toggle, .topbar .bell-button { width: 44px; min-width: 44px; padding: 0; min-height: 44px; justify-content: center; }
+  .topbar .theme-toggle, .topbar .bell-button { width: 44px; min-width: 44px; margin: 0; padding: 0; min-height: 44px; justify-content: center; }
+  .topbar .bell-button { width: auto; padding: 0 6px; }
   .bell-button span { font-size: 12px; }
   .page-heading, body[data-page='overview'] .page-heading, body:not([data-page='overview']) .page-heading { padding: 0; margin-bottom: 24px; }
   .page-heading h1 { font-size: clamp(26px, 6.5vw, 32px); line-height: 1.2; }
@@ -200,7 +209,8 @@ dialog { overscroll-behavior: contain; }
   .browser-notice .button { max-width: none; min-height: 44px; }
   .browser-notice b { font-size: 16px; }
 
-  dialog, dialog.wide, dialog:has(.mobile-navigation) { width: calc(100vw - 24px); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 20px 18px; border-radius: 16px; }
+  dialog.workspace-dialog, dialog.workspace-dialog.wide { width: calc(100vw - 24px); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 0; border-radius: 16px; }
+  .modal-content { padding: 20px 18px; }
   .modal-header { gap: 12px; margin-bottom: 22px; }
   .modal-header h2 { font-size: 23px; }
   .modal-header .icon-button { width: 44px; height: 44px; }

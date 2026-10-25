@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import { t } from '@/lib/i18n';
 
@@ -12,23 +13,27 @@ export function Modal({ title, eyebrow = 'INVOICE KEEPER', wide = false, onClose
     if (dialog && !dialog.open) dialog.showModal();
     return () => dialog?.close();
   }, []);
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <dialog
       ref={ref}
-      className={wide ? 'wide' : undefined}
+      className={`workspace-dialog${wide ? ' wide' : ''}`}
       aria-labelledby="modal-title"
       onCancel={(e) => { e.preventDefault(); onClose(); }}
       onClick={(e) => { if (e.target === ref.current) onClose(); }}
     >
-      <div className="modal-header">
-        <div>
-          <span className="eyebrow">{eyebrow}</span>
-          <h2 id="modal-title">{title}</h2>
+      <div className="modal-content">
+        <div className="modal-header">
+          <div>
+            <span className="eyebrow">{eyebrow}</span>
+            <h2 id="modal-title">{title}</h2>
+          </div>
+          <button type="button" className="icon-button" aria-label={t('Закрыть')} onClick={onClose}>×</button>
         </div>
-        <button type="button" className="icon-button" aria-label={t('Закрыть')} onClick={onClose}>×</button>
+        {children}
       </div>
-      {children}
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 
@@ -56,10 +61,12 @@ export function ModalForm({ onSubmit, actions, children }: FormProps) {
   }
   return (
     <form onSubmit={submit}>
-      <fieldset className="modal-form" disabled={busy}>
-        {children}
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="modal-actions">{actions}</div>
+      <fieldset className="modal-fieldset" disabled={busy}>
+        <div className="modal-form">
+          {children}
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions">{actions}</div>
+        </div>
       </fieldset>
     </form>
   );

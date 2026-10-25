@@ -4,6 +4,8 @@
 
 Стек: бэкенд на Go 1.27 (стандартный `net/http`, SQLite через `modernc.org/sqlite` — без CGO). Панель — **Next.js 16 (Pages Router) + React 19 + styled-components**, собранная как статический экспорт и встроенная в бинарник вместе со Swagger UI и OpenAPI. Фоновая проверка напоминаний работает внутри того же процесса; Redis, внешняя БД и CDN не нужны. Собранная панель лежит в `web/app`, поэтому **для запуска нужен только Go** — Node.js требуется лишь для изменения фронтенда.
 
+Можно также [запустить проект через Docker](#запуск-через-docker): устанавливать Go и Node.js на компьютер не потребуется.
+
 ## Быстрый локальный запуск
 
 Нужен Go 1.27+ (https://go.dev/dl/; на Windows: `winget install GoLang.Go`). Команды выполняются в папке проекта.
@@ -236,19 +238,74 @@ go run ./cmd/invoice-keeper backup     # или --destination путь
 
 Журнал: `journalctl -u invoice-keeper -f`. Одна строка на запрос; токены, пароли и cookie в журнал не попадают.
 
-## Docker: необязательный отдельный запуск
+## Запуск через Docker
 
-Эта конфигурация подготовлена для проверки и не запускается автоматически. Никаких SSH-команд, изменений Nginx, firewall, DNS или существующих контейнеров проект не выполняет.
+Нужны Docker и Docker Compose v2. На macOS и Windows установите и запустите Docker Desktop; на Linux — Docker Engine с Compose. Команды ниже выполняются **из корня проекта** в терминале macOS/Linux или WSL2 на Windows. Go и Node.js на компьютере не нужны: Go-бинарник собирается внутри образа, готовая панель уже лежит в `web/app`.
 
-После создания `.env` можно выполнить:
+На macOS Docker Desktop можно запустить командой `docker desktop start` или открыть приложение вручную. Проверка готовности: `docker info`.
+
+### Сборка и первый запуск
 
 ```sh
-docker compose up -d --build keeper
+# Собрать образ приложения.
+docker build -t invoice-keeper:local .
+
+# Создать локальный .env с уникальными паролями и ключом шифрования.
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD:/config" \
+  -w /config \
+  -e DATABASE_PATH=/tmp/bootstrap.sqlite3 \
+  invoice-keeper:local invoice-keeper bootstrap
+
+# Собрать Compose-образ и запустить приложение в фоне.
+docker compose -p invoice-keeper-local up -d --build keeper
 ```
 
-Адрес по умолчанию: **http://127.0.0.1:18081**. Имя Compose-проекта `invoice-keeper-hackathon`, данные — в отдельном именованном volume. Контейнер работает без root, с доступной для записи только `/data` и временной `/tmp`, лимитами CPU/памяти и логов. Локальная база `data/` не монтируется и диплом не затрагивается. Контейнерная база изначально пустая, демоданные в неё автоматически не копируются. Остановить только приложение: `docker compose stop keeper`.
+Bootstrap сохраняет `.env` в папке проекта и не перезаписывает существующий файл. Временная база bootstrap находится внутри одноразового контейнера и удаляется вместе с ним. Рабочая база приложения создаётся отдельно в Docker volume. Последняя команда использует кеш предыдущей сборки.
 
-Не используйте команды удаления volumes для остановки: они удаляют данные. Перед размещением на VDS сначала проверьте свободный порт и ресурсы и сделайте отдельный бэкап. Для публичного доступа нужен существующий HTTPS reverse proxy и `COOKIE_SECURE=true`; конкретная интеграция в сервер требует отдельного выбора домена/маршрута. По умолчанию внешний доступ закрыт привязкой порта к loopback.
+В репозитории есть [`.env.example`](.env.example) — шаблон с описанием настроек, а не готовыми паролями. Для локальной проверки используйте `.env`, созданный bootstrap: он уже содержит уникальные `ADMIN_PASSWORD`, `DEMO_PASSWORD` и `DATA_ENCRYPTION_KEY`, Telegram выключен, SMTP не настроен. Рабочий `.env` исключён из Git.
+
+Откройте **http://localhost:18081**. Логин и пароль администратора находятся в `.env`: `ADMIN_USERNAME` и `ADMIN_PASSWORD`. На Mac открыть файл можно командой `open -e .env`. Swagger после входа доступен по адресу **http://localhost:18081/api/v1/docs**. Настройки Telegram и почты задаются в том же `.env`; после его изменения повторите команду `up -d` ниже.
+
+### Тестовые платежи — по желанию
+
+По умолчанию контейнерная база пустая. Чтобы добавить демопользователя и шесть платежей в RUB, USD и EUR, после первого запуска выполните:
+
+```sh
+docker compose -p invoice-keeper-local stop keeper
+docker compose -p invoice-keeper-local run --rm \
+  --workdir /tmp \
+  keeper invoice-keeper bootstrap --demo
+docker compose -p invoice-keeper-local up -d keeper
+```
+
+Если в базе уже есть пользователи или платежи, демоданные не добавляются. Для входа демопользователем используйте `DEMO_USERNAME` / `DEMO_PASSWORD` из `.env`. Compose передаёт настройки из этого файла через окружение, в том числе общий ключ шифрования и учётные данные. Временный файл bootstrap создаётся в `/tmp`, рабочая база остаётся в volume `/data`.
+
+### Управление контейнером
+
+```sh
+# Статус и проверка готовности.
+docker compose -p invoice-keeper-local ps
+
+# Логи; Ctrl+C завершает просмотр, но не останавливает приложение.
+docker compose -p invoice-keeper-local logs -f keeper
+
+# Остановить с сохранением базы.
+docker compose -p invoice-keeper-local stop keeper
+
+# Запустить снова или применить изменения .env.
+docker compose -p invoice-keeper-local up -d keeper
+
+# Пересобрать после обновления исходников.
+docker compose -p invoice-keeper-local up -d --build keeper
+```
+
+Если порт 18081 занят, добавьте `INVOICE_KEEPER_PORT=18082` в `.env` и повторите `up -d keeper`: приложение будет доступно на http://localhost:18082.
+
+Во всех командах используется Compose-проект `invoice-keeper-local`, его база хранится в volume `invoice-keeper-local_keeper-data`. Сохраняйте одинаковое имя `-p`, чтобы работать с той же базой; без `-p` файл `compose.yaml` использует другое имя — `invoice-keeper-hackathon`. Локальная папка `data/` в контейнер не монтируется. Контейнер работает без root, с доступной для записи только `/data` и временной `/tmp`, лимитами CPU/памяти и логов.
+
+Для обычной остановки используйте `stop`, а не `down -v`: параметр `-v` удаляет volume с данными. Сохраните `.env` и резервную копию базы перед обновлением. Для размещения на VDS нужны HTTPS reverse proxy и `COOKIE_SECURE=true`; приведённые команды открывают приложение только на этом компьютере через loopback.
 
 ## Передача решения
 

@@ -1,7 +1,8 @@
+import { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import type { Screening, Wallet, WalletNetwork } from '@/lib/api';
+import { api, ApiError, type Screening, type Wallet, type WalletNetwork } from '@/lib/api';
 import { t } from '@/lib/i18n';
-import { Field, Input, Pill, Select } from './ui';
+import { Field, Input, Muted, Pill, Select } from './ui';
 
 export const walletNetworks: WalletNetwork[] = ['BTC', 'ETH', 'TRON'];
 
@@ -35,24 +36,87 @@ export function SanctionsWarning({ wallet }: { wallet: Wallet | null }) {
   );
 }
 
-/** Network and address of the payee wallet in the payment forms. */
+type WalletCheck =
+  | { state: 'idle' | 'checking' | 'failed' }
+  | { state: 'done'; screening: Screening }
+  | { state: 'invalid'; message: string };
+
+/** Screens the address while it is typed, half a second after the last keystroke; nothing is saved. */
+function useWalletCheck(network: string, address: string): WalletCheck {
+  const [check, setCheck] = useState<WalletCheck>({ state: 'idle' });
+  useEffect(() => {
+    const value = address.trim();
+    if (!network || value.length < 25) {
+      setCheck({ state: 'idle' });
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setCheck({ state: 'checking' });
+      try {
+        const answer = await api<{ screening: Screening }>('/sanctions/check', { method: 'POST', body: { network, address: value }, signal: controller.signal });
+        setCheck({ state: 'done', screening: answer.screening });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        // The field is named right above, so its «Адрес:» prefix is dropped.
+        setCheck(err instanceof ApiError && err.status === 422 ? { state: 'invalid', message: err.message.replace(/^[^:]{1,20}:\s*/, '') } : { state: 'failed' });
+      }
+    }, 500);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [network, address]);
+  return check;
+}
+
+function CheckResult({ check }: { check: WalletCheck }) {
+  switch (check.state) {
+    case 'checking':
+      return <Muted role="status">{t('Проверяем по списку OFAC…')}</Muted>;
+    case 'invalid':
+      return <Invalid role="alert">{check.message}</Invalid>;
+    case 'failed':
+      return <Muted role="status">{t('Не удалось проверить сейчас — проверим при сохранении и в напоминаниях')}</Muted>;
+    case 'done':
+      if (check.screening.sanctioned === null) return <Muted role="status">{t('Список OFAC загружается — проверим при сохранении и в напоминаниях')}</Muted>;
+      if (!check.screening.sanctioned) return <span role="status"><ScreeningPill wallet={check.screening} /></span>;
+      return (
+        <Warning role="alert">
+          <b>{t('Кошелёк получателя в санкционном списке OFAC')}</b>
+          {t('Совпадение: {name}. Не оплачивайте, пока не разберётесь: кнопки «Оплатить» в напоминаниях для этого платежа нет.', { name: check.screening.match_name ?? '—' })}
+          <label><input type="checkbox" required /> {t('Понимаю риск — сохранить с этим кошельком')}</label>
+        </Warning>
+      );
+    default:
+      return null;
+  }
+}
+
+/** Network and address of the payee wallet in the payment forms, screened while typing. */
 export function WalletFields({ wallet, required = false }: { wallet?: Wallet | null; required?: boolean }) {
+  const [network, setNetwork] = useState<string>(wallet?.network ?? (required ? 'TRON' : ''));
+  const [address, setAddress] = useState(wallet?.address ?? '');
+  const check = useWalletCheck(network, address);
   return (
-    <WalletRow>
-      <Field>
-        {t('Сеть кошелька')}
-        <Select name="wallet_network" defaultValue={wallet?.network ?? (required ? 'TRON' : '')} required={required}>
-          {!required && <option value="">{t('Без кошелька')}</option>}
-          {walletNetworks.map((n) => <option key={n} value={n} title={networkHint()[n]}>{n}</option>)}
-        </Select>
-      </Field>
-      <Field>
-        {t('Криптокошелёк получателя')}
-        <Input name="wallet_address" defaultValue={wallet?.address ?? ''} maxLength={100} spellCheck={false} autoComplete="off"
-          placeholder={t('Адрес для оплаты в криптовалюте')} required={required} />
-        <small>{t('Сверяется со списком санкций OFAC при каждом показе и в напоминаниях')}</small>
-      </Field>
-    </WalletRow>
+    <>
+      <WalletRow>
+        <Field>
+          {t('Сеть кошелька')}
+          <Select name="wallet_network" value={network} onChange={(e) => setNetwork(e.target.value)} required={required}>
+            {!required && <option value="">{t('Без кошелька')}</option>}
+            {walletNetworks.map((n) => <option key={n} value={n} title={networkHint()[n]}>{n}</option>)}
+          </Select>
+        </Field>
+        <Field>
+          {t('Криптокошелёк получателя')}
+          <Input name="wallet_address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={100} spellCheck={false} autoComplete="off"
+            placeholder={t('Адрес для оплаты в криптовалюте')} required={required} aria-invalid={check.state === 'invalid' || undefined} />
+          <small>{t('Сверяется со списком санкций OFAC сразу при вводе, при каждом показе и в напоминаниях')}</small>
+        </Field>
+      </WalletRow>
+      <CheckResult check={check} />
+    </>
   );
 }
 
@@ -71,6 +135,10 @@ const WalletRow = styled.div`
   ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }
 `;
 
+const Invalid = styled.span`
+  color: ${({ theme }) => theme.color.overdue};
+`;
+
 const Warning = styled.div`
   display: grid;
   gap: 0.4rem;
@@ -80,4 +148,5 @@ const Warning = styled.div`
   color: ${({ theme }) => theme.color.text};
   line-height: 1.5;
   b { color: ${({ theme }) => theme.color.overdue}; font-weight: 600; }
+  label { display: flex; align-items: center; gap: 0.8rem; font-weight: 500; }
 `;

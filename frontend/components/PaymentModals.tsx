@@ -114,7 +114,6 @@ function MethodFields({ method, payment }: { method: Method; payment?: Recurring
   return (
     <>
       <WalletFields wallet={payment?.wallet} required />
-      <SanctionsWarning wallet={payment?.wallet ?? null} />
     </>
   );
 }

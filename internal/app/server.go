@@ -196,6 +196,7 @@ func (s *Server) routes() http.Handler {
 	handle("OPTIONS /api/v1/extension/whoami", preflight)
 	handle("OPTIONS /api/v1/payment-suggestions", preflight)
 	handle("OPTIONS /api/v1/extension/pairings/claim", preflight)
+	handle("OPTIONS /api/v1/sanctions/check", preflight)
 	// API routes come from the spec: the generated code registers every documented operation.
 	api.HandlerWithOptions(apiAdapter{s}, api.StdHTTPServerOptions{BaseRouter: mux, ErrorHandlerFunc: parameterError})
 	return mux

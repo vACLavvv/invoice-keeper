@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"invoice-keeper/internal/app/audit"
@@ -156,8 +157,16 @@ type Refresher struct {
 	Settings *config.Settings
 	Client   *http.Client
 
-	mu sync.Mutex
+	mu        sync.Mutex
+	requested atomic.Bool // an address check asked for the list (see Request)
+	wakeOnce  sync.Once
+	wake      chan struct{}
+	lastAsked time.Time // Run's goroutine only: the last download made on request
 }
+
+// requestRetry spaces downloads made on request, so checks against an unreachable list
+// do not start a download each.
+const requestRetry = 10 * time.Minute
 
 func (s *Refresher) walletsInUse() (bool, error) {
 	var n int
@@ -189,14 +198,39 @@ func (s *Refresher) Refresh(ctx context.Context) (int, error) {
 	return count, err
 }
 
-// Tick downloads the list when a wallet is in use and the list is stale.
+// Request asks Run for a download now, as if a wallet were in use: without it an address
+// check on an installation with no saved wallets would stay unchecked until the first one.
+func (s *Refresher) Request() {
+	if !s.Settings.OFACEnabled {
+		return
+	}
+	s.requested.Store(true)
+	select {
+	case s.wakeup() <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Refresher) wakeup() chan struct{} {
+	s.wakeOnce.Do(func() { s.wake = make(chan struct{}, 1) })
+	return s.wake
+}
+
+// Tick downloads the list when a wallet is in use (or a check asked for it) and the list is stale.
 func (s *Refresher) Tick(ctx context.Context) {
 	if !s.Settings.OFACEnabled {
 		return
 	}
+	requested := s.requested.Swap(false)
 	used, err := s.walletsInUse()
-	if err != nil || !used || !s.stale() {
+	if err != nil || !(used || requested) || !s.stale() {
 		return
+	}
+	if !used {
+		if time.Since(s.lastAsked) < requestRetry {
+			return
+		}
+		s.lastAsked = time.Now()
 	}
 	s.Refresh(ctx)
 }
@@ -210,6 +244,7 @@ func (s *Refresher) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 		case <-ticker.C:
+		case <-s.wakeup():
 		}
 	}
 }

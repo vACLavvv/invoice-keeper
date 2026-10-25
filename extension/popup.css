@@ -100,6 +100,10 @@ form:empty { display: none; }
 .switch span { order: -1; }
 @media (prefers-reduced-motion: reduce) { .switch input, .switch input::after { transition: none; } }
 .context { font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.screening:empty { display: none; }
+.screening { font-size: 12px; font-weight: 500; color: var(--muted); }
+.screening.ok { color: var(--accent); }
+.screening.bad { color: var(--negative); }
 .status:empty { display: none; }
 .status { font-size: 12px; font-weight: 500; }
 .status::before { content: '● '; }

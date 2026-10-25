@@ -156,8 +156,11 @@ function addCard(item = {}) {
   }
   toggle('wallet', Boolean(wallet && item.how));
   toggle('link', !field('wallet-on').checked && Boolean(field('link').value) && Boolean(item.how));
-  field('link-on').addEventListener('change', () => { toggle('link', field('link-on').checked); if (field('link-on').checked) toggle('wallet', false); });
-  field('wallet-on').addEventListener('change', () => { toggle('wallet', field('wallet-on').checked); if (field('wallet-on').checked) toggle('link', false); });
+  const screen = screener(card, () => toggle('wallet', false));
+  field('link-on').addEventListener('change', () => { toggle('link', field('link-on').checked); if (field('link-on').checked) { toggle('wallet', false); screen(); } });
+  field('wallet-on').addEventListener('change', () => { toggle('wallet', field('wallet-on').checked); if (field('wallet-on').checked) toggle('link', false); screen(); });
+  field('network').addEventListener('change', screen);
+  field('address').addEventListener('input', screen);
   card.querySelector('.title-text').textContent = item.how ? `Найдено: ${item.how}` : 'Вручную';
   const notes = [item.context];
   if (item.how && !item.date) notes.unshift('дата не найдена — стоит сегодняшняя, проверьте');
@@ -172,7 +175,48 @@ function addCard(item = {}) {
   field('title').addEventListener('input', () => { card.dataset.sourceKey = ''; });
   $('#list').append(card);
   updateSend();
+  screen();
   return card;
+}
+
+/** Checks the card's wallet against the server's sanctions list before anything is sent: right away
+ * for a wallet found on the page, half a second after typing otherwise. Only the network and the
+ * address go to the server. A listed wallet is switched off once, so it is not sent by accident. */
+function screener(card, switchOff) {
+  const field = (name) => card.querySelector(`[name="${name}"]`);
+  const line = card.querySelector('.screening');
+  const show = (text, tone = '') => { line.textContent = text; line.className = 'screening ' + tone; };
+  let timer = 0;
+  let turn = 0;
+  let warned = false;
+  const run = async () => {
+    const network = field('network').value;
+    const address = field('address').value.trim();
+    const mine = ++turn;
+    if (!field('wallet-on').checked || address.length < 25 || !settings.server || !settings.key) {
+      if (!warned) show('');
+      return;
+    }
+    show('проверяем по списку OFAC…');
+    try {
+      const { screening } = await call('/sanctions/check', { method: 'POST', body: JSON.stringify({ network, address }) });
+      if (mine !== turn) return;
+      if (screening.sanctioned === null) show('список OFAC ещё загружается — сервер проверит при отправке');
+      else if (!screening.sanctioned) show('✓ нет в списке OFAC', 'ok');
+      else {
+        show('⛔ в санкционном списке OFAC' + (screening.match_name ? ': ' + screening.match_name : '') +
+          (warned ? '' : ' — кошелёк выключен, включите, только если уверены'), 'bad');
+        if (!warned) { warned = true; switchOff(); }
+      }
+    } catch (e) {
+      if (mine === turn) show(e.message, 'bad');
+    }
+  };
+  return (event) => {
+    clearTimeout(timer);
+    if (event?.type === 'input') timer = setTimeout(run, 500);
+    else run();
+  };
 }
 
 /** Today in the user's time zone, as YYYY-MM-DD. */

@@ -1213,4 +1213,9 @@ export const en: Record<string, string> = {
   'Проверьте, что расширение распознало всё верно. Это разовый платёж без повтора.': 'Check that the extension recognised everything correctly. This is a one-time payment.',
   'Проверьте, что расширение распознало всё верно. Платёж будет повторяться {period} с этой даты.': 'Check that the extension recognised everything correctly. The payment repeats {period} from this date.',
   'Сохранить кошелёк {network} {address}': 'Keep wallet {network} {address}',
+  'Проверяем по списку OFAC…': 'Checking against the OFAC list…',
+  'Не удалось проверить сейчас — проверим при сохранении и в напоминаниях': 'Could not check right now — it will be checked on save and in reminders',
+  'Список OFAC загружается — проверим при сохранении и в напоминаниях': 'The OFAC list is loading — it will be checked on save and in reminders',
+  'Понимаю риск — сохранить с этим кошельком': 'I understand the risk — save with this wallet',
+  'Сверяется со списком санкций OFAC сразу при вводе, при каждом показе и в напоминаниях': 'Screened against the OFAC sanctions list as you type, on every view and in reminders',
 };

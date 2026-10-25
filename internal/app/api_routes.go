@@ -18,6 +18,7 @@ var corsRoutes = map[string]bool{
 	"GET /api/v1/extension/whoami":          true,
 	"POST /api/v1/payment-suggestions":      true,
 	"POST /api/v1/extension/pairings/claim": true,
+	"POST /api/v1/sanctions/check":          true, // the popup screens a wallet before sending it
 }
 
 // specQuery maps "METHOD /path" to the query parameters the spec documents for it.

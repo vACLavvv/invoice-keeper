@@ -139,10 +139,10 @@ const MonthlyTotal = styled.div`
   max-width: 100%;
   margin-left: auto;
   padding: 14px 18px;
-  border: 1px solid var(--desk-border);
+  border: 1px solid #202126;
   border-radius: 12px;
-  background: var(--desk-surface);
-  color: var(--desk-ink);
+  background: #202126;
+  color: #ffffff;
   line-height: 1.4;
   .month-total-label { font-size: 14px; font-weight: 600; }
   .month-total-values { display: flex; flex-wrap: wrap; gap: 8px 20px; min-width: 0; font-size: 14px; }

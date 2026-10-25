@@ -95,15 +95,17 @@ export default function Help() {
           ))}
         </DisclosureList>
       </HelpGroup>
-      <SectionTitle id="help-security">{t('безопасность')}</SectionTitle>
-      <DisclosureList aria-labelledby="help-security">
-        {security.map(([title, paragraphs]) => (
-          <details key={title}>
-            <summary>{title}</summary>
-            <div>{paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
-          </details>
-        ))}
-      </DisclosureList>
+      <HelpGroup>
+        <summary id="help-security"><span>{t('безопасность')}</span></summary>
+        <DisclosureList aria-labelledby="help-security">
+          {security.map(([title, paragraphs]) => (
+            <details key={title}>
+              <summary>{title}</summary>
+              <div>{paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+            </details>
+          ))}
+        </DisclosureList>
+      </HelpGroup>
       {(settings.support_telegram || settings.support_email) && (
         <>
           <SectionTitle>{t('поддержка')}</SectionTitle>

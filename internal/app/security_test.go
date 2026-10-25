@@ -277,7 +277,7 @@ func TestPaidButtonOnlyForLinkedMembers(t *testing.T) {
 	guest := pressPaid(ourChat, id(item))
 	guest.CallbackQuery.From.ID = 501
 	tb.Handle(guest)
-	expect(t, "guest refused", strings.HasPrefix(tg.sent("answerCallbackQuery")[0]["text"].(string), "Привяжите Telegram"), true)
+	expect(t, "guest refused", strings.HasPrefix(tg.sent("answerCallbackQuery")[0]["text"].(string), "Telegram ещё не привязан"), true)
 	expect(t, "still unpaid", c.get("/api/v1/payment-occurrences/" + id(item)).object(t)["paid_at"], nil)
 
 	c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})

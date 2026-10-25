@@ -135,6 +135,72 @@ func TestForeignChatCannotUseTheBot(t *testing.T) {
 	}
 }
 
+func TestPlainStartExplainsLinkingWithoutGrantingAccess(t *testing.T) {
+	for _, baseURL := range []string{"", "https://keeper.example"} {
+		t.Run(baseURL, func(t *testing.T) {
+			e := setup(t)
+			e.settings.PublicBaseURL = baseURL
+			tb, tg := botFor(e)
+			start := message(501, "/start")
+			start.Message.Chat.Type = "private"
+			start.Message.From = &bot.User{ID: 501, Username: "alex_tg"}
+			tb.Handle(start)
+			reply := tg.sent("sendMessage")[0]
+			if !strings.Contains(reply["text"].(string), "ещё не привязан") || !strings.Contains(reply["text"].(string), "Открыть Telegram и привязать") {
+				t.Fatalf("plain Start must explain the missing account link: %v", reply)
+			}
+			if baseURL == "" {
+				if _, exists := reply["reply_markup"]; exists {
+					t.Fatal("do not send an account button without a configured public URL")
+				}
+			} else {
+				markup := reply["reply_markup"].(map[string]any)
+				button := markup["inline_keyboard"].([]any)[0].([]any)[0].(map[string]any)
+				expect(t, "account button", button["url"], any(baseURL+"/account#telegram"))
+			}
+			_, linked := e.server.panelNameForTelegram(501)
+			expect(t, "plain Start cannot grant access", linked, false)
+		})
+	}
+}
+
+func TestGroupPaidButtonRequiresPersonalLink(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	c.createPayment(nil)
+	item := c.get("/api/v1/payment-occurrences").list(t)[0]
+	e.settings.PaidLinkedOnly = true
+	tb, tg := botFor(e)
+	e.server.SetBotUsername("invoice_test_bot")
+	press := pressPaid(ourChat, id(item))
+	press.CallbackQuery.From = bot.User{ID: 501, Username: "alex_tg"}
+	tb.Handle(press)
+	reply := tg.sent("answerCallbackQuery")[0]
+	expect(t, "readable explanation instead of a clipped toast", reply["show_alert"], any(true))
+	if !strings.Contains(reply["text"].(string), "ещё не привязан") || len([]rune(reply["text"].(string))) > 200 {
+		t.Fatalf("invalid account-link alert: %v", reply)
+	}
+	expect(t, "unlinked user cannot pay", c.get("/api/v1/payment-occurrences/" + id(item)).object(t)["paid_at"], nil)
+
+	link := c.post("/api/v1/me/telegram/link", nil).object(t)["url"].(string)
+	code := strings.SplitN(link, "start=", 2)[1]
+	start := message(501, "/start "+code)
+	start.Message.Chat.Type = "private"
+	start.Message.From = &press.CallbackQuery.From
+	tb.Handle(start)
+	expect(t, "linked in account", c.get("/api/v1/me/telegram").object(t)["linked"], any(true))
+	start.Message.Text = "/start"
+	tb.Handle(start)
+	if !strings.Contains(tg.sent("sendMessage")[1]["text"].(string), "уже привязан") {
+		t.Fatal("plain Start must confirm an existing link")
+	}
+	tb.Handle(press)
+	paid := c.get("/api/v1/payment-occurrences/" + id(item)).object(t)
+	expect(t, "group payment succeeds after personal linking", paid["paid_at"], any("2026-01-28"))
+	expect(t, "recorded under the linked account", paid["updated_by"], any(e.settings.AdminUsername))
+}
+
 func TestTodoAndOverdueCommands(t *testing.T) {
 	e := setup(t)
 	c := e.client()

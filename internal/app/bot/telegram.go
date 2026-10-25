@@ -230,7 +230,24 @@ func (b *Telegram) onMessage(m *Message) error {
 				return err
 			}
 			return b.reply(m.Chat.ID, "Готово: Telegram привязан к учётной записи "+name+" в Invoice Keeper.\n"+
-				"Сюда будут приходить напоминания по вашим платежам с кнопкой «✅ Оплачено».\n\n"+botHelp)
+				"Теперь кнопка «✅ Оплачено» работает для вас и в общем чате. Сюда будут приходить личные напоминания.\n\n"+botHelp)
+		}
+		if command == "/start" && m.Chat.Type == "private" && m.From != nil {
+			if name, linked := b.backend.PanelName(m.From.ID); linked {
+				return b.reply(m.Chat.ID, "Telegram уже привязан к учётной записи "+name+". Кнопкой «✅ Оплачено» можно пользоваться и в группе.\n\n"+botHelp)
+			}
+			payload := map[string]any{
+				"chat_id": m.Chat.ID,
+				"text": "Telegram ещё не привязан к аккаунту Invoice Keeper. Обычный /start только запускает бота.\n\n" +
+					"Откройте сайт → «Аккаунт» → «Привязать Telegram» → «Открыть Telegram и привязать». Затем нажмите «Start / Запустить» и дождитесь ответа «Готово: Telegram привязан…».\n\n" +
+					"После этого вы сможете отмечать оплаты в группе и в личном чате.",
+			}
+			if b.settings.PublicBaseURL != "" {
+				payload["reply_markup"] = map[string]any{"inline_keyboard": [][]map[string]string{{{
+					"text": "Открыть аккаунт на сайте", "url": b.settings.PublicBaseURL + "/account#telegram",
+				}}}}
+			}
+			return b.call("sendMessage", payload, nil)
 		}
 		return b.reply(m.Chat.ID, botHelp)
 	case "/todo", "/overdue":
@@ -262,7 +279,11 @@ func (b *Telegram) onCallback(c *Callback) error {
 	// A team chat may include guests; only people who linked Telegram to a panel account mark payments.
 	if b.settings.PaidLinkedOnly {
 		if _, linked := b.backend.PanelName(c.From.ID); !linked {
-			return answer("Привяжите Telegram в панели («Аккаунт»), чтобы отмечать оплату")
+			return b.call("answerCallbackQuery", map[string]any{
+				"callback_query_id": c.ID,
+				"text":              "Telegram ещё не привязан. На сайте: Аккаунт → Привязать Telegram → Открыть Telegram и привязать. Нажмите Start по этой ссылке. Обычного /start недостаточно.",
+				"show_alert":        true,
+			}, nil)
 		}
 	}
 	actor := b.actorName(c.From)

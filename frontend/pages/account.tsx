@@ -33,16 +33,22 @@ export default function Account() {
 function TelegramTile() {
   const { refresh } = useSession();
   const toast = useToast();
-  const { data } = useLoad(() => api<TelegramLink>('/me/telegram'), []);
+  const { data, error: loadError } = useLoad(() => api<TelegramLink>('/me/telegram'), []);
   const [link, setLink] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function createLink() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
     try {
       const answer = await api<{ url: string }>('/me/telegram/link', { method: 'POST' });
       setLink(answer.url);
-      window.open(answer.url, '_blank', 'noopener');
     } catch (e) {
-      toast((e as Error).message, true);
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
   async function unlink() {
@@ -57,10 +63,11 @@ function TelegramTile() {
   }
 
   return (
-    <Tile>
-      <TileTitle>{t('личные напоминания в Telegram')}</TileTitle>
-      <Muted>{t('Привяжите свой Telegram: напоминания по платежам, где вы ответственный, придут в личку с кнопкой «Оплачено». Отметка запишется от вашего имени. Сюда же придёт сообщение о каждом входе в вашу учётную запись.')}</Muted>
-      {!data ? <Muted>{t('Загружаем…')}</Muted> : !data.available ? (
+    <Tile id="telegram">
+      <TileTitle>{t('Привязка Telegram')}</TileTitle>
+      <Muted>{t('Привяжите Telegram, чтобы отмечать оплату от своего имени — в группе и в личном чате. Сюда же придут личные напоминания и сообщения о входе в аккаунт.')}</Muted>
+      {(error || loadError) && <Notice $tone="error" role="alert"><span>{error || loadError}</span></Notice>}
+      {!data ? (loadError ? <Button type="button" $variant="secondary" onClick={refresh}>{t('Повторить')}</Button> : <Muted>{t('Загружаем…')}</Muted>) : !data.available ? (
         <Notice $tone="warning"><span>{t('На сервере не настроен Telegram-бот (TELEGRAM_BOT_TOKEN).')}</span></Notice>
       ) : data.linked ? (
         <Row $between $wrap>
@@ -69,22 +76,48 @@ function TelegramTile() {
         </Row>
       ) : (
         <>
-          <Row $gap={1} $wrap>
-            <Button type="button" onClick={createLink}>{t('Привязать Telegram')}</Button>
+          {!link && <Row $gap={1} $wrap>
+            <Button type="button" disabled={busy} onClick={createLink}>{busy ? t('Создаём ссылку…') : t('Привязать Telegram')}</Button>
             {data.bot_username && <Muted>@{data.bot_username}</Muted>}
-          </Row>
+          </Row>}
           {link && (
-            <InfoBox>
-              {t('Откройте ссылку и нажмите «Start» в боте. Ссылка одноразовая и действует 10 минут.')}<br />
-              <a href={link} target="_blank" rel="noopener noreferrer">{link}</a>
-              <br /><Button type="button" $small $variant="ghost" onClick={refresh}>{t('я нажал Start — обновить')}</Button>
-            </InfoBox>
+            <TelegramLinkSteps>
+              <p>{t('Ссылка готова. Откройте бота кнопкой ниже и нажмите «Start / Запустить». Обычный запуск бота через поиск не привязывает аккаунт.')}</p>
+              <a className="button primary" href={link} target="_blank" rel="noopener noreferrer">{t('Открыть Telegram и привязать')}</a>
+              <p>{t('Дождитесь ответа «Готово: Telegram привязан…». После этого кнопка «Оплачено» заработает и в группе.')}</p>
+              <Row $wrap>
+                <Button type="button" $variant="secondary" onClick={refresh}>{t('Проверить привязку')}</Button>
+                <Button type="button" $variant="ghost" disabled={busy} onClick={createLink}>{t('Создать новую ссылку')}</Button>
+              </Row>
+              <small>{t('Ссылка одноразовая и действует 10 минут.')}</small>
+              <details>
+                <summary>{t('Бот снова показал только справку?')}</summary>
+                <p>{t('Отправьте команду целиком в личный чат с @{bot}. В ней уже есть код привязки.', { bot: data.bot_username })}</p>
+                <code>{'/start ' + new URL(link).searchParams.get('start')}</code>
+              </details>
+            </TelegramLinkSteps>
           )}
         </>
       )}
     </Tile>
   );
 }
+
+const TelegramLinkSteps = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+  margin-top: 10px;
+  font-size: 15px;
+  line-height: 1.5;
+  > a { justify-self: start; max-width: 100%; white-space: normal; text-align: center; }
+  small { color: var(--desk-muted); font-size: 13px; }
+  details { border-top: 1px solid var(--line); padding-top: 14px; }
+  summary { cursor: pointer; font-weight: 500; }
+  details p { margin: 12px 0; }
+  code { display: block; padding: 12px; background: var(--desk-raised); border-radius: 8px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+`;
 
 function PasswordTile() {
   const toast = useToast();

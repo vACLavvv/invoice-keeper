@@ -79,7 +79,7 @@ func TestRegularUserPermissionsAndUserLifecycle(t *testing.T) {
 	admin := e.client()
 	admin.signIn()
 	payment := admin.createPayment(nil)
-	created := admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	created := admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	expect(t, "create user", created.status, 201)
 	user := created.object(t)
 	if _, leaked := user["password_hash"]; leaked {
@@ -124,10 +124,10 @@ func TestAdminAccountCannotBeManagedInPanel(t *testing.T) {
 	c.signIn()
 	expect(t, "delete admin", c.delete("/api/v1/users/0").status, 403)
 	expect(t, "patch admin", c.patch("/api/v1/users/0", map[string]any{"display_name": "Hack"}).status, 403)
-	expect(t, "admin login taken", c.post("/api/v1/users", map[string]any{"username": "ADMIN", "display_name": "x", "password": "VeryLongPassword!"}).status, 409)
-	expect(t, "role field", c.post("/api/v1/users", map[string]any{"username": "other", "display_name": "x", "password": "VeryLongPassword!", "role": "admin"}).status, 422)
-	expect(t, "duplicate", c.post("/api/v1/users", map[string]any{"username": "dup", "display_name": "x", "password": "VeryLongPassword!"}).status, 201)
-	expect(t, "duplicate", c.post("/api/v1/users", map[string]any{"username": "DUP", "display_name": "x", "password": "VeryLongPassword!"}).status, 409)
+	expect(t, "admin login taken", c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "ADMIN", "display_name": "x", "password": "VeryLongPassword!"}).status, 409)
+	expect(t, "role field", c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "other", "display_name": "x", "password": "VeryLongPassword!", "role": "admin"}).status, 422)
+	expect(t, "duplicate", c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "dup", "display_name": "x", "password": "VeryLongPassword!"}).status, 201)
+	expect(t, "duplicate", c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "DUP", "display_name": "x", "password": "VeryLongPassword!"}).status, 409)
 }
 
 func dueDates(items []map[string]any) string {

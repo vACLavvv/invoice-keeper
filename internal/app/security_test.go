@@ -54,7 +54,7 @@ func TestArgon2idAndRehashOfOldHashes(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
 	admin.signIn()
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	// A user stored by the scrypt release.
 	legacy := "scrypt$00112233445566778899aabbccddeeff$deeacfbd6fcad6b2e04266a871985b33ad33f3912581d90869f86daf8ae5c4ddc6af25827122b9bc3e2c08c64f29165400b9a4842b621d86e66f738ae51bc787"
 	e.db.Exec("UPDATE users SET password_hash=? WHERE username='alex'", legacy)
@@ -84,9 +84,9 @@ func TestWeakPasswordsRefused(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
 	admin.signIn()
-	weak := admin.post("/api/v1/users", map[string]any{"username": "olga", "display_name": "Ольга", "password": "qwertyuiop123"})
+	weak := admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "olga", "display_name": "Ольга", "password": "qwertyuiop123"})
 	expect(t, "weak password refused", weak.status, 422)
-	expect(t, "with login refused", admin.post("/api/v1/users", map[string]any{"username": "olga", "display_name": "Ольга", "password": "olga-Password-91!"}).status, 422)
+	expect(t, "with login refused", admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "olga", "display_name": "Ольга", "password": "olga-Password-91!"}).status, 422)
 
 	settings := &config.Settings{DatabasePath: "x", AdminUsername: "admin", AdminPassword: "admin-password-2026"}
 	if err := settings.Validate(); err == nil {
@@ -280,7 +280,7 @@ func TestPaidButtonOnlyForLinkedMembers(t *testing.T) {
 	expect(t, "guest refused", strings.HasPrefix(tg.sent("answerCallbackQuery")[0]["text"].(string), "Привяжите Telegram"), true)
 	expect(t, "still unpaid", c.get("/api/v1/payment-occurrences/" + id(item)).object(t)["paid_at"], nil)
 
-	c.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	users := c.get("/api/v1/users").list(t)
 	e.db.Exec("INSERT INTO telegram_links(user_id,is_admin,telegram_user_id,chat_id,linked_at) VALUES(?,0,501,501,'x')", users[0]["id"])
 	tb.Handle(guest)

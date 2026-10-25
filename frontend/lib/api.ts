@@ -35,7 +35,8 @@ export type Recurring = {
 };
 export type Totals = { total: string; paid: string; unpaid: string; overdue: string; count: number };
 export type Summary = { from_date: string | null; to_date: string | null; currencies: Record<Currency, Totals> };
-export type TeamUser = { id: number; username: string; display_name: string; role: 'user'; created_at: string };
+export type TeamUser = { id: number; username: string; display_name: string; role: 'user'; created_at: string; email: string | null; email_verified_at: string | null };
+export type EmailStatus = { email: string | null; verified_at: string | null; enabled: boolean; available: boolean; delivery_state: string; delivery_error: string | null; resend_after: number };
 export type Reminder = {
   occurrence_id: number; state: 'pending' | 'sending' | 'sent' | 'uncertain' | 'cancelled'; attempts: number;
   attempted_at: number | null; sent_at: string | null; message_id: string | null; error: string | null; title: string; due_date: string;
@@ -58,7 +59,7 @@ export type Session = {
   user_agent: string | null; ip: string | null;
 };
 export type Delivery = {
-  occurrence_id: number; kind: 'due' | 'overdue'; channel: Channel | 'telegram_personal';
+  occurrence_id: number; kind: 'due' | 'overdue'; channel: Channel | 'telegram_personal' | 'email_personal'; recipient: string | null;
   state: 'pending' | 'sending' | 'sent' | 'uncertain' | 'failed' | 'cancelled'; attempts: number;
   attempted_at: number | null; sent_at: string | null; error: string | null; title: string; due_date: string;
 };
@@ -87,7 +88,7 @@ type FieldError = { loc?: (string | number)[]; msg: string };
 
 const fieldName = (field: string) => ({
   title: t('Название'), amount: t('Сумма'), currency: t('Валюта'), first_due_date: t('Дата первого платежа'),
-  username: t('Логин'), display_name: t('Имя'), password: t('Пароль'), paid_at: t('Дата оплаты'),
+  email: t('Электронная почта'), username: t('Логин'), display_name: t('Имя'), password: t('Пароль'), paid_at: t('Дата оплаты'),
   current_password: t('Текущий пароль'), new_password: t('Новый пароль'), code: t('Код'), url: t('Ссылка'),
   file: t('Файл'), category: t('Категория'), assignee_id: t('Ответственный'), until: t('Дата окончания'), frequency: t('Периодичность'),
   payment_url: t('Ссылка на оплату'), payment_details: t('Реквизиты'), access: t('Доступ'), expires_in_days: t('Срок действия'), name: t('Название'),

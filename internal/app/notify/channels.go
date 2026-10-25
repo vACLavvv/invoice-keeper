@@ -234,7 +234,11 @@ func sendMail(s *config.Settings, message []byte) error {
 // EmailSender sends one plain-text letter per reminder to all SMTP_TO addresses.
 func EmailSender(s *config.Settings) Sender {
 	return func(row ReminderRow) SendResult {
-		err := sendMail(s, EmailMessage(s, row, time.Now()))
+		settings := *s
+		if row.EmailTo != "" {
+			settings.SMTPTo = []string{row.EmailTo}
+		}
+		err := sendMail(&settings, EmailMessage(&settings, row, time.Now()))
 		switch {
 		case err == nil:
 			return SendResult{State: "sent"}

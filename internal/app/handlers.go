@@ -243,6 +243,7 @@ func (s *Server) occurrenceUpdate(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	s.Worker.Kick()
+	s.Worker.Kick()
 	return writeJSON(w, 200, updated)
 }
 
@@ -316,18 +317,20 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) error {
 var loginPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 type publicUser struct {
-	ID          int64  `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Role        string `json:"role"`
-	CreatedAt   string `json:"created_at"`
+	ID              int64   `json:"id"`
+	Username        string  `json:"username"`
+	DisplayName     string  `json:"display_name"`
+	Role            string  `json:"role"`
+	CreatedAt       string  `json:"created_at"`
+	Email           *string `json:"email"`
+	EmailVerifiedAt *string `json:"email_verified_at"`
 }
 
 func (s *Server) findUser(q store.Querier, id int64) (publicUser, string, error) {
 	u := publicUser{Role: "user"}
 	var hash string
-	err := q.QueryRow("SELECT id,username,display_name,created_at,password_hash FROM users WHERE id=?", id).
-		Scan(&u.ID, &u.Username, &u.DisplayName, &u.CreatedAt, &hash)
+	err := q.QueryRow("SELECT u.id,u.username,u.display_name,u.created_at,u.password_hash,e.email,e.verified_at FROM users u LEFT JOIN email_contacts e ON e.user_id=u.id WHERE u.id=?", id).
+		Scan(&u.ID, &u.Username, &u.DisplayName, &u.CreatedAt, &hash, &u.Email, &u.EmailVerifiedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, "", fail(404, "Пользователь не найден")
 	}
@@ -338,7 +341,7 @@ func (s *Server) usersList(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.adminUser(r); err != nil {
 		return err
 	}
-	rows, err := s.DB.Query("SELECT id,username,display_name,created_at FROM users ORDER BY id")
+	rows, err := s.DB.Query("SELECT u.id,u.username,u.display_name,u.created_at,e.email,e.verified_at FROM users u LEFT JOIN email_contacts e ON e.user_id=u.id ORDER BY u.id")
 	if err != nil {
 		return err
 	}
@@ -346,7 +349,7 @@ func (s *Server) usersList(w http.ResponseWriter, r *http.Request) error {
 	users := []publicUser{}
 	for rows.Next() {
 		u := publicUser{Role: "user"}
-		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.CreatedAt, &u.Email, &u.EmailVerifiedAt); err != nil {
 			return err
 		}
 		users = append(users, u)
@@ -368,12 +371,13 @@ func (s *Server) usersCreate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	f, err := readForm(r, "username", "display_name", "password")
+	f, err := readForm(r, "username", "display_name", "password", "email")
 	if err != nil {
 		return err
 	}
-	f.require("username", "display_name", "password")
+	f.require("username", "display_name", "password", "email")
 	username, display, password := f.text("username", usernameRule), f.text("display_name", displayNameRule), f.text("password", passwordRule)
+	email := emailField(f)
 	if f.isNull("username") || f.isNull("display_name") || f.isNull("password") {
 		f.add("", "Поля пользователя не могут быть пустыми", "missing")
 	}
@@ -397,6 +401,9 @@ func (s *Server) usersCreate(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		id, _ := result.LastInsertId()
+		if err := s.requestEmail(tx, &User{ID: id, Username: *username, Role: "user"}, *email, false, admin.Username); err != nil {
+			return err
+		}
 		if err := audit.Record(tx, admin.Username, "user.create", id); err != nil {
 			return err
 		}
@@ -406,6 +413,7 @@ func (s *Server) usersCreate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.Worker.Kick()
 	return writeJSON(w, 201, created)
 }
 
@@ -418,11 +426,12 @@ func (s *Server) usersUpdate(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	f, err := readForm(r, "username", "display_name", "password")
+	f, err := readForm(r, "username", "display_name", "password", "email")
 	if err != nil {
 		return err
 	}
 	username, display, password := f.text("username", usernameRule), f.text("display_name", displayNameRule), f.text("password", passwordRule)
+	email := emailField(f)
 	if len(f.values) == 0 || f.isNull("username") || f.isNull("display_name") || f.isNull("password") {
 		f.add("", "Укажите хотя бы одно непустое поле", "value_error")
 	}
@@ -470,6 +479,11 @@ func (s *Server) usersUpdate(w http.ResponseWriter, r *http.Request) error {
 		// A new password revokes every session of that user.
 		if encoded != "" {
 			if _, err := tx.Exec("DELETE FROM sessions WHERE user_id=?", id); err != nil {
+				return err
+			}
+		}
+		if email != nil {
+			if err := s.requestEmail(tx, &User{ID: id, Username: current.Username, Role: "user"}, *email, false, admin.Username); err != nil {
 				return err
 			}
 		}

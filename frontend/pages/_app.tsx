@@ -19,7 +19,7 @@ import { ToastProvider } from '@/lib/toast';
 import { GlobalStyle } from '@/styles/theme';
 
 // Every page except /login lives inside the signed-in panel.
-const publicPages = ['/login', '/404'];
+const publicPages = ['/login', '/confirm-email', '/404'];
 
 export default function App({ Component, pageProps }: AppProps) {
   const { pathname } = useRouter();

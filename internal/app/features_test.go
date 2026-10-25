@@ -77,7 +77,7 @@ func TestPauseSkipsPeriodsAndResumeRestarts(t *testing.T) {
 	expect(t, "periods from today on", dates(admin.get("/api/v1/payment-occurrences").list(t), open["id"]), "2026-06-10")
 	expect(t, "resume twice", admin.post(openPath+"/resume", nil).status, 409)
 
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	user := e.client()
 	user.signIn("alex", "User-password123!")
 	expect(t, "user cannot pause", user.post(openPath+"/pause", nil).status, 403)
@@ -87,7 +87,7 @@ func TestCategoryAssigneeAndEditing(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
 	admin.signIn()
-	alex := admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"}).object(t)
+	alex := admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"}).object(t)
 	rent := admin.createPayment(map[string]any{"title": "Аренда", "category": "Офис", "assignee_id": alex["id"]})
 	admin.createPayment(map[string]any{"title": "Сервер", "category": "IT", "currency": "USD"})
 	admin.createPayment(map[string]any{"title": "Прочее"})
@@ -120,7 +120,7 @@ func TestPasswordChange(t *testing.T) {
 	admin := e.client()
 	admin.signIn()
 	expect(t, "admin uses .env", admin.post("/api/v1/auth/password", map[string]any{"current_password": testPassword, "new_password": "Another-password1!"}).status, 403)
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	laptop, phone := e.client(), e.client()
 	laptop.signIn("alex", "User-password123!")
 	phone.signIn("alex", "User-password123!")
@@ -185,7 +185,7 @@ func TestTelegramLinkAndPersonalReminders(t *testing.T) {
 	tb, tg := botFor(e)
 	e.settings.TelegramChatID = "" // personal reminders only
 	e.server.SetBotUsername("invoice_test_bot")
-	alex := admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"}).object(t)
+	alex := admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"}).object(t)
 	user := e.client()
 	user.signIn("alex", "User-password123!")
 
@@ -262,7 +262,7 @@ func TestReceipts(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
 	admin.signIn()
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	user := e.client()
 	user.signIn("alex", "User-password123!")
 	admin.createPayment(nil)
@@ -454,5 +454,5 @@ func TestMigrationAllowsOneTime(t *testing.T) {
 		"title": "Новый", "amount": "1", "currency": "RUB", "first_due_date": "2026-02-01", "frequency": "once"}).status, 201)
 	var version int
 	e.db.QueryRow("PRAGMA user_version").Scan(&version)
-	expect(t, "schema version", version, 6)
+	expect(t, "schema version", version, 7)
 }

@@ -177,7 +177,7 @@ func encryptExisting(tx *sql.Tx) error {
 		id    int64
 		value string
 	}
-	textColumns := []struct{ table, column string }{{"recurring_payments", "payment_details"}, {"receipts", "url"}}
+	textColumns := []struct{ table, column string }{{"recurring_payments", "payment_details"}, {"receipts", "url"}, {"email_contacts", "token_secret"}}
 	for _, c := range textColumns {
 		rows, err := tx.Query("SELECT id," + c.column + " FROM " + c.table + " WHERE " + c.column + " IS NOT NULL AND " + c.column + " NOT LIKE 'enc:v1:%'") // #nosec G202 -- constant names
 		if err != nil {

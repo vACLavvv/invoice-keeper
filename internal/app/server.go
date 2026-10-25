@@ -171,6 +171,10 @@ func (s *Server) routes() http.Handler {
 	handle("/", s.notFound)
 	handle("GET /", s.panelPage)
 	handle("GET /login", s.loginPage)
+	handle("GET /confirm-email", func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		return s.servePage(w, "confirm-email", 200)
+	})
 	handle("GET /api/v1/docs", s.docs)
 	handle("GET /api/v1/openapi.json", s.openapi)
 	handle("GET /extension.zip", s.extensionZip)

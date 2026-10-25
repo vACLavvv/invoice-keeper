@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS personal_reminders (
 
 // columns added to existing tables after v1; ALTER TABLE runs only where a column is missing.
 var addedColumns = []struct{ table, column, definition string }{
+	{"deliveries", "recipient", "TEXT"},
 	{"recurring_payments", "frequency", frequencyColumn},
 	{"recurring_payments", "category", "TEXT"},
 	{"recurring_payments", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
@@ -150,7 +151,7 @@ func allowOneTime(tx *sql.Tx) error {
 	return nil
 }
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
@@ -192,7 +193,7 @@ func (db *DB) initialize() error {
 		return errors.New("Неизвестная версия базы. Запуск остановлен без изменения данных.")
 	}
 	return db.Write(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema); err != nil {
+		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema + emailSchema); err != nil {
 			return err
 		}
 		for _, c := range addedColumns {

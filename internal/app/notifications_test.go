@@ -15,7 +15,7 @@ func TestNotificationFeed(t *testing.T) {
 	admin.createPayment(map[string]any{"title": "Сервер", "first_due_date": "2026-01-25"}) // overdue
 	admin.createPayment(map[string]any{"title": "Аренда", "first_due_date": "2026-01-30"}) // due in 2 days
 	admin.createPayment(map[string]any{"title": "Домен", "first_due_date": "2026-02-20"})  // too far
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	user := e.client()
 	user.signIn("alex", "User-password123!")
 

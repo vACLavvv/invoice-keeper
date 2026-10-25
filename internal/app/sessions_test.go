@@ -58,7 +58,7 @@ func TestAPITokensReadAndWrite(t *testing.T) {
 	expect(t, "bad expiry", admin.post("/api/v1/api-keys", map[string]any{"name": "x", "expires_in_days": 7}).status, 422)
 
 	// A regular user's token has a regular user's rights.
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	user := e.client()
 	user.signIn("alex", "User-password123!")
 	userToken := e.keyClient(user.createToken("write", 90))
@@ -72,7 +72,7 @@ func TestSessionsListAndRevoke(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
 	admin.signIn()
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	laptop, phone := e.client(), e.client()
 	laptop.signIn("alex", "User-password123!")
 	phone.do("POST", "/api/v1/auth/login", map[string]any{"username": "alex", "password": "User-password123!"}, "User-Agent", "Phone/1.0")

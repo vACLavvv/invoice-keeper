@@ -10,12 +10,14 @@ import { date } from '@/lib/format';
 import { locale, t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+import { EmailTile } from '@/components/EmailTile';
 
 export default function Account() {
   const { user, isAdmin } = useSession();
   return (
     <Shell title={t('Аккаунт')} heading={t('Мой аккаунт')} subtitle={t('@{login} · {role}', { login: user.username, role: isAdmin ? t('администратор') : t('пользователь') })}>
       <Grid>
+        <EmailTile />
         <TelegramTile />
         {isAdmin ? <TwoFactorTile /> : <PasswordTile />}
         <SessionsTile />

@@ -1,5 +1,19 @@
 package store
 
+const emailSchema = `
+CREATE TABLE IF NOT EXISTS email_contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    email TEXT NOT NULL, verified_at TEXT, enabled INTEGER NOT NULL DEFAULT 1,
+    token_hash TEXT UNIQUE, token_secret TEXT NOT NULL DEFAULT '', expires_at INTEGER,
+    requested_at INTEGER NOT NULL, welcome_state TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0, attempted_at INTEGER, retry_after INTEGER NOT NULL DEFAULT 0, error TEXT,
+    CHECK ((user_id IS NOT NULL AND is_admin=0) OR (user_id IS NULL AND is_admin=1))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS email_admin ON email_contacts(is_admin) WHERE is_admin=1;
+`
+
 // Tables added by later features, created together with the base schema.
 
 const deliverySchema = `

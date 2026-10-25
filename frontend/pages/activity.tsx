@@ -21,7 +21,7 @@ const deliveryStates = (): Record<Delivery['state'], [string, 'paid' | 'unpaid' 
 });
 
 const channelNames = (): Record<Delivery['channel'], string> => ({
-  telegram: t('Telegram, общий чат'), telegram_personal: t('Telegram, личка'), max: 'MAX', email: 'Email', webhook: 'Webhook',
+  telegram: t('Telegram, общий чат'), telegram_personal: t('Telegram, личка'), max: 'MAX', email: t('Email, общая рассылка'), email_personal: t('Email, лично'), webhook: 'Webhook',
 });
 
 const actions = (): Record<string, string> => ({
@@ -33,6 +33,7 @@ const actions = (): Record<string, string> => ({
   'occurrence.paid': t('Отмечена или исправлена оплата'), 'occurrence.unpaid': t('Отменена оплата'),
   'occurrence.prepaid': t('Оплачен будущий период'), 'occurrence.create': t('Создан будущий период'),
   'receipt.add': t('Прикреплён чек'), 'receipt.delete': t('Удалён чек'),
+  'email.request': t('Запрошено подтверждение почты'), 'email.confirm': t('Подтверждена почта'), 'email.settings': t('Изменены email-уведомления'),
   'user.create': t('Создан пользователь'), 'user.update': t('Изменён пользователь'), 'user.delete': t('Удалён пользователь'),
   'password.change': t('Сменён пароль'), '2fa.enable': t('Включён двухфакторный вход'), '2fa.disable': t('Выключен двухфакторный вход'),
   'telegram.link': t('Привязан Telegram'), 'telegram.unlink': t('Отвязан Telegram'),
@@ -209,7 +210,7 @@ function DeliveryLog() {
                   <tr key={i}>
                     <td><b>{d.title}</b>{d.kind === 'overdue' && <span className="muted"> · {t('просрочка')}</span>}</td>
                     <td className="date-cell" data-label={t('Срок')}>{date(d.due_date)}</td>
-                    <td data-label={t('Канал')}>{channelNames()[d.channel]}</td>
+                    <td data-label={t('Канал')}>{channelNames()[d.channel]}{d.recipient && <><br /><small className="muted">{d.recipient}</small></>}</td>
                     <td data-label={t('Состояние')}><span className={`pill ${tone}`}>{label}</span></td>
                     <td className="date-cell" data-label={t('Примечание')}>{d.error || (d.sent_at ? t('Отправлено') + ' ' + time.format(new Date(d.sent_at)) : '—')}</td>
                   </tr>

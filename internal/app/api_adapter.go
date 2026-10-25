@@ -256,3 +256,19 @@ func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, 
 func (a apiAdapter) RestorePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
 	a.s.serveAPI(w, r, a.s.periodRestore)
 }
+
+func (a apiAdapter) GetMyEmail(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.myEmail)
+}
+func (a apiAdapter) UpdateMyEmail(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.myEmailUpdate)
+}
+func (a apiAdapter) ResendMyEmail(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.resendEmail)
+}
+func (a apiAdapter) ResendUserEmail(w http.ResponseWriter, r *http.Request, _ int) {
+	a.s.serveAPI(w, r, a.s.resendEmail)
+}
+func (a apiAdapter) ConfirmEmail(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.confirmEmail)
+}

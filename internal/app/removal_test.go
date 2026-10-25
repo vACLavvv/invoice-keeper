@@ -124,7 +124,7 @@ func TestRemovalPermissionsAndValidation(t *testing.T) {
 	c.signIn()
 	payment := c.createPayment(nil)
 	base := "/api/v1/recurring-payments/" + id(payment)
-	c.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Alex", "password": "User-password123!"})
+	c.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Alex", "password": "User-password123!"})
 	ordinary := e.client()
 	ordinary.signIn("alex", "User-password123!")
 	reader := e.keyClient(c.createToken("read", 30))

@@ -72,7 +72,7 @@ func TestSanctionsScreening(t *testing.T) {
 	expect(t, "period carries the screening", occurrence["wallet"].(map[string]any)["sanctioned"], any(true))
 
 	// Ad-hoc check without saving, available to any signed-in user.
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	user := e.client()
 	user.signIn("alex", "User-password123!")
 	check := user.post("/api/v1/sanctions/check", map[string]any{"network": "TRON", "address": "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz"})

@@ -43,7 +43,7 @@ type Settings struct {
 	MaxAPIURL   string
 	MaxCAFile   string // extra root certificate (PEM) if the system does not trust the MAX API
 
-	SMTPHost     string // email reminders: SMTP_HOST, SMTP_FROM and SMTP_TO are required
+	SMTPHost     string // SMTP_HOST and SMTP_FROM enable mail; SMTP_TO is an optional shared broadcast
 	SMTPPort     int
 	SMTPUsername string
 	SMTPPassword string
@@ -121,8 +121,8 @@ func (s *Settings) Validate() error {
 	if s.SMTPPort == 0 {
 		s.SMTPPort = map[string]int{"starttls": 587, "ssl": 465, "none": 25}[s.SMTPSecurity]
 	}
-	if s.SMTPHost != "" && (s.SMTPFrom == "" || len(s.SMTPTo) == 0) {
-		return errors.New("Для email-напоминаний нужны SMTP_HOST, SMTP_FROM и SMTP_TO")
+	if s.SMTPHost != "" && s.SMTPFrom == "" {
+		return errors.New("Для email-напоминаний нужны SMTP_HOST и SMTP_FROM")
 	}
 	if s.WebhookURL != "" && !webURL(s.WebhookURL) {
 		return errors.New("WEBHOOK_URL должен начинаться с http:// или https://")

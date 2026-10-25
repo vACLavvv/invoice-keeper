@@ -24,6 +24,7 @@ import (
 )
 
 type ReminderRow struct {
+	EmailTo        string // a single verified recipient; empty only for the optional legacy broadcast
 	ChatID         string // empty: the team chat (TELEGRAM_CHAT_ID / MAX_CHAT_ID)
 	Kind           string // "due" (empty) — a few days before the date, "overdue" — the day after it
 	OccurrenceID   int64
@@ -160,10 +161,11 @@ func IsConnectError(err error) bool {
 }
 
 type ReminderWorker struct {
-	DB       *store.DB
-	Settings *config.Settings
-	Sender   Sender            // Telegram
-	Channels map[string]Sender // max, email, webhook (see deliveries.go)
+	VerificationSender func(to, name, link string) SendResult
+	DB                 *store.DB
+	Settings           *config.Settings
+	Sender             Sender            // Telegram
+	Channels           map[string]Sender // max, email, webhook (see deliveries.go)
 	// Maintenance runs in the pass's transaction: the server removes expired keys and pairings there.
 	Maintenance func(tx *sql.Tx) error
 	Today       func() time.Time
@@ -182,7 +184,7 @@ func NewReminderWorker(db *store.DB, s *config.Settings, sender Sender, today fu
 	if today == nil {
 		today = func() time.Time { return schedule.Today(s.Location()) }
 	}
-	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: DefaultChannels(s), Today: today}
+	return &ReminderWorker{DB: db, Settings: s, Sender: sender, Channels: DefaultChannels(s), Today: today, VerificationSender: VerificationSender(s)}
 }
 
 // Tick runs one pass. A request that arrives while a pass is running schedules one more pass
@@ -269,6 +271,9 @@ func (w *ReminderWorker) tick() error {
 		return w.enqueueDeliveries(tx, today)
 	})
 	if err != nil {
+		return err
+	}
+	if err := w.sendEmailVerifications(); err != nil {
 		return err
 	}
 	if w.Settings.TelegramEnabled {

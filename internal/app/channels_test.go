@@ -37,6 +37,7 @@ func TestPaymentLinkAndDetails(t *testing.T) {
 func channelWorker(e *harness, telegram *recorder, channels map[string]notify.Sender) *notify.ReminderWorker {
 	settings := enabledSettings(e)
 	settings.OverdueReminders = true
+	settings.SMTPTo = []string{"broadcast@example.com"}
 	w := notify.NewReminderWorker(e.db, settings, telegram.sender(notify.SendResult{State: "sent", MessageID: "1"}), e.clock.Today)
 	w.Channels = channels
 	return w
@@ -149,7 +150,7 @@ func TestExtraChannelsDeliverOnceAndRetrySafely(t *testing.T) {
 		expect(t, "journal has "+name, channels[name], true)
 	}
 	user := e.client()
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	user.signIn("alex", "User-password123!")
 	expect(t, "journal is admin-only", user.get("/api/v1/deliveries").status, 403)
 }
@@ -158,7 +159,7 @@ func TestPersonalOverdueReminder(t *testing.T) {
 	e := setup(t)
 	admin := e.client()
 	admin.signIn()
-	admin.post("/api/v1/users", map[string]any{"username": "alex", "display_name": "Алексей", "password": "User-password123!"})
+	admin.post("/api/v1/users", map[string]any{"email": "test@example.com", "username": "alex", "display_name": "Алексей", "password": "User-password123!"})
 	users := admin.get("/api/v1/users").list(t)
 	admin.createPayment(map[string]any{"assignee_id": users[0]["id"]})
 	e.db.Exec("INSERT INTO telegram_links(user_id,is_admin,telegram_user_id,chat_id,linked_at) VALUES(?,0,501,501,'x')", users[0]["id"])

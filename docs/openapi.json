@@ -3673,6 +3673,251 @@
           }
         }
       }
+    },
+    "/api/v1/me/email": {
+      "get": {
+        "tags": [
+          "Авторизация"
+        ],
+        "operationId": "getMyEmail",
+        "summary": "Моя почта и состояние подтверждения",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "200": {
+            "description": "Состояние почты",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Авторизация"
+        ],
+        "operationId": "updateMyEmail",
+        "summary": "Изменить почту или включить уведомления",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "200": {
+            "description": "Состояние почты",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailStatus"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailPatch"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/email/resend": {
+      "post": {
+        "tags": [
+          "Авторизация"
+        ],
+        "operationId": "resendMyEmail",
+        "summary": "Повторить письмо подтверждения; не чаще раза в минуту",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "204": {
+            "description": "Выполнено"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/email/resend": {
+      "post": {
+        "tags": [
+          "Авторизация"
+        ],
+        "operationId": "resendUserEmail",
+        "summary": "Администратор повторно отправляет письмо участнику",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "204": {
+            "description": "Выполнено"
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/email/confirm": {
+      "post": {
+        "tags": [
+          "Авторизация"
+        ],
+        "operationId": "confirmEmail",
+        "summary": "Подтвердить почту одноразовым кодом из письма",
+        "security": [],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "204": {
+            "description": "Выполнено"
+          },
+          "410": {
+            "description": "Ссылка истекла или использована",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailConfirmation"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4887,6 +5132,15 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "email_verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -4896,7 +5150,8 @@
         "required": [
           "username",
           "display_name",
-          "password"
+          "password",
+          "email"
         ],
         "properties": {
           "username": {
@@ -4917,6 +5172,12 @@
             "format": "password",
             "minLength": 12,
             "maxLength": 128
+          },
+          "email": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254,
+            "example": "alexey@example.com"
           }
         }
       },
@@ -4941,6 +5202,12 @@
             "format": "password",
             "minLength": 12,
             "maxLength": 128
+          },
+          "email": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254,
+            "example": "alexey@example.com"
           }
         }
       },
@@ -5424,7 +5691,8 @@
               "telegram_personal",
               "max",
               "email",
-              "webhook"
+              "webhook",
+              "email_personal"
             ]
           },
           "state": {
@@ -5462,6 +5730,10 @@
           "due_date": {
             "type": "string",
             "format": "date"
+          },
+          "recipient": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -5837,6 +6109,76 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "EmailStatus": {
+        "type": "object",
+        "required": [
+          "email",
+          "verified_at",
+          "enabled",
+          "available",
+          "delivery_state",
+          "delivery_error",
+          "resend_after"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "delivery_state": {
+            "type": "string"
+          },
+          "delivery_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "resend_after": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "EmailPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "email": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 254,
+            "example": "alexey@example.com"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EmailConfirmation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128
           }
         }
       }

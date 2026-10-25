@@ -35,6 +35,9 @@ func (w *ReminderWorker) broadcastChannels() map[string][]string {
 		if w.Channels[name] == nil {
 			continue
 		}
+		if name == "email" && len(w.Settings.SMTPTo) == 0 {
+			continue
+		}
 		channels[name] = []string{"due"}
 		if w.Settings.OverdueReminders {
 			channels[name] = append(channels[name], "overdue")
@@ -56,6 +59,9 @@ func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 				return err
 			}
 		}
+	}
+	if err := w.enqueuePersonalEmail(tx, today); err != nil {
+		return err
 	}
 	if w.Settings.TelegramEnabled && w.Settings.OverdueReminders {
 		// The same people as personal «due» reminders: the assignee, and the admin for assigned payments
@@ -86,6 +92,9 @@ func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 
 // senderFor picks the transport of a delivery channel; nil when the channel is not configured now.
 func (w *ReminderWorker) senderFor(channel string) (Sender, string) {
+	if strings.HasPrefix(channel, "email:") {
+		return w.Channels["email"], ""
+	}
 	if channel == "telegram" || strings.HasPrefix(channel, "telegram:") {
 		if !w.Settings.TelegramEnabled {
 			return nil, ""
@@ -103,7 +112,8 @@ func (w *ReminderWorker) deliver() error {
 		enabled = append(enabled, channel)
 	}
 	personal := w.Settings.TelegramEnabled && w.Settings.OverdueReminders
-	if len(enabled) == 0 && !personal {
+	personalEmail := w.Channels["email"] != nil
+	if len(enabled) == 0 && !personal && !personalEmail {
 		return nil
 	}
 	in := "''"
@@ -120,12 +130,12 @@ func (w *ReminderWorker) deliver() error {
 		var channel string
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT d.channel,d.kind,o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
+			err := tx.QueryRow(`SELECT d.channel,d.kind,COALESCE(d.recipient,''),o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
 				FROM deliveries d JOIN payment_occurrences o ON o.id=d.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
 				WHERE d.state='pending' AND d.retry_after<=? AND r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL
-				AND (d.channel IN (`+in+`) OR (? AND d.channel LIKE 'telegram:%'))
-				ORDER BY o.due_date,o.id LIMIT 1`, append(append([]any{time.Now().Unix()}, args...), personal)...).
-				Scan(&channel, &row.Kind, &row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
+				AND (d.channel IN (`+in+`) OR (? AND d.channel LIKE 'telegram:%') OR (? AND d.channel LIKE 'email:%'))
+				ORDER BY o.due_date,o.id LIMIT 1`, append(append([]any{time.Now().Unix()}, args...), personal, personalEmail)...).
+				Scan(&channel, &row.Kind, &row.EmailTo, &row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
 					&row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
@@ -133,6 +143,7 @@ func (w *ReminderWorker) deliver() error {
 			if err != nil {
 				return err
 			}
+
 			found = true
 			if err := row.openDetails(); err != nil {
 				return err
@@ -152,6 +163,15 @@ func (w *ReminderWorker) deliver() error {
 			eligible, err := stillPayable(tx, row.OccurrenceID)
 			if err != nil {
 				return err
+			}
+			if eligible && strings.HasPrefix(channel, "email:") {
+				var count int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM email_contacts e JOIN payment_occurrences o ON o.id=?
+					JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE 'email:'||e.id=? AND e.email=? AND `+emailRecipient,
+					row.OccurrenceID, channel, row.EmailTo).Scan(&count); err != nil {
+					return err
+				}
+				eligible = count == 1
 			}
 			if !eligible {
 				_, err := tx.Exec("UPDATE deliveries SET state='cancelled' WHERE occurrence_id=? AND kind=? AND channel=?", row.OccurrenceID, row.Kind, channel)

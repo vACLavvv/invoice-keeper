@@ -18,6 +18,7 @@ var corsRoutes = map[string]bool{
 	"GET /api/v1/extension/whoami":          true,
 	"POST /api/v1/payment-suggestions":      true,
 	"POST /api/v1/extension/pairings/claim": true,
+	"POST /api/v1/sanctions/check":          true, // the popup screens a wallet before sending it
 }
 
 // specQuery maps "METHOD /path" to the query parameters the spec documents for it.
@@ -51,7 +52,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request, h handlerFunc)
 	if corsRoutes[r.Pattern] {
 		h = cors(h)
 	}
-	onlyQuery(query[r.Pattern], h).ServeHTTP(w, r)
+	onlyQuery(query[r.Pattern], s.withIdempotency(h)).ServeHTTP(w, r)
 }
 
 // parameterError renders a parameter the generated wrapper could not parse (e.g. a non-numeric id)

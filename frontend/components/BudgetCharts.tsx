@@ -28,7 +28,7 @@ export function Legend() {
   return (
     <LegendRow>
       <span><Swatch style={{ background: colors.paid }} />{t('оплачено')}</span>
-      <span><Swatch style={{ background: colors.remaining }} />{t('осталось')}</span>
+      <span><Swatch style={{ background: colors.remaining }} />{t('Осталось оплатить')}</span>
     </LegendRow>
   );
 }
@@ -40,7 +40,7 @@ function Tip({ title, line, currency }: { title: string; line: BudgetLine; curre
       <b>{title}</b>
       <span>{t('план')}: {s} {money(line.planned)}</span>
       <span>{t('оплачено')}: {s} {money(line.paid)}</span>
-      <span>{t('осталось')}: {s} {money(line.remaining)}</span>
+      <span>{t('Осталось оплатить')}: {s} {money(line.remaining)}</span>
     </>
   );
 }
@@ -130,6 +130,7 @@ export function CategoryChart({ budget, currency }: { budget: Budget; currency: 
 
 const LegendRow = styled.div`
   display: flex;
+  flex-wrap: wrap;
   gap: 1.6rem;
   color: ${({ theme }) => theme.color.muted};
   font-size: 1.4rem;

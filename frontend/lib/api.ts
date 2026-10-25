@@ -1,5 +1,6 @@
 import type { Currency, Frequency, Status } from './format';
 import { t } from './i18n';
+import { protectedPaymentMutation, withPaymentKey } from './idempotent-client';
 
 export type User = { id: number; username: string; display_name: string; role: 'admin' | 'user'; csrf_token: string };
 export type Settings = {
@@ -38,10 +39,10 @@ export type Summary = { from_date: string | null; to_date: string | null; curren
 export type TeamUser = { id: number; username: string; display_name: string; role: 'user'; created_at: string; email: string | null; email_verified_at: string | null };
 export type EmailStatus = { email: string | null; verified_at: string | null; enabled: boolean; available: boolean; delivery_state: string; delivery_error: string | null; resend_after: number };
 export type Reminder = {
-  occurrence_id: number; state: 'pending' | 'sending' | 'sent' | 'uncertain' | 'cancelled'; attempts: number;
+  occurrence_id: number; state: 'pending' | 'sending' | 'sent' | 'uncertain' | 'failed' | 'cancelled'; attempts: number;
   attempted_at: number | null; sent_at: string | null; message_id: string | null; error: string | null; title: string; due_date: string;
 };
-export type AuditEntry = { id: number; actor: string; action: string; entity: string; created_at: string };
+export type AuditEntry = { id: number; actor: string; action: string; entity: string; created_at: string; payment_title?: string; recurring_payment_id?: number; occurrence_id?: number; due_date?: string; payment_state?: 'active' | 'archived' | 'deleted' };
 export type AuditPage = {
   items: AuditEntry[]; total: number; page: number; pages: number; page_size: number; snapshot_id: number; actors: string[]; actions: string[];
 };
@@ -49,7 +50,7 @@ export type Notification = {
   id: string; kind: 'overdue' | 'due' | 'paid'; occurrence_id: number; title: string; amount: string; currency: Currency;
   due_date: string; paid_at: string | null; paid_by: string | null; read: boolean;
 };
-export type NotificationFeed = { items: Notification[]; unread_count: number };
+export type NotificationFeed = { items: Notification[]; unread_count: number; browser_items?: Notification[]; total?: number; page?: number; page_size?: number; pages?: number };
 export type ApiKey = {
   id: number; name: string; prefix: string; access: 'extension' | 'read' | 'write'; expires_at: string | null;
   created_at: string; last_used_at: string | null;
@@ -65,6 +66,7 @@ export type Delivery = {
 };
 export type Suggestion = {
   id: number; source_key: string; source_url: string | null; title: string; amount: string; currency: Currency; next_due_date: string;
+  frequency: Frequency; assignee: Person | null; payment_url: string | null; wallet: Wallet | null;
   status: 'pending' | 'accepted' | 'rejected'; submitted_by: string; recurring_payment_id: number | null; created_at: string; updated_at: string;
 };
 export type Receipt = {
@@ -103,15 +105,23 @@ export class ApiError extends Error {
 }
 
 /** JSON by default; a FormData body is sent as multipart (file uploads). */
-export async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
+export function api<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<T> {
+  const method = options.method ?? 'GET';
+  if (!options.idempotencyKey && protectedPaymentMutation(method, path)) {
+    return withPaymentKey(csrfToken, method + ' ' + path + '\n' + JSON.stringify(options.body ?? null), (key) => request<T>(path, { ...options, idempotencyKey: key }));
+  }
+  return request<T>(path, options);
+}
+async function request<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string; signal?: AbortSignal }): Promise<T> {
   const headers: Record<string, string> = {};
   if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  if (options.idempotencyKey) headers['X-Idempotency-Key'] = options.idempotencyKey;
   const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
   if (!isForm) headers['Content-Type'] = 'application/json';
   let response: Response;
   try {
     response = await fetch('/api/v1' + path, {
-      method: options.method ?? 'GET', headers, credentials: 'same-origin',
+      method: options.method ?? 'GET', headers, credentials: 'same-origin', signal: options.signal,
       body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     });
   } catch {
@@ -122,7 +132,13 @@ export async function api<T>(path: string, options: { method?: string; body?: un
     throw new ApiError(t('Сессия завершена'), 401);
   }
   if (response.status === 204) return null as T;
-  const data = await response.json().catch(() => ({}));
+  let data;
+  try { data = await response.json(); } catch {
+    // The mutation may have committed before its response was interrupted.
+    // Keep the same idempotency key for the user's retry.
+    if (response.ok) throw new ApiError(t('Нет связи с сервером. Проверьте соединение и повторите действие.'), 0);
+    data = {};
+  }
   if (!response.ok) {
     const detail = data?.detail;
     const message = typeof detail === 'string' ? detail : Array.isArray(detail)
@@ -143,3 +159,13 @@ export function query(params: Record<string, string | undefined | null>): string
   const s = q.toString();
   return s ? '?' + s : '';
 }
+
+export type DeletedPayment = { kind: 'payment' | 'period'; recurring_payment_id: number; title: string; amount: string; currency: Currency; due_date: string | null; paid_at: string | null; removed_at: string; active: boolean };
+
+export type Overview = {
+  counts: { open: number; overdue: number; soon: number; once: number; urgent: number; month_paid: number; month_total: number };
+  queues: { week: Occurrence[]; all: Occurrence[]; once: Occurrence[] };
+  later: Occurrence[]; recent: Occurrence[];
+};
+export type CalendarDay = { date: string; count: number; totals: Partial<Record<Currency, string>>; items: (Occurrence | Forecast)[] };
+export type CalendarView = { month: string; days: CalendarDay[]; totals: Partial<Record<Currency, string>> };

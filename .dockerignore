@@ -9,7 +9,6 @@ output/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
-.taste-skill/
 tmp/
 .venv/
 node_modules/

@@ -201,7 +201,20 @@ func TestRemovalMigrationFromV5KeepsExistingPayments(t *testing.T) {
 	path := "/api/v1/payment-occurrences/" + id(period)
 	expect(t, "paid before upgrade", c.patch(path, map[string]any{"paid": true, "paid_at": "2026-01-27"}).status, 200)
 	expect(t, "receipt before upgrade", c.upload(path+"/receipts", "check.png", pngBytes).status, 201)
+	// Recreate the old schema without v8 indexes/triggers first: SQLite refuses
+	// to drop removed_at while a partial index still refers to that column.
 	for _, statement := range []string{
+		"DROP INDEX IF EXISTS occurrences_visible_due",
+		"DROP INDEX IF EXISTS occurrences_visible_paid",
+		"DROP INDEX IF EXISTS recurring_visible_active",
+		"DROP INDEX IF EXISTS pauses_payment",
+		"DROP TRIGGER IF EXISTS materialize_recurring_insert",
+		"DROP TRIGGER IF EXISTS materialize_recurring_update",
+		"DROP TRIGGER IF EXISTS materialize_recurring_delete",
+		"DROP TRIGGER IF EXISTS materialize_pause_insert",
+		"DROP TRIGGER IF EXISTS materialize_pause_update",
+		"DROP TRIGGER IF EXISTS materialize_pause_delete",
+		"DELETE FROM app_state WHERE key IN ('periods_materialized_day','periods_materialization_dirty')",
 		"ALTER TABLE recurring_payments DROP COLUMN removed_at",
 		"ALTER TABLE payment_occurrences DROP COLUMN removed_at",
 		"PRAGMA user_version=5",

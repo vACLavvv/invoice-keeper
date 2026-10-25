@@ -18,6 +18,7 @@ export default function Help() {
       { href: '/team', title: t('Команда'), text: t('Обычные пользователи: создать, изменить, удалить.') },
       { href: '/suggestions', title: t('Предложения'), text: t('Платежи, найденные расширением: принять или отклонить.') },
       { href: '/activity', title: t('Журнал'), text: t('Отправка напоминаний и все действия в системе.') },
+      { href: '/webhook', title: t('Вебхук'), text: t('Получатели автоматических напоминаний, тестовая отправка и история доставки.') },
     ] : []),
   ];
   const faq = [
@@ -86,21 +87,25 @@ export default function Help() {
         <span><b>{t('Документация API')}</b><span>{t('Методы, параметры и примеры запросов для интеграций.')}</span></span>
         <span aria-hidden="true">↗</span>
       </DocsLink>
-      <SectionTitle id="help-faq">{t('частые вопросы')}</SectionTitle>
-      <DisclosureList aria-labelledby="help-faq">
-        {faq.map(([q, a]) => (
-          <details key={q}><summary>{q}</summary><p>{a}</p></details>
-        ))}
-      </DisclosureList>
-      <SectionTitle id="help-security">{t('безопасность')}</SectionTitle>
-      <DisclosureList aria-labelledby="help-security">
-        {security.map(([title, paragraphs]) => (
-          <details key={title}>
-            <summary>{title}</summary>
-            <div>{paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
-          </details>
-        ))}
-      </DisclosureList>
+      <HelpGroup>
+        <summary id="help-faq"><span>{t('частые вопросы')}</span></summary>
+        <DisclosureList aria-labelledby="help-faq">
+          {faq.map(([q, a]) => (
+            <details key={q}><summary>{q}</summary><p>{a}</p></details>
+          ))}
+        </DisclosureList>
+      </HelpGroup>
+      <HelpGroup>
+        <summary id="help-security"><span>{t('безопасность')}</span></summary>
+        <DisclosureList aria-labelledby="help-security">
+          {security.map(([title, paragraphs]) => (
+            <details key={title}>
+              <summary>{title}</summary>
+              <div>{paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+            </details>
+          ))}
+        </DisclosureList>
+      </HelpGroup>
       {(settings.support_telegram || settings.support_email) && (
         <>
           <SectionTitle>{t('поддержка')}</SectionTitle>
@@ -177,6 +182,8 @@ const Card = styled(Link)`
 
 const RuleTile = styled(Tile)`
   ${alternatingCard}
+  &:nth-child(odd) { ${darkCard} }
+  &:nth-child(even) { ${lightCard} }
 `;
 
 const Rules = styled.div`
@@ -257,4 +264,21 @@ const DocsLink = styled.a`
   > span:first-child > span { font-size: 15px; line-height: 1.5; color: var(--desk-muted); }
   > span:last-child { font-size: 22px; }
   &:hover { border-color: var(--desk-control); background: var(--desk-raised); }
+`;
+
+const HelpGroup = styled.details`
+  margin-top: 28px;
+  > summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    padding: 18px 20px; min-height: 64px; cursor: pointer; list-style: none;
+    border: 1px solid var(--desk-border); border-radius: var(--desk-radius);
+    background: var(--desk-surface); color: var(--desk-ink); font-size: 20px; font-weight: 600;
+    > span::first-letter { text-transform: uppercase; }
+    &::-webkit-details-marker { display: none; }
+    &::after { content: ''; width: 9px; height: 9px; flex-shrink: 0; border-right: 2px solid; border-bottom: 2px solid; transform: rotate(45deg); margin-right: 4px; }
+    &:hover { background: var(--desk-raised); }
+  }
+  &[open] > summary { border-radius: var(--desk-radius) var(--desk-radius) 0 0; }
+  &[open] > summary::after { transform: rotate(225deg); }
+  > div { border-top: 0; border-radius: 0 0 var(--desk-radius) var(--desk-radius); }
 `;

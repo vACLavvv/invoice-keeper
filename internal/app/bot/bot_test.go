@@ -10,12 +10,16 @@ import (
 	"time"
 
 	"invoice-keeper/internal/app/config"
+	"invoice-keeper/internal/app/report"
 	"invoice-keeper/internal/app/store"
 )
 
 type stubBackend struct{}
 
 func (stubBackend) PaymentPage(bool, int) (PaymentPage, error) { return PaymentPage{Pages: 1}, nil }
+func (stubBackend) MonthlyReport(context.Context, string, string) (report.Data, error) {
+	return report.Data{}, nil
+}
 
 func (stubBackend) Today() time.Time                                 { return time.Date(2026, 1, 28, 0, 0, 0, 0, time.UTC) }
 func (stubBackend) TodoText(bool) (string, error)                    { return "", nil }

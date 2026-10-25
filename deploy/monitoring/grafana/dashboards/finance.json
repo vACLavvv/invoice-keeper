@@ -1,0 +1,545 @@
+{
+  "title": "AezaKeeper · Финансы и доставка",
+  "uid": "keeper-finance",
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "description": "Просроченные неоплаченные периоды активных платежей. Валюты считаются отдельно; это не остаток банковского счёта. Сроки определяются APP_TIMEZONE.",
+  "tags": [
+    "invoice-keeper",
+    "finance"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Просроченные платежи",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(keeper_overdue_payments)",
+          "refId": "A",
+          "legendFormat": "Просроченные платежи"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Ожидают оплаты",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(keeper_open_payments)",
+          "refId": "A",
+          "legendFormat": "Ожидают оплаты"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Воркер работает",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_worker_uptime_seconds",
+          "refId": "A",
+          "legendFormat": "Воркер работает"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Просроченная сумма · RUB",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_overdue_amount{currency=\"RUB\"}",
+          "refId": "A",
+          "legendFormat": "Просроченная сумма · RUB"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "title": "История задолженности · RUB",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_overdue_amount{currency=\"RUB\"}",
+          "refId": "A",
+          "legendFormat": "История задолженности · RUB"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "hidden"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Просроченная сумма · USD",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_overdue_amount{currency=\"USD\"}",
+          "refId": "A",
+          "legendFormat": "Просроченная сумма · USD"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 8,
+      "title": "История задолженности · USD",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 8,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_overdue_amount{currency=\"USD\"}",
+          "refId": "A",
+          "legendFormat": "История задолженности · USD"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "hidden"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Просроченная сумма · EUR",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_overdue_amount{currency=\"EUR\"}",
+          "refId": "A",
+          "legendFormat": "Просроченная сумма · EUR"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "title": "История задолженности · EUR",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 16,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_overdue_amount{currency=\"EUR\"}",
+          "refId": "A",
+          "legendFormat": "История задолженности · EUR"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "hidden"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Ошибки отправки",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(keeper_deliveries{state=\"failed\"})",
+          "refId": "A",
+          "legendFormat": "Ошибки отправки"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Результат отправки неизвестен",
+      "type": "stat",
+      "gridPos": {
+        "x": 8,
+        "y": 18,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(keeper_deliveries{state=\"uncertain\"})",
+          "refId": "A",
+          "legendFormat": "Результат отправки неизвестен"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Ожидают доставки",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 18,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(keeper_deliveries{state=\"pending\"})",
+          "refId": "A",
+          "legendFormat": "Ожидают доставки"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Ошибки доставки в панели",
+      "url": "https://aezakeeper.ru/notifications",
+      "targetBlank": true
+    }
+  ]
+}

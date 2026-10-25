@@ -35,6 +35,39 @@ dialog.workspace-dialog { position: fixed; inset: 0; margin: auto; padding: 0; o
 .mobile-preferences .topbar-right { justify-content: flex-start; }
 .mobile-preferences .lang-toggle { display: inline-flex; }
 
+/* Account access lives in the header on both desktop and phone. */
+.main-shell > .topbar { position: relative; z-index: 4; overflow: visible; }
+.workspace-breadcrumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar > .topbar-right { flex-shrink: 0; }
+.account-control { position: relative; flex: 0 0 44px; }
+.account-trigger {
+  display: grid; place-items: center; width: 44px; height: 44px; min-width: 44px;
+  padding: 5px; margin: 0; border: 0; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--desk-ink); font: inherit;
+}
+.account-trigger > span {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid var(--desk-border); background: var(--desk-raised); font-size: 15px; font-weight: 550;
+}
+.account-trigger:hover > span, .account-trigger[aria-expanded='true'] > span { background: var(--desk-active); border-color: var(--desk-control); }
+.account-dropdown {
+  position: absolute; top: calc(100% + 8px); right: 0; width: min(240px, calc(100vw - 32px));
+  padding: 8px; border: 1px solid var(--desk-border); border-radius: 12px;
+  background: var(--desk-surface); color: var(--desk-ink); box-shadow: 0 12px 36px #00000018;
+}
+.account-identity { display: grid; gap: 4px; padding: 10px 12px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--desk-border); overflow-wrap: anywhere; }
+.account-identity strong { font-size: 15px; line-height: 1.4; }
+.account-identity > span { font-size: 13px; color: var(--desk-muted); line-height: 1.4; }
+.account-dropdown > a, .account-dropdown > button {
+  display: flex; align-items: center; min-height: 44px; width: 100%; padding: 10px 12px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--desk-ink);
+  font: inherit; font-size: 15px; line-height: 1.4; text-decoration: none; text-align: left; cursor: pointer;
+}
+.account-dropdown > a:hover, .account-dropdown > button:hover { background: var(--desk-raised); }
+@media (min-width: 1101px) {
+  .sidebar > nav { display: block; margin-top: 24px; padding-bottom: 24px; }
+}
+
 @media (max-width: 1100px) {
   .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
   .topbar > .topbar-right { width: auto; min-width: 0; justify-self: end; }

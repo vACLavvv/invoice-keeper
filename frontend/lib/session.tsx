@@ -1,5 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, setCsrfToken, type Settings, type User } from './api';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { api, setCsrfToken, type Settings, type User, type Overview } from './api';
+import { startLiveUpdates } from './live-updates';
+import { createLatestLoader } from './async-load';
 
 type Session = {
   user: User;
@@ -10,6 +12,8 @@ type Session = {
   setMonth: (month: string) => void;
   /** Increments on every change and on the minute timer; data hooks reload when it changes. */
   version: number;
+  overview: Overview | null;
+  overviewError: string | null;
   refresh: () => void;
 };
 
@@ -20,7 +24,9 @@ export function SessionProvider({ children, fallback }: { children: ReactNode; f
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState('');
   const [version, setVersion] = useState(0);
+
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const authenticated = state !== null;
 
   useEffect(() => {
     Promise.all([api<User>('/auth/me'), api<Settings>('/settings')])
@@ -38,18 +44,15 @@ export function SessionProvider({ children, fallback }: { children: ReactNode; f
     api<Settings>('/settings').then((settings) => setState((s) => (s ? { ...s, settings } : s))).catch(() => {});
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const { data: overview, error: overviewError } = useAsyncLoad(() => authenticated ? api<Overview>('/payments/overview') : Promise.resolve(null), [authenticated], version);
+
   useEffect(() => {
-    const tick = () => {
-      if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]')) refresh();
-    };
-    const timer = setInterval(tick, 60_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
-  }, [refresh]);
+    if (authenticated) return startLiveUpdates(refresh);
+  }, [authenticated, refresh]);
 
   if (!state || !month) return <>{fallback(error)}</>;
   return (
-    <SessionContext.Provider value={{ ...state, isAdmin: state.user.role === 'admin', month, setMonth, version, refresh }}>
+    <SessionContext.Provider value={{ ...state, isAdmin: state.user.role === 'admin', month, setMonth, version, refresh, overview, overviewError }}>
       {children}
     </SessionContext.Provider>
   );
@@ -61,16 +64,25 @@ export function useSession(): Session {
   return session;
 }
 
-/** Loads data whenever deps or the session version change; stale responses are dropped. */
-export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): { data: T | null; error: string | null } {
-  const { version } = useSession();
+/** Live invalidations queue one follow-up; changing filters discards old-query results. */
+function useAsyncLoad<T>(load: () => Promise<T>, deps: unknown[], version: number): { data: T | null; error: string | null } {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadRef = useRef(load); loadRef.current = load;
+  const runner = useRef<ReturnType<typeof createLatestLoader<T>> | null>(null);
+  const seenVersion = useRef(version);
   useEffect(() => {
-    let current = true;
-    load().then((value) => { if (current) { setData(value); setError(null); } })
-      .catch((e: Error) => { if (current) setError(e.message); });
-    return () => { current = false; };
-  }, [...deps, version]); // eslint-disable-line react-hooks/exhaustive-deps
+    const lifecycle = createLatestLoader(() => loadRef.current(), (value) => { setData(value); setError(null); }, (e) => setError(e.message));
+    runner.current = lifecycle;
+    void lifecycle.request();
+    return () => { lifecycle.dispose(); if (runner.current === lifecycle) runner.current = null; };
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (seenVersion.current !== version) { seenVersion.current = version; void runner.current?.request(); }
+  }, [version]);
   return { data, error };
+}
+export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): { data: T | null; error: string | null } {
+  const { version } = useSession();
+  return useAsyncLoad(load, deps, version);
 }

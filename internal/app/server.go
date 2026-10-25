@@ -23,6 +23,7 @@ import (
 	"invoice-keeper/internal/app/security"
 	"invoice-keeper/internal/app/store"
 	"invoice-keeper/internal/app/wallet"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 const cookieName = "invoice_session"
@@ -42,15 +43,17 @@ type Server struct {
 	Today     func() time.Time
 	Now       func() time.Time // wall clock for one-time codes; replaceable in tests
 
-	assets      fs.FS
-	pages       map[string]page
-	adminHash   string
-	handler     http.Handler
-	limiter     *rateLimiter
-	notifier    notify.Notifier
-	alerts      sync.WaitGroup
-	botUsername atomic.Value // set by the Telegram bot after getMe
-	metrics     serviceMetrics
+	assets               fs.FS
+	pages                map[string]page
+	adminHash            string
+	handler              http.Handler
+	limiter              *rateLimiter
+	notifier             notify.Notifier
+	alerts               sync.WaitGroup
+	botUsername          atomic.Value // set by the Telegram bot after getMe
+	metrics              serviceMetrics
+	events               eventStreams
+	webhookConsoleActive atomic.Int32 // bounded interactive outbound requests
 }
 
 func (s *Server) BotUsername() string {
@@ -62,12 +65,19 @@ func (s *Server) SetBotUsername(name string) { s.botUsername.Store(name) }
 
 // NewServer prepares routes and materializes periods. The reminder loop is started separately.
 func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Options) (*Server, error) {
+	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
+		return nil, err
+	}
+	if err := webhooks.ImportLegacy(db, settings); err != nil {
+		return nil, err
+	}
 	today := opts.Today
 	if today == nil {
 		today = func() time.Time { return schedule.Today(settings.Location()) }
 	}
 	s := &Server{
 		DB: db, Settings: settings, Today: today, Now: time.Now, assets: assets,
+		events:    newEventStreams(),
 		Worker:    notify.NewReminderWorker(db, settings, opts.Sender, today),
 		adminHash: security.HashPassword(settings.AdminPassword),
 	}
@@ -79,9 +89,6 @@ func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Optio
 	s.notifier = opts.Notifier
 	if s.notifier == nil && settings.TelegramBotToken != "" {
 		s.notifier = notify.TelegramNotifier(settings, "")
-	}
-	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
-		return nil, err
 	}
 	if err := db.Write(func(tx *sql.Tx) error { return schedule.Materialize(tx, today()) }); err != nil {
 		return nil, err
@@ -167,6 +174,11 @@ func (s *Server) routes() http.Handler {
 	swagger, _ := fs.Sub(s.assets, "web/swagger")
 	mux.Handle("GET /_next/", nextAssets(app))
 	mux.Handle("GET /favicon.svg", files(app))
+	mux.Handle("GET /manifest.webmanifest", files(app))
+	mux.Handle("GET /notification-worker.js", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		files(app).ServeHTTP(w, r)
+	}))
 	mux.Handle("GET /swagger-assets/", http.StripPrefix("/swagger-assets", files(swagger)))
 
 	handle("/", s.notFound)
@@ -184,6 +196,7 @@ func (s *Server) routes() http.Handler {
 	handle("OPTIONS /api/v1/extension/whoami", preflight)
 	handle("OPTIONS /api/v1/payment-suggestions", preflight)
 	handle("OPTIONS /api/v1/extension/pairings/claim", preflight)
+	handle("OPTIONS /api/v1/sanctions/check", preflight)
 	// API routes come from the spec: the generated code registers every documented operation.
 	api.HandlerWithOptions(apiAdapter{s}, api.StdHTTPServerOptions{BaseRouter: mux, ErrorHandlerFunc: parameterError})
 	return mux
@@ -240,6 +253,12 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	if hasBearer(r) {
 		return s.tokenUser(r, "read", "write")
 	}
+	return s.sessionUser(r, true)
+}
+
+// Event-stream heartbeats authenticate read-only: passive connections must not
+// keep writing session activity or wait for a write lock held by a transport.
+func (s *Server) sessionUser(r *http.Request, touch bool) (*User, error) {
 	cookie, err := r.Cookie(cookieName)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 128 {
 		return nil, fail(401, "Войдите в систему")
@@ -250,7 +269,7 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	var csrf string
 	hash := security.Digest(cookie.Value)
 	now := time.Now().Unix()
-	err = s.DB.QueryRow("SELECT user_id,is_admin,admin_fingerprint,csrf_token,last_seen_at FROM sessions WHERE token_hash=? AND expires_at>?",
+	err = s.DB.QueryRowContext(r.Context(), "SELECT user_id,is_admin,admin_fingerprint,csrf_token,last_seen_at FROM sessions WHERE token_hash=? AND expires_at>?",
 		hash, now).Scan(&userID, &isAdmin, &fingerprint, &csrf, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Сессия завершена. Войдите снова")
@@ -259,8 +278,8 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 		return nil, err
 	}
 	// «Последняя активность» in the sessions list; written at most once a minute.
-	if !lastSeen.Valid || now-lastSeen.Int64 >= 60 {
-		if _, err := s.DB.Exec("UPDATE sessions SET last_seen_at=?,ip=? WHERE token_hash=?", now, clientIP(r), hash); err != nil {
+	if touch && (!lastSeen.Valid || now-lastSeen.Int64 >= 60) {
+		if _, err := s.DB.ExecContext(r.Context(), "UPDATE sessions SET last_seen_at=?,ip=? WHERE token_hash=?", now, clientIP(r), hash); err != nil {
 			return nil, err
 		}
 	}
@@ -271,7 +290,7 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 		return &User{ID: 0, Username: s.Settings.AdminUsername, DisplayName: "Администратор", Role: "admin", CSRFToken: csrf}, nil
 	}
 	user := &User{Role: "user", CSRFToken: csrf}
-	err = s.DB.QueryRow("SELECT id,username,display_name FROM users WHERE id=?", userID.Int64).Scan(&user.ID, &user.Username, &user.DisplayName)
+	err = s.DB.QueryRowContext(r.Context(), "SELECT id,username,display_name FROM users WHERE id=?", userID.Int64).Scan(&user.ID, &user.Username, &user.DisplayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Пользователь удалён")
 	}
@@ -514,12 +533,16 @@ func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.currentUser(r); err != nil {
 		return err
 	}
+	channels, err := s.channelNames()
+	if err != nil {
+		return err
+	}
 	return writeJSON(w, 200, map[string]any{
 		"timezone": s.Settings.Timezone, "today": schedule.FormatDate(s.Today()), "telegram_enabled": s.Settings.TelegramEnabled,
 		"team_chat": s.Settings.TelegramEnabled && s.Settings.TelegramChatID != "", "bot_username": s.BotUsername(),
 		"reminder_days": 3, "reminder_interval_seconds": s.Settings.ReminderInterval,
 		"support_telegram": s.Settings.SupportTelegram, "support_email": s.Settings.SupportEmail,
-		"channels": s.channelNames(), "overdue_reminders": s.Settings.OverdueReminders, "sanctions_screening": s.Settings.OFACEnabled, "key_idle_days": s.Settings.KeyIdleDays,
+		"channels": channels, "overdue_reminders": s.Settings.OverdueReminders, "sanctions_screening": s.Settings.OFACEnabled, "key_idle_days": s.Settings.KeyIdleDays,
 		"security": map[string]bool{"encryption": security.Enabled(), "login_alerts": s.Settings.LoginAlerts && s.notifier != nil,
 			"paid_linked_only": s.Settings.PaidLinkedOnly},
 	})

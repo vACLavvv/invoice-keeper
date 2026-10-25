@@ -6,10 +6,9 @@ package app
 import (
 	"database/sql"
 	"net/http"
-	"sort"
-	"strings"
 
 	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/store"
 )
 
 type notification struct {
@@ -38,78 +37,70 @@ func readerKey(user *User) string {
 	return "user:" + itoa(user.ID)
 }
 
-func (s *Server) loadNotifications(tx *sql.Tx, user *User) ([]notification, int, error) {
-	today := s.Today()
-	if err := schedule.Materialize(tx, today); err != nil {
-		return nil, 0, err
+// notificationSQL selects only the small fields needed by the feed, not payment
+// secrets, wallets or receipt counts. Derived IDs preserve existing read marks.
+func (s *Server) notificationSQL(user *User) (string, []any) {
+	day := schedule.FormatDate(s.Today())
+	query := `WITH notices AS (SELECT o.id AS occurrence_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,o.updated_by,
+ CASE WHEN o.paid_at IS NOT NULL THEN 'paid' WHEN o.due_date<? THEN 'overdue' ELSE 'due' END AS kind,
+ CASE WHEN o.paid_at IS NOT NULL THEN 'paid-'||o.id||'-'||o.paid_at WHEN o.due_date<? THEN 'overdue-'||o.id ELSE 'due-'||o.id END AS id,
+ MAX(COALESCE(o.updated_at,r.created_at,''),CASE WHEN o.paid_at IS NOT NULL THEN o.paid_at WHEN o.due_date<? THEN date(o.due_date,'+1 day') ELSE date(o.due_date,'-3 days') END) AS event_at
+ FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
+ WHERE r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND
+ ((o.paid_at IS NULL AND o.due_date<=?) OR (o.paid_at>=? AND keeper_equal(COALESCE(o.updated_by,''),?)=0))) `
+	return query, []any{day, day, day, schedule.FormatDate(s.Today().AddDate(0, 0, noticeAheadDays)), schedule.FormatDate(s.Today().AddDate(0, 0, -noticePaidDays)), user.Username}
+}
+
+func (s *Server) notificationRows(q store.Querier, user *User, limit, offset int, newest bool) ([]notification, error) {
+	prefix, args := s.notificationSQL(user)
+	query := prefix + `SELECT n.id,n.kind,n.occurrence_id,n.title,n.amount_cents,n.currency,n.due_date,n.paid_at,n.updated_by,nr.item IS NOT NULL FROM notices n LEFT JOIN notification_reads nr ON nr.reader=? AND nr.item=n.id`
+	args = append(args, readerKey(user))
+	if newest {
+		query += " ORDER BY event_at DESC,occurrence_id DESC"
+	} else {
+		query += " ORDER BY CASE kind WHEN 'overdue' THEN 0 WHEN 'due' THEN 1 ELSE 2 END,CASE WHEN kind='paid' THEN paid_at END DESC,due_date,occurrence_id"
 	}
-	rows, err := tx.Query(occurrenceSelect+" WHERE r.active=1 AND ((o.paid_at IS NULL AND o.due_date<=?) OR o.paid_at>=?)",
-		schedule.FormatDate(today.AddDate(0, 0, noticeAheadDays)), schedule.FormatDate(today.AddDate(0, 0, -noticePaidDays)))
+	if limit > 0 {
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, limit, offset)
+	}
+	rows, err := q.Query(query, args...)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	var items []notification
+	defer rows.Close()
+	items := []notification{}
 	for rows.Next() {
-		o, err := scanOccurrence(rows, today)
-		if err != nil {
-			rows.Close()
-			return nil, 0, err
+		var n notification
+		var cents int64
+		if err := rows.Scan(&n.ID, &n.Kind, &n.OccurrenceID, &n.Title, &cents, &n.Currency, &n.DueDate, &n.PaidAt, &n.PaidBy, &n.Read); err != nil {
+			return nil, err
 		}
-		n := notification{OccurrenceID: o.ID, Title: o.Title, Amount: o.Amount, Currency: o.Currency, DueDate: o.DueDate, PaidAt: o.PaidAt}
-		switch {
-		case o.PaidAt != nil:
-			// Your own marks are not news to you.
-			if o.UpdatedBy != nil && strings.EqualFold(*o.UpdatedBy, user.Username) {
-				continue
-			}
-			n.Kind, n.PaidBy, n.ID = "paid", o.UpdatedBy, "paid-"+itoa(o.ID)+"-"+*o.PaidAt
-		case o.Status == "overdue":
-			n.Kind, n.ID = "overdue", "overdue-"+itoa(o.ID)
-		default:
-			n.Kind, n.ID = "due", "due-"+itoa(o.ID)
+		n.Amount = schedule.Money(cents)
+		if n.Kind != "paid" {
+			n.PaidBy = nil
 		}
 		items = append(items, n)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	return items, rows.Err()
+}
+
+func (s *Server) notificationCounts(q store.Querier, user *User) (total, unread int, err error) {
+	prefix, args := s.notificationSQL(user)
+	err = q.QueryRow(prefix+`SELECT COUNT(*),COALESCE(SUM(CASE WHEN nr.item IS NULL THEN 1 ELSE 0 END),0) FROM notices n LEFT JOIN notification_reads nr ON nr.reader=? AND nr.item=n.id`, append(args, readerKey(user))...).Scan(&total, &unread)
+	return
+}
+
+func (s *Server) loadNotifications(tx *sql.Tx, user *User) ([]notification, int, error) {
+	if err := schedule.Materialize(tx, s.Today()); err != nil {
 		return nil, 0, err
 	}
-	read := map[string]bool{}
-	marks, err := tx.Query("SELECT item FROM notification_reads WHERE reader=?", readerKey(user))
+	items, err := s.notificationRows(tx, user, 0, 0, false)
 	if err != nil {
 		return nil, 0, err
 	}
-	for marks.Next() {
-		var id string
-		if err := marks.Scan(&id); err != nil {
-			marks.Close()
-			return nil, 0, err
-		}
-		read[id] = true
-	}
-	marks.Close()
-	unread := 0
-	rank := map[string]int{"overdue": 0, "due": 1, "paid": 2}
-	for i := range items {
-		items[i].Read = read[items[i].ID]
-		if !items[i].Read {
-			unread++
-		}
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		a, b := items[i], items[j]
-		if rank[a.Kind] != rank[b.Kind] {
-			return rank[a.Kind] < rank[b.Kind]
-		}
-		if a.Kind == "paid" {
-			return *a.PaidAt > *b.PaidAt
-		}
-		return a.DueDate < b.DueDate
-	})
-	if items == nil {
-		items = []notification{}
-	}
-	return items, unread, nil
+	_, unread, err := s.notificationCounts(tx, user)
+	return items, unread, err
 }
 
 func (s *Server) notificationList(w http.ResponseWriter, r *http.Request) error {
@@ -117,16 +108,36 @@ func (s *Server) notificationList(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	var items []notification
-	var unread int
-	err = s.DB.Write(func(tx *sql.Tx) error {
-		items, unread, err = s.loadNotifications(tx, user)
+	p := &queryParams{values: r.URL.Query()}
+	limit, page := p.integer("limit", 0, 1, 100), p.integer("page", 1, 1, 1000000)
+	if err := p.err(); err != nil {
+		return err
+	}
+	if err := s.ensureMaterialized(); err != nil {
+		return err
+	}
+	var items, recent []notification
+	var total, unread int
+	err = s.readSnapshot(r.Context(), func(q store.Querier) error {
+		total, unread, err = s.notificationCounts(q, user)
+		if err != nil {
+			return err
+		}
+		items, err = s.notificationRows(q, user, limit, (page-1)*limit, false)
+		if err != nil {
+			return err
+		}
+		recent, err = s.notificationRows(q, user, 100, 0, true)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	return writeJSON(w, 200, map[string]any{"items": items, "unread_count": unread})
+	size := limit
+	if size == 0 {
+		size = max(1, total)
+	}
+	return writeJSON(w, 200, map[string]any{"items": items, "unread_count": unread, "total": total, "page": page, "page_size": size, "pages": pageCount(total, size), "browser_items": recent})
 }
 
 // notificationRead marks (personal, so not audited) the given items (or all current ones) read or unread for this user.
@@ -156,12 +167,19 @@ func (s *Server) notificationRead(w http.ResponseWriter, r *http.Request) error 
 	var unread int
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		if all != nil && *all {
-			current, _, err := s.loadNotifications(tx, user)
-			if err != nil {
+			if err := schedule.Materialize(tx, s.Today()); err != nil {
 				return err
 			}
-			for _, n := range current {
-				ids = append(ids, n.ID)
+			prefix, args := s.notificationSQL(user)
+			query := prefix + "INSERT OR IGNORE INTO notification_reads(reader,item,read_at) SELECT ?,id,? FROM notices" // #nosec G202 -- prefix is constant SQL; every user value is bound through args
+			if markRead {
+				args = append(args, readerKey(user), schedule.Timestamp())
+			} else {
+				query = prefix + "DELETE FROM notification_reads WHERE reader=? AND item IN (SELECT id FROM notices)"
+				args = append(args, readerKey(user))
+			}
+			if _, err := tx.Exec(query, args...); err != nil {
+				return err
 			}
 		}
 		for _, id := range ids {
@@ -178,7 +196,7 @@ func (s *Server) notificationRead(w http.ResponseWriter, r *http.Request) error 
 		if _, err := tx.Exec("DELETE FROM notification_reads WHERE read_at<?", schedule.FormatDate(s.Today().AddDate(0, -2, 0))); err != nil {
 			return err
 		}
-		_, unread, err = s.loadNotifications(tx, user)
+		_, unread, err = s.notificationCounts(tx, user)
 		return err
 	})
 	if err != nil {

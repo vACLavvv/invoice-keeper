@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS payment_occurrences (
 CREATE INDEX IF NOT EXISTS occurrences_due ON payment_occurrences(due_date);
 CREATE TABLE IF NOT EXISTS reminders (
     occurrence_id INTEGER PRIMARY KEY REFERENCES payment_occurrences(id),
-    state TEXT NOT NULL CHECK(state IN ('pending','sending','sent','uncertain','cancelled')),
+    state TEXT NOT NULL CHECK(state IN ('pending','sending','sent','uncertain','failed','cancelled')),
     attempts INTEGER NOT NULL DEFAULT 0, attempted_at INTEGER,
     retry_after INTEGER NOT NULL DEFAULT 0, sent_at TEXT, message_id TEXT, error TEXT
 );
@@ -123,6 +123,19 @@ var addedColumns = []struct{ table, column, definition string }{
 	// v6: reversible removal, separate from archiving (deleted_at).
 	{"recurring_payments", "removed_at", "TEXT"},
 	{"payment_occurrences", "removed_at", "TEXT"},
+	// v8: fence delivery attempts without holding SQLite's write lock over the network.
+	{"reminders", "claim_token", "TEXT"},
+	{"reminders", "dispatch_started_at", "INTEGER"},
+	{"deliveries", "claim_token", "TEXT"},
+	{"deliveries", "dispatch_started_at", "INTEGER"},
+	{"email_contacts", "claim_token", "TEXT"},
+	// Extension suggestions: how often, who is responsible and where to pay.
+	{"payment_suggestions", "frequency", "TEXT"},
+	{"payment_suggestions", "assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"},
+	{"payment_suggestions", "payment_url", "TEXT"},
+	{"payment_suggestions", "wallet_network", "TEXT"},
+	{"payment_suggestions", "wallet_address", "TEXT"},
+	{"payment_suggestions", "wallet_key", "TEXT"},
 }
 
 const frequencyColumn = "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly','once'))"
@@ -151,13 +164,14 @@ func allowOneTime(tx *sql.Tx) error {
 	return nil
 }
 
-const schemaVersion = 7
+const schemaVersion = 10
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
 type DB struct {
 	*sql.DB
-	Path string
+	Path    string
+	changes changeFeed
 }
 
 func OpenDB(path string) (*DB, error) {
@@ -193,7 +207,7 @@ func (db *DB) initialize() error {
 		return errors.New("Неизвестная версия базы. Запуск остановлен без изменения данных.")
 	}
 	return db.Write(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema + emailSchema); err != nil {
+		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema + emailSchema + idempotencySchema + webhookSchema); err != nil {
 			return err
 		}
 		for _, c := range addedColumns {
@@ -207,7 +221,27 @@ func (db *DB) initialize() error {
 				}
 			}
 		}
+		if err := allowFailedReminders(tx); err != nil {
+			return err
+		}
 		if err := allowOneTime(tx); err != nil {
+			return err
+		}
+		if version < 8 {
+			// Old sending rows may already have reached a recipient. Preserve that
+			// boundary so unlink/pause cannot cancel and later replay them.
+			for _, table := range []string{"reminders", "deliveries"} {
+				if _, err := tx.Exec("UPDATE " + table + " SET dispatch_started_at=COALESCE(attempted_at,unixepoch()) WHERE state='sending'"); err != nil { // #nosec G202 -- table is one of two constants
+					return err
+				}
+			}
+		}
+		if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS reminders_pending ON reminders(state,retry_after,occurrence_id);
+CREATE INDEX IF NOT EXISTS deliveries_pending ON deliveries(state,retry_after,occurrence_id);
+CREATE INDEX IF NOT EXISTS email_welcome_pending ON email_contacts(welcome_state,retry_after,id);`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(materializationSchema); err != nil {
 			return err
 		}
 		_, err := tx.Exec("PRAGMA user_version=" + strconv.Itoa(schemaVersion))
@@ -221,11 +255,27 @@ func (db *DB) Write(fn func(tx *sql.Tx) error) error {
 	if err != nil {
 		return err
 	}
-	if err := fn(tx); err != nil {
-		tx.Rollback()
+	defer tx.Rollback()
+	// SQLite's counter belongs to this transaction's connection. Ignored inserts
+	// and read-only transactions do not change it, unlike a generic "request done"
+	// signal, which would create an SSE -> GET -> SSE refresh loop.
+	var before, after int64
+	if err := tx.QueryRow("SELECT total_changes()").Scan(&before); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.QueryRow("SELECT total_changes()").Scan(&after); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if after > before {
+		db.changes.publish()
+	}
+	return nil
 }
 
 func IsUniqueViolation(err error) bool {

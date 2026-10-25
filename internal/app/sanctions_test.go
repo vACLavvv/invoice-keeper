@@ -93,6 +93,38 @@ func TestSanctionsScreening(t *testing.T) {
 	expect(t, "wallet cleared", cleared.object(t)["wallet"], nil)
 }
 
+// The extension and the payment form check a wallet before anything is saved. On an installation
+// without saved wallets the first check asks for the list instead of waiting for one.
+func TestWalletCheckFromExtensionLoadsListOnDemand(t *testing.T) {
+	e := setup(t)
+	server, downloads := ofacServer(t)
+	e.settings.OFACEnabled, e.settings.OFACListURL = true, server.URL+"/SDN.XML"
+	admin := e.client()
+	admin.signIn()
+	ext := e.keyClient(admin.createKey("Chrome"))
+	body := map[string]any{"network": "TRON", "address": "TA3941uFAvmVibSkQ6fMJXxmaSNovX86mz"}
+
+	first := ext.post("/api/v1/sanctions/check", body)
+	expect(t, "extension key may check", first.status, 200)
+	expect(t, "not loaded yet", first.object(t)["screening"].(map[string]any)["sanctioned"], nil)
+
+	e.server.Sanctions.Tick(context.Background())
+	expect(t, "the check asked for the list", downloads.Load(), int32(1))
+	again := ext.post("/api/v1/sanctions/check", body)
+	expect(t, "hit after loading", again.object(t)["screening"].(map[string]any)["sanctioned"], any(true))
+	e.server.Sanctions.Tick(context.Background())
+	expect(t, "fresh list is not downloaded again", downloads.Load(), int32(1))
+
+	expect(t, "bad address", ext.post("/api/v1/sanctions/check", map[string]any{"network": "TRON", "address": "nope"}).status, 422)
+	expect(t, "still no access to payments", ext.get("/api/v1/recurring-payments").status, 403)
+
+	// The popup is another origin: the preflight and the answer must allow it.
+	preflight := ext.do("OPTIONS", "/api/v1/sanctions/check", nil, "Origin", "chrome-extension://abc", "Access-Control-Request-Method", "POST")
+	expect(t, "preflight", preflight.status, 204)
+	expect(t, "preflight origin", preflight.header.Get("Access-Control-Allow-Origin"), "*")
+	expect(t, "answer origin", again.header.Get("Access-Control-Allow-Origin"), "*")
+}
+
 func TestSanctionsBadListKeepsTheOldOne(t *testing.T) {
 	e := setup(t)
 	server, _ := ofacServer(t)

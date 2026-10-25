@@ -121,6 +121,7 @@ func TestSafeFailureIsRetried(t *testing.T) {
 	makeWorker(e, sent.sender(notify.SendResult{State: "pending", Error: "Соединение не установлено"})).Tick()
 	expect(t, "pending", reminderState(t, e), "pending")
 	e.db.Exec("UPDATE reminders SET retry_after=0")
+	expireTransportBackoff(t, e)
 	makeWorker(e, sent.sender(notify.SendResult{State: "sent", MessageID: "5"})).Tick()
 	expect(t, "sent", reminderState(t, e), "sent")
 	expect(t, "attempts", sent.count(), 2)

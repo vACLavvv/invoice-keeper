@@ -31,6 +31,10 @@
     },
     {
       "name": "Система"
+    },
+    {
+      "name": "Webhook",
+      "description": "Административная консоль HTTP-запросов"
     }
   ],
   "paths": {
@@ -618,6 +622,14 @@
                   "$ref": "#/components/schemas/RecurringPayment"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -631,8 +643,50 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
+          }
+        ]
       }
     },
     "/api/v1/recurring-payments/{payment_id}": {
@@ -662,6 +716,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -683,6 +747,14 @@
                   "$ref": "#/components/schemas/RecurringPayment"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -699,6 +771,36 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -741,11 +843,29 @@
               ],
               "default": "archive"
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Платёж архивирован или удалён"
+            "description": "Платёж архивирован или удалён",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -761,6 +881,36 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -792,6 +942,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -813,6 +973,14 @@
                   "$ref": "#/components/schemas/RecurringPayment"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -832,6 +1000,26 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -863,6 +1051,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
@@ -872,6 +1070,14 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RecurringPayment"
+                }
+              }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -893,6 +1099,26 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1080,7 +1306,8 @@
             "schema": {
               "type": "string",
               "maxLength": 120
-            }
+            },
+            "description": "Подстрока названия или описания без учёта регистра"
           },
           {
             "name": "category",
@@ -1106,6 +1333,64 @@
             "schema": {
               "type": "boolean",
               "default": true
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "history"
+              ]
+            }
+          },
+          {
+            "name": "history_filter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "paid",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "date_basis",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due",
+                "history"
+              ]
+            }
+          },
+          {
+            "name": "frequency",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "once",
+                "recurring"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due_asc",
+                "due_desc",
+                "paid_desc"
+              ]
             }
           }
         ],
@@ -1508,7 +1793,7 @@
           {
             "name": "search",
             "in": "query",
-            "description": "Подстрока названия без учёта регистра",
+            "description": "Подстрока названия или описания без учёта регистра",
             "schema": {
               "type": "string",
               "maxLength": 120
@@ -1538,6 +1823,64 @@
             "schema": {
               "type": "boolean",
               "default": true
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "history"
+              ]
+            }
+          },
+          {
+            "name": "history_filter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "paid",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "date_basis",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due",
+                "history"
+              ]
+            }
+          },
+          {
+            "name": "frequency",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "once",
+                "recurring"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due_asc",
+                "due_desc",
+                "paid_desc"
+              ]
             }
           }
         ],
@@ -1651,6 +1994,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -1672,6 +2025,14 @@
                   "$ref": "#/components/schemas/Occurrence"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -1688,6 +2049,36 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "description": "Конфликт состояния или ключа идемпотентности",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3232,6 +3623,16 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "requestBody": {
@@ -3253,6 +3654,14 @@
                   "$ref": "#/components/schemas/Occurrence"
                 }
               }
+            },
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
             }
           },
           "401": {
@@ -3272,6 +3681,26 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3311,8 +3740,32 @@
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          }
+        ]
       }
     },
     "/api/v1/notifications/read": {
@@ -3444,7 +3897,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "default": 1
+              "default": 1,
+              "maximum": 1000000
             }
           },
           {
@@ -3521,11 +3975,29 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Выполнено (повторный вызов также 204)"
+            "description": "Выполнено (повторный вызов также 204)",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3544,6 +4016,26 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3584,11 +4076,29 @@
               "type": "string"
             },
             "description": "Срок периода в формате YYYY-MM-DD, 2000–2100."
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Выполнено (повторный вызов также 204)"
+            "description": "Выполнено (повторный вызов также 204)",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3607,6 +4117,26 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3647,11 +4177,29 @@
               "type": "string"
             },
             "description": "Срок периода в формате YYYY-MM-DD, 2000–2100."
+          },
+          {
+            "name": "X-Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Ключ одного действия (8–128 ASCII-символов). Успешный ответ сохраняется 24 часа атомарно с изменением. Повтор возвращает исходный статус/тело; другое тело или путь с тем же ключом — 409. Сначала проверяются актуальные права и CSRF.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{8,128}$"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Выполнено (повторный вызов также 204)"
+            "description": "Выполнено (повторный вызов также 204)",
+            "headers": {
+              "X-Idempotency-Replayed": {
+                "description": "true если ответ повторён из сохранённого результата",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3670,6 +4218,26 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "description": "Ошибка сервера; успешное изменение не фиксируется без записи результата",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Превышен размер запроса",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3918,6 +4486,1286 @@
           }
         }
       }
+    },
+    "/api/v1/deleted-payments": {
+      "get": {
+        "tags": [
+          "Регулярные платежи"
+        ],
+        "summary": "Удалённые платежи и отдельные периоды",
+        "operationId": "listDeletedPayments",
+        "description": "Только администратор. Удалённый платёж представляет все свои периоды. Отдельно удалённые периоды видны после восстановления родительского платежа. Восстановление использует существующие /restore; даты, чеки и архив/пауза сохраняются.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список от новых удалений к старым",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedPayment"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Поток обновлений панели (SSE)",
+        "operationId": "streamEvents",
+        "description": "Только cookie-сессия. Поток text/event-stream сообщает о подтверждённых изменениях; финансовые данные и секреты в событии отсутствуют. При подключении и восстановлении соединения клиент заново запрашивает актуальные данные. Last-Event-ID не обеспечивает воспроизведение истории: это поток инвалидации. Соединение периодически проверяет действительность сессии. Неверные или отсутствующие права закрывают поток. API-токены не поддерживаются. События: ready при подключении, changed после commit, session-ended при завершении сессии. Проверка сессии и heartbeat каждые 15 секунд. Ограничение: 6 потоков на сессию и 128 на процесс.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE-поток; proxy buffering отключён. Клиент должен поддерживать переподключение.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Недопустимый запрос"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/payment-occurrences/page": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Страница периодов оплаты; итоги относятся ко всему отбору",
+        "operationId": "listOccurrencesPage",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "description": "Срок оплаты не раньше этой даты",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "description": "Срок оплаты не позже этой даты",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Status"
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Currency"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Подстрока названия или описания без учёта регистра",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Категория без учёта регистра; `-` — без категории",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "assignee",
+            "in": "query",
+            "description": "`me` — мои платежи, `-` — без ответственного, или ID пользователя",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "description": "Учитывать периоды прекращённых платежей",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "history"
+              ]
+            }
+          },
+          {
+            "name": "history_filter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "paid",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "date_basis",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due",
+                "history"
+              ]
+            }
+          },
+          {
+            "name": "frequency",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "once",
+                "recurring"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "due_asc",
+                "due_desc",
+                "paid_desc"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница периодов оплаты; итоги относятся ко всему отбору",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccurrencePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/recurring-payments/page": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Страница расписаний",
+        "operationId": "listRecurringPage",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/Currency"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "paused",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "payment_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница расписаний",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/payment-categories": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Категории без загрузки платежей",
+        "operationId": "listPaymentCategories",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Категории без загрузки платежей",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/payments/overview": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Краткая сводка и ограниченные очереди главного экрана",
+        "operationId": "paymentsOverview",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Краткая сводка и ограниченные очереди главного экрана",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOverview"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/payments/calendar": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Итоги календаря и до трёх платежей на день",
+        "operationId": "paymentsCalendar",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^(20\\d{2}|2100)-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Итоги календаря и до трёх платежей на день",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentCalendar"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/payments/calendar/day": {
+      "get": {
+        "tags": [
+          "Оплаты"
+        ],
+        "summary": "Страница платежей выбранного дня, включая прогноз",
+        "operationId": "paymentsCalendarDay",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "required": true
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница платежей выбранного дня, включая прогноз",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarDayPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "tags": [
+          "Monitoring"
+        ],
+        "summary": "Метрики Prometheus",
+        "description": "Технические и агрегированные бизнес-метрики, только с отдельным METRICS_TOKEN. /metrics остаётся совместимым алиасом.",
+        "security": [
+          {
+            "MetricsToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Нужен отдельный ключ метрик"
+          },
+          "404": {
+            "description": "Метрики отключены"
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures": {
+      "get": {
+        "operationId": "listDeliveryFailures",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Ошибки доставки (только администратор)",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "failed",
+                "uncertain"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница ошибок",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryFailurePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только администратор"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures/retry": {
+      "post": {
+        "operationId": "retryDeliveryFailure",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Повторить подтверждённо неотправленное уведомление",
+        "description": "Только failed и актуальный failure_token. Неопределённые результаты не повторяются: сообщение могло дойти. Проверяются текущая привязка и статус платежа. Повтор фиксируется в журнале.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "queue",
+                  "occurrence_id",
+                  "failure_token"
+                ],
+                "properties": {
+                  "queue": {
+                    "type": "string",
+                    "enum": [
+                      "reminders",
+                      "deliveries"
+                    ]
+                  },
+                  "occurrence_id": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "type": "string"
+                  },
+                  "failure_token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Возвращено в очередь"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только администратор / CSRF"
+          },
+          "404": {
+            "description": "Не найдено"
+          },
+          "409": {
+            "description": "Повтор запрещён или запись уже изменилась"
+          },
+          "422": {
+            "description": "Неверный запрос"
+          }
+        }
+      }
+    },
+    "/api/v1/webhook-console": {
+      "get": {
+        "operationId": "getWebhookConsole",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Настройки конструктора HTTP-запросов",
+        "description": "Только сессия администратора. Секрет подписи, userinfo, query и fragment настроенного URL не возвращаются. API-токены не разрешены.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Доступный приёмник и лимиты",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConsoleSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; для POST требуется CSRF"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных запросов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка; не повторяйте POST без проверки результата"
+          }
+        }
+      }
+    },
+    "/api/v1/webhook-console/requests": {
+      "post": {
+        "operationId": "sendWebhookConsoleRequest",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Выполнить один GET или POST с сервера",
+        "description": "Только сессия администратора и CSRF. custom принимает публичный HTTP(S) URL с проверкой адреса при подключении. configured использует точный WEBHOOK_URL сервера и подписывает POST его секретом; health разрешает только GET к /healthz настроенного локального приёмника. Переходы по редиректам и автоматические повторы отключены. Не более двух запросов одновременно, таймаут 10 секунд, тело до 64 KiB, ответ до 128 KiB. Нельзя передавать cookie панели и служебные/прокси-заголовки. Настройки фоновой рассылки не меняются. Сетевой сбой возвращается в error с status=0; удалённые HTTP 4xx/5xx возвращаются как результат запроса. POST может изменить данные получателя; повторять его автоматически нельзя.",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookConsoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ответ удалённого сервиса или результат сетевой ошибки",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConsoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; для POST требуется CSRF"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных запросов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка; не повторяйте POST без проверки результата"
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks": {
+      "get": {
+        "operationId": "listWebhooks",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Сохранённые получатели автоматических напоминаний",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Добавить получателя (до 50 адресов)",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointCreate"
+              }
+            }
+          }
+        },
+        "description": "Администратор добавляет HTTP(S) адрес и необязательный HMAC-секрет. Новые адреса должны быть публичными: проверяются literal IP и адрес сокета после DNS. Включение немедленно ставит подходящие напоминания в независимую очередь получателя. Секрет не возвращается; URL хранится как чувствительное поле."
+      }
+    },
+    "/api/v1/webhooks/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Изменить получателя и виды напоминаний",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointPatch"
+              }
+            }
+          }
+        },
+        "description": "Пропущенные поля сохраняются; secret:\"\" удаляет секрет. Для перенесённого адреса url_readonly=true: url в ответе скрывает credentials/query, пропущенный url сохраняет оригинал. Замена URL требует публичного адреса. Смена URL или секрета во время начатой отправки отклоняется. Отключение отменяет ещё не начатые отправки, уже начатую отозвать невозможно. Отправленные/неоднозначные/неудачные доставки автоматически не повторяются."
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Удалить получателя, сохранив журнал доставки",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Успешно"
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}/test": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "post": {
+        "operationId": "testWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Один подписанный webhook.test на сохранённый адрес",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConsoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "description": "Только явная проверка администратора, в том числе отключённого получателя. Фиксированный JSON webhook.test, HMAC при наличии секрета, отдельный test delivery ID. Финансовые статусы не меняет и автоматическую очередь не затрагивает. Без редиректов/повторов, 10 секунд, не более 2 одновременных тестов/ручных запросов."
+      }
+    },
+    "/api/v1/webhooks/{id}/deliveries": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "История автоматических отправок одному получателю",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3939,6 +5787,11 @@
         "scheme": "bearer",
         "bearerFormat": "ik_…",
         "description": "Ключ API из панели («Аккаунт» → «Токены API» или «Расширение»): Authorization: Bearer ik_…"
+      },
+      "MetricsToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Отдельный METRICS_TOKEN; не даёт доступ к бизнес-API."
       }
     },
     "responses": {
@@ -5236,7 +7089,8 @@
               "sending",
               "sent",
               "uncertain",
-              "cancelled"
+              "cancelled",
+              "failed"
             ],
             "description": "`uncertain` — результат неизвестен, автоматического повтора нет (без дублей)"
           },
@@ -5609,6 +7463,28 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "payment_title": {
+            "type": "string",
+            "description": "Текущее название платежа; подписанная запись журнала не изменяется."
+          },
+          "recurring_payment_id": {
+            "type": "integer"
+          },
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "payment_state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ]
           }
         }
       },
@@ -6038,6 +7914,28 @@
           },
           "unread_count": {
             "type": "integer"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "browser_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
           }
         }
       },
@@ -6181,6 +8079,907 @@
             "maxLength": 128
           }
         }
+      },
+      "DeletedPayment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "recurring_payment_id",
+          "title",
+          "amount",
+          "currency",
+          "due_date",
+          "paid_at",
+          "removed_at",
+          "active"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "payment",
+              "period"
+            ]
+          },
+          "recurring_payment_id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUB",
+              "USD",
+              "EUR"
+            ]
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "removed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OccurrencePage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Occurrence"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "all": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "overdue": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "all",
+              "overdue"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages",
+          "counts"
+        ],
+        "additionalProperties": false
+      },
+      "RecurringPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecurringPayment"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "PaymentOverview": {
+        "type": "object",
+        "properties": {
+          "counts": {
+            "type": "object",
+            "properties": {
+              "open": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "overdue": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "soon": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "once": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "urgent": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "month_paid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "month_total": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "open",
+              "overdue",
+              "soon",
+              "once",
+              "urgent",
+              "month_paid",
+              "month_total"
+            ],
+            "additionalProperties": false
+          },
+          "queues": {
+            "type": "object",
+            "properties": {
+              "week": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Occurrence"
+                }
+              },
+              "all": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Occurrence"
+                }
+              },
+              "once": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Occurrence"
+                }
+              }
+            },
+            "required": [
+              "week",
+              "all",
+              "once"
+            ],
+            "additionalProperties": false
+          },
+          "later": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Occurrence"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Occurrence"
+            }
+          }
+        },
+        "required": [
+          "counts",
+          "queues",
+          "later",
+          "recent"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarAmounts": {
+        "type": "object",
+        "properties": {
+          "RUB": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$"
+          },
+          "USD": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$"
+          },
+          "EUR": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "CalendarDay": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CalendarAmounts"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Occurrence"
+                },
+                {
+                  "$ref": "#/components/schemas/ForecastPeriod"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "date",
+          "count",
+          "totals",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "PaymentCalendar": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "days": {
+            "type": "array",
+            "maxItems": 31,
+            "items": {
+              "$ref": "#/components/schemas/CalendarDay"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CalendarAmounts"
+          }
+        },
+        "required": [
+          "month",
+          "days",
+          "totals"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarDayPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Occurrence"
+                },
+                {
+                  "$ref": "#/components/schemas/ForecastPeriod"
+                }
+              ]
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "DeliveryFailure": {
+        "type": "object",
+        "required": [
+          "queue",
+          "occurrence_id",
+          "kind",
+          "channel",
+          "title",
+          "due_date",
+          "state",
+          "error",
+          "attempts",
+          "attempted_at",
+          "retry_after",
+          "can_retry",
+          "failure_token"
+        ],
+        "properties": {
+          "queue": {
+            "type": "string",
+            "enum": [
+              "reminders",
+              "deliveries",
+              "email_verification"
+            ]
+          },
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "contact_id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "uncertain"
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "attempted_at": {
+            "type": "integer",
+            "nullable": true
+          },
+          "retry_after": {
+            "type": "integer"
+          },
+          "can_retry": {
+            "type": "boolean"
+          },
+          "failure_token": {
+            "type": "string"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "description": "Название получателя webhook, включая удалённых; channel остаётся стабильным ключом очереди."
+          }
+        }
+      },
+      "DeliveryFailurePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages",
+          "counts"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryFailure"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "failed",
+              "uncertain"
+            ],
+            "properties": {
+              "failed": {
+                "type": "integer"
+              },
+              "uncertain": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "WebhookConsoleHeader": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookConsoleSettings": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "signing_enabled": {
+            "type": "boolean"
+          },
+          "health_available": {
+            "type": "boolean"
+          },
+          "max_body_bytes": {
+            "type": "integer"
+          },
+          "max_response_bytes": {
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "target",
+          "signing_enabled",
+          "health_available",
+          "max_body_bytes",
+          "max_response_bytes",
+          "timeout_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookConsoleRequest": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "custom",
+              "configured",
+              "health"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookConsoleHeader"
+            },
+            "maxItems": 20
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "method"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookConsoleResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 599
+          },
+          "status_text": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookConsoleHeader"
+            }
+          },
+          "body": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "status_text",
+          "duration_ms",
+          "headers",
+          "body",
+          "truncated",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookDeliverySummary": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "uncertain",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempted_at": {
+            "type": "integer",
+            "nullable": true
+          },
+          "sent_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "attempted_at",
+          "sent_at",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "url_readonly": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_due": {
+            "type": "boolean"
+          },
+          "notify_overdue": {
+            "type": "boolean"
+          },
+          "has_secret": {
+            "type": "boolean"
+          },
+          "allow_private": {
+            "type": "boolean"
+          },
+          "legacy_source": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "last_delivery": {
+            "type": "object",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WebhookDeliverySummary"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "url_readonly",
+          "enabled",
+          "notify_due",
+          "notify_overdue",
+          "has_secret",
+          "allow_private",
+          "legacy_source",
+          "created_at",
+          "updated_at",
+          "last_delivery"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpointList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "items",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpointCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 4096,
+            "writeOnly": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_due": {
+            "type": "boolean"
+          },
+          "notify_overdue": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpointPatch": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 4096,
+            "writeOnly": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_due": {
+            "type": "boolean"
+          },
+          "notify_overdue": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "uncertain",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempted_at": {
+            "type": "integer",
+            "nullable": true
+          },
+          "sent_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string"
+          },
+          "occurrence_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "due",
+              "overdue"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retry_after": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "state",
+          "attempted_at",
+          "sent_at",
+          "error",
+          "occurrence_id",
+          "kind",
+          "attempts",
+          "retry_after"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookDeliveryPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDelivery"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total",
+          "pages"
+        ],
+        "additionalProperties": false
       }
     }
   }

@@ -1,13 +1,13 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useEffect, useState, type ReactNode } from 'react';
-import { api, type NotificationFeed, type Occurrence, type Suggestion } from '@/lib/api';
-import { date } from '@/lib/format';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { api, type NotificationFeed, type Suggestion } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { usePreferences } from '@/lib/preferences';
 import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
+import { useBrowserNoticeDelivery } from '@/lib/use-browser-notices';
 import { ws } from './icons';
 import { CreatePaymentModal } from './PaymentModals';
 import { Modal } from './Modal';
@@ -33,6 +33,7 @@ const sections = (isAdmin: boolean): NavSection[] => [
   { title: t('Управление'), admin: true, items: [
     { href: '/team', label: t('Команда'), icon: ws.users },
     { href: '/activity', label: t('Журнал'), icon: ws.activity },
+    { href: '/webhook', label: t('Вебхук'), icon: ws.webhook },
   ] },
   { title: t('Учётная запись'), items: [
     { href: '/account', label: t('Аккаунт'), icon: ws.account },
@@ -54,17 +55,32 @@ type Props = {
 
 export function Shell({ title, heading, subtitle, action, extra, children }: Props) {
   const { pathname } = useRouter();
-  const { user, settings, isAdmin } = useSession();
+  const { user, isAdmin, overview } = useSession();
   const { mode, setMode, language, setLanguage } = usePreferences();
   const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const open = useLoad(() => api<Occurrence[]>('/payment-occurrences?include_archived=false'), []).data;
-  const feed = useLoad(() => api<NotificationFeed>('/notifications'), []).data;
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+  const accountButtonRef = useRef<HTMLButtonElement>(null);
+  const feed = useLoad(() => api<NotificationFeed>('/notifications?limit=50'), []).data;
+  useBrowserNoticeDelivery(user, feed);
   const inbox = useLoad(() => (isAdmin ? api<Suggestion[]>('/payment-suggestions?status=pending') : Promise.resolve([])), [isAdmin]).data;
-  const counts = { open: open?.filter((o) => o.status !== 'paid').length, unread: feed?.unread_count, inbox: inbox?.length };
+  const counts = { open: overview?.counts.open, unread: feed?.unread_count, inbox: inbox?.length };
   const dark = mode === 'dark';
-  useEffect(() => { setMenuOpen(false); }, [pathname]);
+  useEffect(() => { setMenuOpen(false); setAccountOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!accountOpen) return;
+    function outside(event: PointerEvent) {
+      if (event.target instanceof Node && !accountRef.current?.contains(event.target)) setAccountOpen(false);
+    }
+    function escape(event: KeyboardEvent) {
+      if (event.key === 'Escape') { setAccountOpen(false); accountButtonRef.current?.focus(); }
+    }
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [accountOpen]);
   // The workspace stylesheets lay out some pages by body[data-page] (as in the main branch).
   useEffect(() => { document.body.dataset.page = pathname === '/' ? 'overview' : pathname.slice(1); }, [pathname]);
 
@@ -100,26 +116,14 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
       <a className="skip-link" href="#main-content">{t('К содержимому')}</a>
       <aside className="sidebar">
         <Link className="brand" href="/"><img src="/favicon.svg" alt="" width={36} height={36} /><span>invoice<span className="brand-light">keeper</span></span></Link>
-        <div className="workspace-label">
-          <span className="workspace-avatar">IK</span>
-          <span>{t('Финансы команды')}<small>{t('Рабочее пространство')}</small></span>
-          <span className="small-dot" title={settings.telegram_enabled ? t('Напоминания в Telegram включены') : t('Telegram не подключён')} />
-        </div>
         <nav aria-label={t('Разделы')}>
           {navigation}
         </nav>
-        <div className="sidebar-bottom">
-          <button className="profile" type="button" onClick={logout} title={t('Выйти из учётной записи')}>
-            <span className="profile-avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</span>
-            <span>{user.display_name}<small>{isAdmin ? t('Администратор') : '@' + user.username}</small></span>
-            <span className="logout-icon" aria-hidden="true">⇥</span>
-          </button>
-        </div>
       </aside>
       <div className="main-shell">
         <header className="topbar">
           <div className="mobile-brand">
-            <button type="button" className="menu-toggle" aria-label={t('Открыть меню')} aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+            <button type="button" className="menu-toggle" aria-label={t('Открыть меню')} aria-expanded={menuOpen} onClick={() => { setAccountOpen(false); setMenuOpen(true); }}>
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
             </button>
             <Link href="/">invoicekeeper</Link>
@@ -134,10 +138,20 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
               aria-label={dark ? t('Включить светлую тему') : t('Включить тёмную тему')} title={dark ? t('Включить светлую тему') : t('Включить тёмную тему')}>
               {dark ? ws.sun : ws.moon}
             </button>
-            <Link className="bell-button" href="/notifications" aria-label={t('Уведомления: {n} непрочитанных', { n: counts.unread ?? 0 })}>
-              {ws.bell} <span>{counts.unread ?? 0}</span>
-            </Link>
-            <time className="workspace-date" dateTime={settings.today} title={settings.timezone}>{date(settings.today, { day: 'numeric', month: 'long', year: 'numeric' })}</time>
+            <div className="account-control" ref={accountRef} onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setAccountOpen(false);
+            }}>
+              <button ref={accountButtonRef} type="button" className="account-trigger" aria-label={t('Меню аккаунта')}
+                aria-expanded={accountOpen} aria-controls={accountOpen ? 'account-dropdown' : undefined}
+                title={`${user.display_name || user.username} · ${t('Аккаунт')}`} onClick={() => setAccountOpen((open) => !open)}>
+                <span aria-hidden="true">{Array.from(user.display_name || user.username)[0]?.toUpperCase()}</span>
+              </button>
+              {accountOpen && <div className="account-dropdown" id="account-dropdown">
+                <div className="account-identity"><strong>{user.display_name || user.username}</strong><span>@{user.username}</span></div>
+                <Link href="/account" onClick={() => setAccountOpen(false)}>{t('Аккаунт')}</Link>
+                <button type="button" onClick={logout}>{t('Выйти')}</button>
+              </div>}
+            </div>
           </div>
         </header>
         <main id="main-content" tabIndex={-1}>

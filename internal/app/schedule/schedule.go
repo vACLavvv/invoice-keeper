@@ -20,8 +20,15 @@ func ParseDate(value string) (time.Time, error) { return time.Parse(DateLayout, 
 func FormatDate(t time.Time) string { return t.Format(DateLayout) }
 
 func Today(loc *time.Location) time.Time {
-	now := time.Now().In(loc)
-	return Civil(now.Year(), now.Month(), now.Day())
+	return TodayAt(time.Now(), loc)
+}
+
+// TodayAt derives the shared business date from an instant. Dates remain civil
+// days: the UTC-midnight representation below must not be shifted by a viewer's
+// timezone. Keeping the instant explicit also makes midnight/DST checks repeatable.
+func TodayAt(instant time.Time, loc *time.Location) time.Time {
+	local := instant.In(loc)
+	return Civil(local.Year(), local.Month(), local.Day())
 }
 
 func Timestamp() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000000-07:00") }
@@ -144,7 +151,17 @@ func LoadPlans(q store.Querier, where string) ([]Plan, error) {
 // Materialize keeps the calendar complete through the end of next month and always keeps
 // the next upcoming period, so a yearly payment shows its next date right away.
 // Periods inside a Pause are skipped: they are neither created nor overdue later.
+func NeedsMaterialize(q store.Querier, today time.Time) (bool, error) {
+	var day, dirty string
+	err := q.QueryRow("SELECT COALESCE((SELECT value FROM app_state WHERE key='periods_materialized_day'),''), COALESCE((SELECT value FROM app_state WHERE key='periods_materialization_dirty'),'')").Scan(&day, &dirty)
+	return day != FormatDate(today) || dirty == "1", err
+}
+
 func Materialize(q store.Querier, today time.Time) error {
+	needed, err := NeedsMaterialize(q, today)
+	if err != nil || !needed {
+		return err
+	}
 	horizon := MonthlyDate(Civil(today.Year(), today.Month(), 1), 2, 1).AddDate(0, 0, -1)
 	plans, err := LoadPlans(q, "active=1")
 	if err != nil {
@@ -184,7 +201,11 @@ func Materialize(q store.Querier, today time.Time) error {
 			}
 		}
 	}
-	return nil
+	if _, err := q.Exec("INSERT INTO app_state(key,value) VALUES('periods_materialized_day',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", FormatDate(today)); err != nil {
+		return err
+	}
+	_, err = q.Exec("DELETE FROM app_state WHERE key='periods_materialization_dirty'")
+	return err
 }
 
 // ProjectedDates lists the due dates of a Plan within [from, to], skipping pauses.

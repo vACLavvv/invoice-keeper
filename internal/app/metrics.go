@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"invoice-keeper/internal/app/schedule"
+	"invoice-keeper/internal/app/store"
 )
 
 var metricBuckets = [...]float64{.01, .05, .1, .25, .5, 1, 5, 15}
@@ -50,7 +53,7 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	// Finish database reads before writing a 200: a broken scrape must not look healthy.
 	rows, err := s.DB.QueryContext(r.Context(), `SELECT 'telegram',state,count(*) FROM reminders GROUP BY state
- UNION ALL SELECT CASE WHEN channel LIKE 'email:%' THEN 'email' WHEN channel LIKE 'telegram:%' THEN 'telegram' ELSE channel END,state,count(*) FROM deliveries GROUP BY 1,2
+ UNION ALL SELECT CASE WHEN channel LIKE 'email:%' THEN 'email' WHEN channel LIKE 'telegram:%' THEN 'telegram' WHEN channel LIKE 'webhook:%' THEN 'webhook' ELSE channel END,state,count(*) FROM deliveries GROUP BY 1,2
  UNION ALL SELECT 'telegram_personal',state,count(*) FROM personal_reminders GROUP BY state
  UNION ALL SELECT 'email_verification',welcome_state,count(*) FROM email_contacts GROUP BY welcome_state`)
 	if err != nil {
@@ -84,6 +87,34 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+
+	// Aggregate business gauges in one read snapshot; expose no payment/customer labels.
+	if err := s.ensureMaterialized(); err != nil {
+		return err
+	}
+	type totals struct{ open, overdue, cents int64 }
+	business := map[string]totals{}
+	err = s.readSnapshot(r.Context(), func(q store.Querier) error {
+		rows, err := q.Query(`SELECT o.currency,COUNT(*),COALESCE(SUM(CASE WHEN o.due_date<? THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN o.due_date<? THEN o.amount_cents ELSE 0 END),0)
+   FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
+   WHERE o.paid_at IS NULL AND o.removed_at IS NULL AND r.removed_at IS NULL AND r.active=1 GROUP BY o.currency`, schedule.FormatDate(s.Today()), schedule.FormatDate(s.Today()))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var currency string
+			var value totals
+			if err := rows.Scan(&currency, &value.open, &value.overdue, &value.cents); err != nil {
+				return err
+			}
+			business[currency] = value
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return err
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	var body strings.Builder
 	metric := func(name, help, kind string, value any) {
@@ -91,10 +122,29 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	metric("keeper_uptime_seconds", "Seconds since this process started.", "gauge", time.Since(serviceStarted).Seconds())
 	metric("keeper_database_up", "Database query completed successfully.", "gauge", 1)
+	metric("keeper_sse_connections", "Currently open authenticated event streams.", "gauge", s.events.active())
 	last, errors := s.Worker.Health()
 	metric("keeper_scheduler_last_success_timestamp_seconds", "Last completed reminder pass (0 before first pass).", "gauge", last)
 	metric("keeper_scheduler_errors_total", "Failed reminder passes.", "counter", errors)
 	metric("keeper_scheduler_interval_seconds", "Configured reminder check interval.", "gauge", s.Settings.ReminderInterval)
+
+	workerAge := int64(0)
+	if started := s.Worker.StartedAt(); started > 0 {
+		workerAge = max(0, time.Now().Unix()-started)
+	}
+	metric("keeper_worker_uptime_seconds", "Seconds since the reminder worker Run loop started (0 if not running).", "gauge", workerAge)
+	fmt.Fprintln(&body, "# HELP keeper_open_payments Unpaid active recorded periods by currency.\n# TYPE keeper_open_payments gauge")
+	for _, currency := range currencies {
+		fmt.Fprintf(&body, "keeper_open_payments{currency=%q} %d\n", currency, business[currency].open)
+	}
+	fmt.Fprintln(&body, "# HELP keeper_overdue_payments Unpaid active periods before the business date, by currency.\n# TYPE keeper_overdue_payments gauge")
+	for _, currency := range currencies {
+		fmt.Fprintf(&body, "keeper_overdue_payments{currency=%q} %d\n", currency, business[currency].overdue)
+	}
+	fmt.Fprintln(&body, "# HELP keeper_overdue_amount Debt in each original currency; currencies must not be summed together.\n# TYPE keeper_overdue_amount gauge")
+	for _, currency := range currencies {
+		fmt.Fprintf(&body, "keeper_overdue_amount{currency=%q} %.2f\n", currency, float64(business[currency].cents)/100)
+	}
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	metric("keeper_go_heap_bytes", "Allocated Go heap bytes.", "gauge", mem.HeapAlloc)
@@ -110,11 +160,11 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	s.metrics.mu.Lock()
 	defer s.metrics.mu.Unlock()
-	fmt.Fprintln(&body, "# HELP keeper_http_requests_total Requests excluding health and metrics.\n# TYPE keeper_http_requests_total counter")
+	fmt.Fprintln(&body, "# HELP keeper_http_requests_total Requests excluding health, metrics and event streams.\n# TYPE keeper_http_requests_total counter")
 	for i := 1; i <= 5; i++ {
 		fmt.Fprintf(&body, "keeper_http_requests_total{status_class=%q} %d\n", fmt.Sprintf("%dxx", i), s.metrics.requests[i])
 	}
-	fmt.Fprintln(&body, "# HELP keeper_http_request_duration_seconds Request duration excluding probes.\n# TYPE keeper_http_request_duration_seconds histogram")
+	fmt.Fprintln(&body, "# HELP keeper_http_request_duration_seconds Request duration excluding probes and event streams.\n# TYPE keeper_http_request_duration_seconds histogram")
 	for i, upper := range metricBuckets {
 		fmt.Fprintf(&body, "keeper_http_request_duration_seconds_bucket{le=%q} %d\n", fmt.Sprint(upper), s.metrics.buckets[i])
 	}

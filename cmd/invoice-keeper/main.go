@@ -114,6 +114,7 @@ func serve(args []string) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	httpServer.RegisterOnShutdown(server.CloseEvents)
 
 	// Background work runs until ctx is cancelled: on SIGINT/SIGTERM or when the HTTP server fails.
 	signals, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

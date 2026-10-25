@@ -20,6 +20,7 @@ export default class AppDocument extends Document {
       <Html lang="ru">
         <Head>
           <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+          <link rel="manifest" href="/manifest.webmanifest" />
           <meta name="theme-color" content="#0b0b0f" />
         </Head>
         <body>

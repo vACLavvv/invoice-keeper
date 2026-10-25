@@ -57,11 +57,11 @@ func (a apiAdapter) ListRecurringPayments(w http.ResponseWriter, r *http.Request
 	a.s.serveAPI(w, r, a.s.recurringList)
 }
 
-func (a apiAdapter) CreateRecurringPayment(w http.ResponseWriter, r *http.Request) {
+func (a apiAdapter) CreateRecurringPayment(w http.ResponseWriter, r *http.Request, _ api.CreateRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringCreate)
 }
 
-func (a apiAdapter) UpdateRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) UpdateRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.UpdateRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringUpdate)
 }
 
@@ -69,11 +69,11 @@ func (a apiAdapter) ArchiveRecurringPayment(w http.ResponseWriter, r *http.Reque
 	a.s.serveAPI(w, r, a.s.recurringDelete)
 }
 
-func (a apiAdapter) PauseRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) PauseRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.PauseRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringPause)
 }
 
-func (a apiAdapter) ResumeRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) ResumeRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.ResumeRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringResume)
 }
 
@@ -117,7 +117,7 @@ func (a apiAdapter) GetOccurrence(w http.ResponseWriter, r *http.Request, _ int)
 	a.s.serveAPI(w, r, a.s.occurrenceGet)
 }
 
-func (a apiAdapter) UpdateOccurrence(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) UpdateOccurrence(w http.ResponseWriter, r *http.Request, _ int, _ api.UpdateOccurrenceParams) {
 	a.s.serveAPI(w, r, a.s.occurrenceUpdate)
 }
 
@@ -231,7 +231,7 @@ func (a apiAdapter) ListForecast(w http.ResponseWriter, r *http.Request, _ api.L
 	a.s.serveAPI(w, r, a.s.forecast)
 }
 
-func (a apiAdapter) CreatePeriod(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) CreatePeriod(w http.ResponseWriter, r *http.Request, _ int, _ api.CreatePeriodParams) {
 	a.s.serveAPI(w, r, a.s.periodCreate)
 }
 
@@ -239,7 +239,7 @@ func (a apiAdapter) AuditPage(w http.ResponseWriter, r *http.Request, _ api.Audi
 	a.s.serveAPI(w, r, a.s.auditPage)
 }
 
-func (a apiAdapter) ListNotifications(w http.ResponseWriter, r *http.Request) {
+func (a apiAdapter) ListNotifications(w http.ResponseWriter, r *http.Request, _ api.ListNotificationsParams) {
 	a.s.serveAPI(w, r, a.s.notificationList)
 }
 
@@ -247,13 +247,16 @@ func (a apiAdapter) MarkNotifications(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.notificationRead)
 }
 
-func (a apiAdapter) RestoreRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) RestoreRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.RestoreRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringRestore)
 }
-func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
+func (a apiAdapter) ListDeletedPayments(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.deletedPaymentList)
+}
+func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string, _ api.DeletePeriodParams) {
 	a.s.serveAPI(w, r, a.s.periodDelete)
 }
-func (a apiAdapter) RestorePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
+func (a apiAdapter) RestorePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string, _ api.RestorePeriodParams) {
 	a.s.serveAPI(w, r, a.s.periodRestore)
 }
 
@@ -271,4 +274,64 @@ func (a apiAdapter) ResendUserEmail(w http.ResponseWriter, r *http.Request, _ in
 }
 func (a apiAdapter) ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.confirmEmail)
+}
+
+func (a apiAdapter) StreamEvents(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.eventStream)
+}
+
+func (a apiAdapter) ListOccurrencesPage(w http.ResponseWriter, r *http.Request, _ api.ListOccurrencesPageParams) {
+	a.s.serveAPI(w, r, a.s.occurrencePage)
+}
+func (a apiAdapter) ListRecurringPage(w http.ResponseWriter, r *http.Request, _ api.ListRecurringPageParams) {
+	a.s.serveAPI(w, r, a.s.recurringPage)
+}
+func (a apiAdapter) ListPaymentCategories(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.paymentCategories)
+}
+func (a apiAdapter) PaymentsOverview(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.paymentOverview)
+}
+func (a apiAdapter) PaymentsCalendar(w http.ResponseWriter, r *http.Request, _ api.PaymentsCalendarParams) {
+	a.s.serveAPI(w, r, a.s.paymentCalendar)
+}
+func (a apiAdapter) PaymentsCalendarDay(w http.ResponseWriter, r *http.Request, _ api.PaymentsCalendarDayParams) {
+	a.s.serveAPI(w, r, a.s.paymentCalendarDay)
+}
+
+func (a apiAdapter) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.prometheusMetrics)
+}
+func (a apiAdapter) ListDeliveryFailures(w http.ResponseWriter, r *http.Request, _ api.ListDeliveryFailuresParams) {
+	a.s.serveAPI(w, r, a.s.deliveryFailures)
+}
+func (a apiAdapter) RetryDeliveryFailure(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.retryDeliveryFailure)
+}
+
+func (a apiAdapter) GetWebhookConsole(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhookConsoleSettings)
+}
+
+func (a apiAdapter) SendWebhookConsoleRequest(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhookConsoleRequest)
+}
+
+func (a apiAdapter) ListWebhooks(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhooksList)
+}
+func (a apiAdapter) CreateWebhook(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhooksCreate)
+}
+func (a apiAdapter) UpdateWebhook(w http.ResponseWriter, r *http.Request, _ int64) {
+	a.s.serveAPI(w, r, a.s.webhooksUpdate)
+}
+func (a apiAdapter) DeleteWebhook(w http.ResponseWriter, r *http.Request, _ int64) {
+	a.s.serveAPI(w, r, a.s.webhooksDelete)
+}
+func (a apiAdapter) TestWebhook(w http.ResponseWriter, r *http.Request, _ int64) {
+	a.s.serveAPI(w, r, a.s.webhooksTest)
+}
+func (a apiAdapter) ListWebhookDeliveries(w http.ResponseWriter, r *http.Request, _ int64, _ api.ListWebhookDeliveriesParams) {
+	a.s.serveAPI(w, r, a.s.webhooksHistory)
 }

@@ -1,0 +1,184 @@
+{
+  "started_at_utc": "2026-10-25T05:59:38Z",
+  "git_revision": "7a7c5a448a423bdf162957cc922ac0f6bfc61b0c",
+  "git_worktree_status": "M .github/workflows/tests.yml\n M README.md\n M cmd/invoice-keeper/main.go\n M deploy/nginx.conf\n M docs/ARCHITECTURE.md\n M docs/DEMO.md\n M docs/openapi.json\n M frontend/lib/session.tsx\n M frontend/package.json\n M frontend/pages/calendar.tsx\n M go.mod\n M go.sum\n M internal/api/api.gen.go\n M internal/app/acceptance_test.go\n M internal/app/api_adapter.go\n M internal/app/bot/backend.go\n M internal/app/bot/bot_test.go\n M internal/app/bot/telegram.go\n M internal/app/bot/telegram_menu.go\n M internal/app/budget.go\n M internal/app/contract_test.go\n M internal/app/handlers.go\n M internal/app/metrics.go\n M internal/app/proxy.go\n M internal/app/schedule/schedule.go\n M internal/app/server.go\n M internal/app/store/db.go\n M web/app/404.html\n D web/app/_next/static/Nlq9W5KafnPkB47jD9PN7/_buildManifest.js\n D web/app/_next/static/Nlq9W5KafnPkB47jD9PN7/_clientMiddlewareManifest.js\n D web/app/_next/static/Nlq9W5KafnPkB47jD9PN7/_ssgManifest.js\n D web/app/_next/static/chunks/0b_kbr2l3oosc.js\n D web/app/_next/static/chunks/0bpo8sk0grf-c.js\n D web/app/_next/static/chunks/1ura42m5jy4ru.js\n D web/app/_next/static/chunks/3jqs17xsp0j09.js\n M web/app/account.html\n M web/app/activity.html\n M web/app/budget.html\n M web/app/calendar.html\n M web/app/confirm-email.html\n M web/app/extension.html\n M web/app/help.html\n M web/app/history.html\n M web/app/index.html\n M web/app/login.html\n M web/app/notifications.html\n M web/app/payments.html\n M web/app/recurring.html\n M web/app/suggestions.html\n M web/app/team.html\n M web/app/trash.html\n?? docs/load-testing.md\n?? frontend/lib/live-updates.ts\n?? frontend/scripts/date-timezone-check.mjs\n?? frontend/scripts/live-updates-check.mjs\n?? internal/app/bot/telegram_report.go\n?? internal/app/bot/telegram_report_test.go\n?? internal/app/config/timezone_test.go\n?? internal/app/events.go\n?? internal/app/events_test.go\n?? internal/app/load_profile_test.go\n?? internal/app/report.go\n?? internal/app/report/\n?? internal/app/report_test.go\n?? internal/app/schedule/timezone_test.go\n?? internal/app/store/changes.go\n?? internal/app/store/changes_test.go\n?? internal/app/timezone_test.go\n?? web/app/_next/static/GhN8Ci870n14Y542eHztE/\n?? web/app/_next/static/chunks/0w4bo4z-82ovv.js\n?? web/app/_next/static/chunks/1w4tayteqai7y.js\n?? web/app/_next/static/chunks/3tlmxij6t958p.js\n?? web/app/_next/static/chunks/3yxz5rryty9gf.js",
+  "go_version": "go1.27.3",
+  "os": "darwin",
+  "arch": "arm64",
+  "logical_cpus": 10,
+  "gomaxprocs": 10,
+  "description": "Isolated local diagnostic profile: monthly schedules starting August 2026, business day 2026-10-25; RUB/USD/EUR, five categories, paid history, 5% archived, 2% removed, 5% October pauses. HTTP contract validation and password hashing are excluded from measured request timings. No live external sends.",
+  "limitations": [
+    "Short finite samples, not a sustained capacity/SLA claim; p95 is nearest-rank on 12 requests.",
+    "HTTP timings include loopback transport and JSON serialization, but no browser rendering or WAN latency.",
+    "Memory is sampled Go heap for the test process (server and HTTP client together), not production RSS.",
+    "Queue transport sleeps a controlled 20 ms per message; it does not model Telegram rate limits, SMTP or real network failures.",
+    "Only two queue passes are measured; remaining backlog is reported, not extrapolated to a delivery-time promise."
+  ],
+  "datasets": [
+    {
+      "schedules": 10000,
+      "stored_occurrences": 39500,
+      "visible_occurrences": 38700,
+      "initial_materialize_ms": 229.2,
+      "api": [
+        {
+          "operation": "full occurrence list",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 239.009,
+          "p95_ms": 1613.943,
+          "max_ms": 1613.943,
+          "wall_ms": 1613.991,
+          "requests_per_second": 7.434983780607666,
+          "mean_response_bytes": 14747588
+        },
+        {
+          "operation": "month summary",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 31.171,
+          "p95_ms": 482.018,
+          "max_ms": 482.018,
+          "wall_ms": 482.035,
+          "requests_per_second": 24.89445570224747,
+          "mean_response_bytes": 359
+        },
+        {
+          "operation": "year budget",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 73.418,
+          "p95_ms": 83.706,
+          "max_ms": 83.706,
+          "wall_ms": 302.962,
+          "requests_per_second": 39.60882443811392,
+          "mean_response_bytes": 4256
+        },
+        {
+          "operation": "mark paid API",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 36.206,
+          "p95_ms": 435.197,
+          "max_ms": 435.197,
+          "wall_ms": 435.798,
+          "requests_per_second": 27.535643163360678,
+          "mean_response_bytes": 381
+        }
+      ],
+      "warm_materialize": {
+        "operation": "warm materialize",
+        "requests": 6,
+        "concurrency": 1,
+        "errors": 0,
+        "p50_ms": 11.527,
+        "p95_ms": 11.683,
+        "max_ms": 11.683,
+        "wall_ms": 69.261,
+        "requests_per_second": 86.62868239578839,
+        "mean_response_bytes": 0
+      },
+      "queue": {
+        "fake_transport_delay_ms": 20,
+        "passes": 2,
+        "sent": 40,
+        "remaining_pending": 6360,
+        "wall_ms": 1374.369,
+        "first_delivery_ms": 95.307,
+        "last_delivery_ms": 1284.279,
+        "concurrent_api_write_ms": 1243.731,
+        "concurrent_api_write_status": 200
+      },
+      "baseline_go_heap_mib": 1.56439208984375,
+      "sampled_peak_go_heap_mib": 71.23455810546875,
+      "total_allocated_during_profile_mib": 2618.9358978271484
+    },
+    {
+      "schedules": 50000,
+      "stored_occurrences": 197500,
+      "visible_occurrences": 193500,
+      "initial_materialize_ms": 1240.302,
+      "api": [
+        {
+          "operation": "full occurrence list",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 1655.709,
+          "p95_ms": 4689.203,
+          "max_ms": 4689.203,
+          "wall_ms": 9088.528,
+          "requests_per_second": 1.320345709919824,
+          "mean_response_bytes": 74049539
+        },
+        {
+          "operation": "month summary",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 168.29,
+          "p95_ms": 2197.861,
+          "max_ms": 2197.861,
+          "wall_ms": 2197.885,
+          "requests_per_second": 5.459794302249663,
+          "mean_response_bytes": 368
+        },
+        {
+          "operation": "year budget",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 423.153,
+          "p95_ms": 432.511,
+          "max_ms": 432.511,
+          "wall_ms": 1698.833,
+          "requests_per_second": 7.063670453873201,
+          "mean_response_bytes": 4333
+        },
+        {
+          "operation": "mark paid API",
+          "requests": 12,
+          "concurrency": 3,
+          "errors": 0,
+          "p50_ms": 185.31,
+          "p95_ms": 1936.024,
+          "max_ms": 1936.024,
+          "wall_ms": 2156.634,
+          "requests_per_second": 5.564224217601971,
+          "mean_response_bytes": 381
+        }
+      ],
+      "warm_materialize": {
+        "operation": "warm materialize",
+        "requests": 6,
+        "concurrency": 1,
+        "errors": 0,
+        "p50_ms": 60.114,
+        "p95_ms": 60.389,
+        "max_ms": 60.389,
+        "wall_ms": 360.951,
+        "requests_per_second": 16.622729928661727,
+        "mean_response_bytes": 0
+      },
+      "queue": {
+        "fake_transport_delay_ms": 20,
+        "passes": 2,
+        "sent": 40,
+        "remaining_pending": 31960,
+        "wall_ms": 3086.671,
+        "first_delivery_ms": 436.491,
+        "last_delivery_ms": 2756.877,
+        "concurrent_api_write_ms": 2438.06,
+        "concurrent_api_write_status": 200
+      },
+      "baseline_go_heap_mib": 1.662384033203125,
+      "sampled_peak_go_heap_mib": 435.7446517944336,
+      "total_allocated_during_profile_mib": 13669.773323059082
+    }
+  ]
+}

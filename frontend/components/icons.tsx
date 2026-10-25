@@ -35,6 +35,7 @@ function Line({ children, size = 20 }: { children: ReactNode; size?: number }) {
 }
 
 export const ws = {
+  webhook: <Line><circle cx="6" cy="12" r="3" /><circle cx="18" cy="6" r="3" /><circle cx="18" cy="18" r="3" /><path d="m8.6 10.5 6.8-3M8.6 13.5l6.8 3" /></Line>,
   overview: <Line><rect x="3" y="3" width="7" height="7" rx="2" /><rect x="14" y="3" width="7" height="7" rx="2" /><rect x="3" y="14" width="7" height="7" rx="2" /><rect x="14" y="14" width="7" height="7" rx="2" /></Line>,
   payments: <Line><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M4 10h16M10 10v10" /></Line>,
   history: <Line><path d="M3 11a9 9 0 1 1 2 7M3 5v6h6M12 7v5l3 2" /></Line>,

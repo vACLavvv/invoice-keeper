@@ -134,6 +134,7 @@ func TestEmailWelcomeRetryAndAdminFallback(t *testing.T) {
 	expect(t, "no immediate retry", welcome.calls, 1)
 	welcome.result = notify.SendResult{State: "sent"}
 	e.db.Exec("UPDATE email_contacts SET retry_after=0")
+	expireTransportBackoff(t, e)
 	e.server.Worker.Tick()
 	expect(t, "welcome retry", welcome.calls, 2)
 	c.createPayment(nil)
@@ -187,6 +188,7 @@ func TestEmailReassignmentCancelsPendingOldRecipient(t *testing.T) {
 	e.server.Worker.Channels["email"] = reminders.sender(notify.SendResult{State: "sent"})
 	expect(t, "reassign", c.patch("/api/v1/recurring-payments/"+id(payment), map[string]any{"assignee_id": maria["id"]}).status, 200)
 	e.db.Exec("UPDATE deliveries SET retry_after=0")
+	expireTransportBackoff(t, e)
 	e.server.Worker.Tick()
 	expect(t, "one actual delivery", reminders.count(), 1)
 	expect(t, "new assignee", reminders.rows[0].EmailTo, "maria@example.com")

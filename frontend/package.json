@@ -5,7 +5,14 @@
     "dev": "next dev -p 3000",
     "build": "node scripts/i18n-check.mjs && next build && node scripts/publish.mjs",
     "typecheck": "tsc --noEmit",
-    "i18n": "node scripts/i18n-check.mjs"
+    "i18n": "node scripts/i18n-check.mjs",
+    "test:timezone": "node --test scripts/date-timezone-check.mjs",
+    "test:live": "node --test scripts/live-updates-check.mjs",
+    "test:browser-notices": "node --test scripts/browser-notices-check.mjs",
+    "test:async-load": "node --test scripts/async-load-check.mjs",
+    "test:idempotency": "node --test scripts/idempotency-check.mjs",
+    "test:webhooks": "node --test scripts/webhook-editor-check.mjs",
+    "test:extension": "node --test scripts/extension-wallet-check.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

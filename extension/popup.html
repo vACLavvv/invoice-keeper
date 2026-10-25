@@ -55,6 +55,21 @@
         <select name="currency" aria-label="Валюта"><option>RUB</option><option>USD</option><option>EUR</option></select>
         <input name="date" type="date" required aria-label="Следующая оплата" min="2000-01-01" max="2100-12-31">
       </div>
+      <div class="grid two">
+        <select name="frequency" aria-label="Периодичность">
+          <option value="monthly">Ежемесячно</option><option value="quarterly">Ежеквартально</option>
+          <option value="yearly">Ежегодно</option><option value="once">Разово</option>
+        </select>
+        <select name="assignee" aria-label="Ответственный"><option value="">Без ответственного</option></select>
+      </div>
+      <label class="switch"><input type="checkbox" name="link-on" role="switch"><span>Ссылка на оплату</span></label>
+      <input name="link" type="url" maxlength="500" placeholder="https://" aria-label="Ссылка на оплату" hidden>
+      <label class="switch"><input type="checkbox" name="wallet-on" role="switch"><span>Криптокошелёк</span></label>
+      <div class="grid wallet" hidden>
+        <select name="network" aria-label="Сеть"><option value="TRON">TRON</option><option value="ETH">ETH</option><option value="BTC">BTC</option></select>
+        <input name="address" maxlength="100" placeholder="Адрес кошелька" aria-label="Адрес кошелька" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="screening" role="status"></p>
       <p class="context muted"></p>
       <p class="status"></p>
     </fieldset>

@@ -55,28 +55,33 @@ func VerificationSender(s *config.Settings) func(string, string, string) SendRes
 	}
 }
 
-func (w *ReminderWorker) sendEmailVerifications() error {
+func (w *ReminderWorker) sendEmailVerifications() (bool, error) {
 	if w.Settings.SMTPHost == "" || w.Settings.PublicBaseURL == "" || w.VerificationSender == nil {
-		return nil
+		return false, nil
 	}
 	now := time.Now().Unix()
 	if _, err := w.DB.Exec(`UPDATE email_contacts SET welcome_state='uncertain',token_secret='',error='Отправка прервана; проверьте почту перед повтором'
 		WHERE welcome_state='sending' AND attempted_at<?`, now-300); err != nil {
-		return err
+		return false, err
 	}
 	if _, err := w.DB.Exec(`UPDATE email_contacts SET welcome_state='expired',token_secret='' WHERE verified_at IS NULL AND expires_at<=? AND welcome_state IN ('pending','sent')`, now); err != nil {
-		return err
+		return false, err
 	}
 	for range 10 {
 		if w.stopped() {
-			return nil
+			return false, nil
 		}
 		var id int64
 		var to, name, secret, hash string
 		var attempts int
+		claim := security.RandomToken(24)
 		found := false
 		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT e.id,e.email,COALESCE(u.display_name,'Администратор'),e.token_secret,e.token_hash,e.attempts
+			retry, err := transportRetryAt(tx, "email")
+			if err != nil || retry > time.Now().Unix() {
+				return err
+			}
+			err = tx.QueryRow(`SELECT e.id,e.email,COALESCE(u.display_name,'Администратор'),e.token_secret,e.token_hash,e.attempts
 				FROM email_contacts e LEFT JOIN users u ON u.id=e.user_id
 				WHERE e.verified_at IS NULL AND e.welcome_state='pending' AND e.retry_after<=? AND e.expires_at>? ORDER BY e.id LIMIT 1`, now, now).
 				Scan(&id, &to, &name, &secret, &hash, &attempts)
@@ -87,19 +92,49 @@ func (w *ReminderWorker) sendEmailVerifications() error {
 				return err
 			}
 			found = true
-			_, err = tx.Exec("UPDATE email_contacts SET welcome_state='sending',attempts=attempts+1,attempted_at=? WHERE id=?", now, id)
+			_, err = tx.Exec("UPDATE email_contacts SET welcome_state='sending',attempts=attempts+1,attempted_at=?,claim_token=? WHERE id=?", now, claim, id)
 			return err
 		})
 		if err != nil || !found {
-			return err
+			return false, err
 		}
 		code, err := security.DecryptText("email_contacts.token_secret", secret)
 		if err != nil {
-			return err
+			return false, err
 		}
 		link := w.Settings.PublicBaseURL + "/confirm-email#token=" + url.QueryEscape(code)
+		// Re-check the same generation immediately before starting SMTP. A changed
+		// address, confirmation, expiry or explicit resend invalidates this claim.
+		maySend := false
+		err = w.DB.Write(func(tx *sql.Tx) error {
+			if w.stopped() {
+				_, err := tx.Exec("UPDATE email_contacts SET welcome_state='pending' WHERE id=? AND token_hash=? AND claim_token=? AND welcome_state='sending'", id, hash, claim)
+				return err
+			}
+			retry, err := transportRetryAt(tx, "email")
+			if err != nil {
+				return err
+			}
+			if retry > time.Now().Unix() {
+				_, err = tx.Exec("UPDATE email_contacts SET welcome_state='pending',retry_after=MAX(retry_after,?) WHERE id=? AND token_hash=? AND claim_token=? AND welcome_state='sending'", retry, id, hash, claim)
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE email_contacts SET welcome_state='expired',token_secret='' WHERE id=? AND token_hash=? AND claim_token=?
+				AND welcome_state='sending' AND verified_at IS NULL AND expires_at<=?`, id, hash, claim, time.Now().Unix()); err != nil {
+				return err
+			}
+			return tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM email_contacts WHERE id=? AND token_hash=? AND claim_token=?
+				AND email=? AND verified_at IS NULL AND welcome_state='sending' AND expires_at>?)`, id, hash, claim, to, time.Now().Unix()).Scan(&maySend)
+		})
+		if err != nil {
+			return false, err
+		}
+		if !maySend {
+			continue
+		}
 		result := w.sendWith(func(ReminderRow) SendResult { return w.VerificationSender(to, name, link) }, ReminderRow{})
 		state := result.State
+		delay := RetryDelay(attempts+1, result.RetryDelay)
 		if state == "pending" && attempts+1 >= MaxDeliveryAttempts {
 			state = "failed"
 		}
@@ -107,13 +142,22 @@ func (w *ReminderWorker) sendEmailVerifications() error {
 		if state == "pending" {
 			keepSecret = secret
 		}
-		_, err = w.DB.Exec(`UPDATE email_contacts SET welcome_state=?,token_secret=?,retry_after=?,error=? WHERE id=? AND token_hash=? AND verified_at IS NULL`,
-			state, keepSecret, now+int64(max(60, result.RetryDelay)), nullable(result.Error), id, hash)
-		if err != nil {
+		err = w.DB.Write(func(tx *sql.Tx) error {
+			if result.State == "pending" {
+				if err := w.deferTransport(tx, "email", delay); err != nil {
+					return err
+				}
+			}
+			_, err := tx.Exec(`UPDATE email_contacts SET welcome_state=?,token_secret=?,retry_after=?,error=?
+				WHERE id=? AND token_hash=? AND claim_token=? AND welcome_state='sending' AND verified_at IS NULL`,
+				state, keepSecret, nextRetryAt(state, delay), nullable(result.Error), id, hash, claim)
 			return err
+		})
+		if err != nil {
+			return false, err
 		}
 	}
-	return nil
+	return true, nil
 }
 
 // A recipient is eligible only while it still owns this assignment, is confirmed and has

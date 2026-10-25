@@ -59,6 +59,7 @@ type Telegram struct {
 	backend  Backend
 	baseURL  string
 	client   *http.Client
+	reports  reportImages
 }
 
 // NewTelegram makes the bot; baseURL replaces api.telegram.org in tests.
@@ -120,6 +121,7 @@ func (b *Telegram) Run(ctx context.Context) {
 		{"command": "menu", "description": "Платежи и действия — главное меню"},
 		{"command": "todo", "description": "Что оплатить в ближайшие 7 дней"},
 		{"command": "overdue", "description": "Просроченные платежи"},
+		{"command": "report", "description": "Графический отчёт за месяц: RUB, USD, EUR"},
 		{"command": "chatid", "description": "ID этого чата"},
 		{"command": "help", "description": "Справка"},
 	}}, nil); err != nil {
@@ -209,6 +211,7 @@ const botHelp = `AezaKeeper · платежи команды
 
 /todo — что оплатить в ближайшие 7 дней и что просрочено
 /overdue — только просроченные
+/report — графический отчёт за месяц
 /chatid — ID этого чата для настройки
 Под напоминанием есть кнопка «✅ Оплачено».`
 
@@ -257,12 +260,15 @@ func (b *Telegram) onMessage(m *Message) error {
 			return b.call("sendMessage", payload, nil)
 		}
 		return b.reply(m.Chat.ID, botHelp)
-	case "/menu", "/todo", "/overdue":
+	case "/menu", "/todo", "/overdue", "/report":
 		if !b.allowed(m.Chat.ID) {
 			return b.reply(m.Chat.ID, "Этот чат не подключён к Invoice Keeper.")
 		}
 		if command == "/menu" {
 			return b.menu(m.Chat.ID, 0)
+		}
+		if command == "/report" {
+			return b.reportCommand(m, fields)
 		}
 		return b.payments(m.Chat.ID, 0, command == "/overdue", 0)
 	}
@@ -277,6 +283,9 @@ func (b *Telegram) onCallback(c *Callback) error {
 	if c.Message == nil || !b.allowed(c.Message.Chat.ID) {
 		return answer("Нет доступа")
 	}
+	if strings.HasPrefix(c.Data, "report:") {
+		return b.reportCallback(c)
+	}
 	if strings.HasPrefix(c.Data, "nav:") {
 		if err := answer(""); err != nil {
 			return err
@@ -284,8 +293,20 @@ func (b *Telegram) onCallback(c *Callback) error {
 		return b.navigate(c)
 	}
 	raw, ok := strings.CutPrefix(c.Data, "paid:")
-	id, err := strconv.ParseInt(raw, 10, 64)
-	if !ok || err != nil || id <= 0 {
+	parts := strings.Split(raw, ":")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	selection, page := "", 0
+	if len(parts) == 3 && (parts[1] == "todo" || parts[1] == "overdue") {
+		selection = parts[1]
+		var pageErr error
+		page, pageErr = strconv.Atoi(parts[2])
+		if err == nil {
+			err = pageErr
+		}
+	} else if len(parts) != 1 {
+		ok = false
+	}
+	if !ok || err != nil || id <= 0 || page < 0 || page > 1000000 {
 		return answer("Неизвестная кнопка")
 	}
 	// A team chat may include guests; only people who linked Telegram to a panel account mark payments.
@@ -302,10 +323,24 @@ func (b *Telegram) onCallback(c *Callback) error {
 	today := schedule.FormatDate(b.backend.Today())
 	already, err := b.backend.MarkPaid(id, actor)
 	if errors.Is(err, ErrNotFound) {
-		return answer("Платёж не найден")
+		ackErr := answer("Платёж не найден")
+		if selection != "" {
+			return errors.Join(ackErr, b.payments(c.Message.Chat.ID, c.Message.MessageID, selection == "overdue", page))
+		}
+		return ackErr
 	}
 	if err != nil {
 		return err
+	}
+	if selection != "" {
+		message := "Отмечено: оплачено"
+		if already {
+			message = "Уже отмечено ранее"
+		}
+		ackErr := answer(message)
+		// The paid row leaves the result; the same index now shows the next one.
+		// The backend clamps the last position after removals, including an empty list.
+		return errors.Join(ackErr, b.payments(c.Message.Chat.ID, c.Message.MessageID, selection == "overdue", page))
 	}
 	if already {
 		return answer("Уже отмечено ранее")

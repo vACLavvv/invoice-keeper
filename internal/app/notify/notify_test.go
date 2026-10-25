@@ -244,7 +244,7 @@ func TestTelegramPayloadAndSafeRetry(t *testing.T) {
 	}
 	mu.Unlock()
 	result = sender(row)
-	expect(t, "rejected", result.State, "uncertain")
+	expect(t, "rejected", result.State, "failed")
 	if strings.Contains(result.Error, "SECRET-TOKEN") {
 		t.Fatal("token leaked into the error")
 	}

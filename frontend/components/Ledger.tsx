@@ -1,10 +1,13 @@
+import { SkeletonRows } from '@/components/Skeleton';
 import { DeletePaymentModal } from '@/components/DeletePaymentModal';
 import { useRouter } from 'next/router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MonthSwitcher } from './MonthSwitcher';
+import { Pagination } from './Pagination';
+import { useDebounced, usePage } from '@/lib/pagination';
 import { PayModal, ReceiptsModal } from './PaymentModals';
 import { ws } from './icons';
-import { addDays, dueHint, paymentsWord, repeatLabel, statusLabel } from './Workspace';
+import { addDays, dueHint, repeatLabel, statusLabel } from './Workspace';
 import { api, query, type Occurrence, type TeamUser } from '@/lib/api';
 import { currencies, date, money, monthRange, symbols, type Currency, type Frequency } from '@/lib/format';
 import { t, tp } from '@/lib/i18n';
@@ -32,6 +35,33 @@ export function Ledger({ mode }: { mode: Mode }) {
   const [deleting, setDeleting] = useState<Occurrence | null>(null);
   const [paying, setPaying] = useState<Occurrence | null>(null);
   const [receipts, setReceipts] = useState<Occurrence | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [linkedError, setLinkedError] = useState<string | null>(null);
+  const linkedOccurrence = typeof router.query.occurrence === 'string' && /^[1-9]\d*$/.test(router.query.occurrence)
+    ? router.query.occurrence : '';
+
+  // Journal links identify an exact period, including one outside the visible
+  // history filters. A stale link receives the same access checks as any period.
+  useEffect(() => {
+    let current = true;
+    setLinkedError(null);
+    if (!linkedOccurrence) { setOpening(false); return; }
+    setPaying(null);
+    setOpening(true);
+    api<Occurrence>(`/payment-occurrences/${linkedOccurrence}`)
+      .then((occurrence) => { if (current) setPaying(occurrence); })
+      .catch((e: Error) => { if (current) setLinkedError(e.message); })
+      .finally(() => { if (current) setOpening(false); });
+    return () => { current = false; };
+  }, [linkedOccurrence]);
+
+  function closePayment() {
+    setPaying(null);
+    if (linkedOccurrence) {
+      const { occurrence: _occurrence, ...rest } = router.query;
+      void router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true, scroll: false });
+    }
+  }
 
   // Links from the overview tiles: ?view=overdue|week|once, ?currency=USD.
   useEffect(() => {
@@ -42,31 +72,26 @@ export function Ledger({ mode }: { mode: Mode }) {
     if (c === 'RUB' || c === 'USD' || c === 'EUR') setCurrency(c);
   }, [router.query]);
 
-  const { data, error } = useLoad(() => api<Occurrence[]>('/payment-occurrences' + query({ category, assignee })), [category, assignee]);
-  const everything = useLoad(() => api<Occurrence[]>('/payment-occurrences'), []).data;
   const users = useLoad(() => (isAdmin ? api<TeamUser[]>('/users') : Promise.resolve([])), [isAdmin]).data ?? [];
-  const categories = useMemo(() => [...new Set((everything ?? []).map((o) => o.category).filter(Boolean) as string[])].sort(), [everything]);
-
+  const categories = useLoad(() => api<string[]>('/payment-categories'), []).data ?? [];
+  const q = useDebounced(search.trim());
   const weekEnd = addDays(settings.today, 7);
-  const base = (data ?? []).filter((o) => (history
-    ? (o.status === 'paid' || !o.active) && (historyFilter === 'all' || (historyFilter === 'paid' ? o.status === 'paid' : !o.active))
-    : o.active && o.status !== 'paid'));
-  const q = search.trim().toLocaleLowerCase();
-  const filtered = base.filter((o) => (range === 'all'
-      || (range === 'month' ? ((history && o.paid_at) || o.due_date).startsWith(month) : o.due_date >= settings.today && o.due_date <= weekEnd))
-    && (!kind || (kind === 'once') === (o.frequency === 'once'))
-    && (!currency || o.currency === currency)
-    && (!q || o.title.toLocaleLowerCase().includes(q) || (o.description ?? '').toLocaleLowerCase().includes(q)));
-  const overdue = filtered.filter((o) => o.status === 'overdue');
-  const items = (overdueOnly && !history ? overdue : filtered).slice();
-  if (history) items.sort((a, b) => (b.paid_at ?? '').localeCompare(a.paid_at ?? '') || b.id - a.id);
+  const filters = {
+    view: history ? 'history' : 'open', history_filter: history ? historyFilter : undefined,
+    date_basis: history && range === 'month' ? 'history' : 'due',
+    ...(range === 'month' ? monthRange(month) : range === 'week' ? { from_date: settings.today, to_date: weekEnd } : {}),
+    frequency: kind === 'repeat' ? 'recurring' : kind || undefined,
+    currency, category, assignee, search: q,
+    status: overdueOnly && !history ? 'overdue' : undefined,
+    sort: history ? 'paid_desc' : 'due_asc',
+  };
+  const { data, error, setPage } = usePage<Occurrence, { counts: { all: number; overdue: number } }>('/payment-occurrences/page', filters);
+  const items = data?.items ?? [];
+  const overdueCount = data?.counts.overdue ?? 0;
+  const firstOverdue = items.find((o) => o.status === 'overdue');
   const filterCount = [kind, currency, category, assignee, history && historyFilter !== 'all'].filter(Boolean).length;
   const anyFilter = !!(q || currency || kind || category || assignee || range !== 'all' || overdueOnly || (history && historyFilter !== 'all'));
-  const allOverdue = (data ?? []).filter((o) => o.active && o.status === 'overdue');
-  const exportUrl = '/api/v1/payment-occurrences/export' + query({
-    ...(range === 'month' ? monthRange(month) : {}), currency, category, assignee, search: search.trim(),
-    status: history ? (historyFilter === 'paid' ? 'paid' : '') : overdueOnly ? 'overdue' : '',
-  });
+  const exportUrl = '/api/v1/payment-occurrences/export' + query(filters);
 
   function reset() {
     setRange('all'); setOverdueOnly(false); setKind(''); setCurrency(''); setCategory(''); setAssignee(''); setSearch(''); setHistoryFilter('all');
@@ -91,12 +116,14 @@ export function Ledger({ mode }: { mode: Mode }) {
       </div>
       {history && range === 'month' && <p className="history-date-note muted">{t('История отобрана по фактической дате оплаты. Для неоплаченных архивных записей используется срок.')}</p>}
       {error && <div className="notice notice-error" role="alert">{error}</div>}
-      {allOverdue.length > 0 && (
+      {opening && <div className="notice" role="status">{t('Загружаем…')}</div>}
+      {linkedError && <div className="notice notice-error" role="alert">{linkedError}</div>}
+      {!history && overdueCount > 0 && (
         <div id="due-notice" className="notice">
           <span className="notice-symbol" aria-hidden="true">{ws.clock}</span>
           <div className="attention-copy">
-            <b>{allOverdue.length} {tp(allOverdue.length, ['просроченный платёж', 'просроченных платежа', 'просроченных платежей'], ['overdue payment', 'overdue payments'])}</b>
-            <span>{allOverdue[0].title} · {t('срок {date}', { date: date(allOverdue[0].due_date) })}{allOverdue.length > 1 ? t(' и другие') : ''}</span>
+            <b>{overdueCount} {tp(overdueCount, ['просроченный платёж', 'просроченных платежа', 'просроченных платежей'], ['overdue payment', 'overdue payments'])}</b>
+            {firstOverdue && <span>{firstOverdue.title} · {t('срок {date}', { date: date(firstOverdue.due_date) })}{overdueCount > 1 ? t(' и другие') : ''}</span>}
           </div>
           <button type="button" className="text-button notice-detail" onClick={() => { router.push('/payments?view=overdue'); setOverdueOnly(true); setRange('all'); }}>
             {t('Показать')} <span aria-hidden="true">↗</span>
@@ -108,10 +135,10 @@ export function Ledger({ mode }: { mode: Mode }) {
           {!history ? (
             <div className="status-tabs" role="group" aria-label={t('Статус платежа')}>
               <button type="button" className={`status-tab${!overdueOnly ? ' selected' : ''}`} aria-pressed={!overdueOnly} onClick={() => setOverdueOnly(false)}>
-                {t('Все')} <span>{filtered.length}</span>
+                {t('Все')} <span>{data?.counts.all ?? '—'}</span>
               </button>
               <button type="button" className={`status-tab${overdueOnly ? ' selected' : ''}`} aria-pressed={overdueOnly} onClick={() => setOverdueOnly(true)}>
-                {t('Просрочено')} <span>{overdue.length}</span>
+                {t('Просрочено')} <span>{data ? overdueCount : '—'}</span>
               </button>
               {!isAdmin && (
                 <button type="button" className={`status-tab${assignee === 'me' ? ' selected' : ''}`} aria-pressed={assignee === 'me'} onClick={() => setAssignee(assignee === 'me' ? '' : 'me')}>
@@ -164,7 +191,7 @@ export function Ledger({ mode }: { mode: Mode }) {
             {filterCount > 0 && <button type="button" className="text-button filter-reset" onClick={() => { setKind(''); setCurrency(''); setCategory(''); setAssignee(''); setHistoryFilter('all'); }}>{t('Сбросить фильтры')}</button>}
         </div>
         <div id="occurrence-table" className="table-wrap" aria-live="polite">
-          {!data ? <div className="empty-state">{t('Загружаем платежи…')}</div> : items.length === 0 ? (
+          {!data ? <SkeletonRows label={t('Загружаем платежи…')} /> : items.length === 0 ? (
             <div className="empty-state">
               <b>{anyFilter ? t('Подходящих платежей нет') : history ? t('История пока пуста') : t('Открытых задач нет')}</b>
               {anyFilter ? t('Измените поиск, тип, валюту или период.') : history ? t('Здесь появятся оплаченные и архивные задачи.') : t('Все текущие задачи закрыты. Новые платежи появятся здесь.')}
@@ -210,17 +237,14 @@ export function Ledger({ mode }: { mode: Mode }) {
             </table>
           )}
         </div>
-        <div className="ledger-footer">
-          <span>{items.length} {paymentsWord(items.length)}</span>
-          <span>{t('Каждый платёж сохраняет свою историю')}</span>
-        </div>
+        <Pagination data={data} onChange={setPage} />
       </section>
       <div className="bottom-caption">
         <span><span className="small-dot" /> {t('Изменения сохраняются автоматически')}</span>
         <span>{settings.telegram_enabled ? t('Напоминания за 3 дня до срока') : t('Telegram выключен · настройте в .env')}</span>
       </div>
       {deleting && <DeletePaymentModal payment={deleting} onClose={() => setDeleting(null)} />}
-      {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}
+      {paying && <PayModal occurrence={paying} onClose={closePayment} />}
       {receipts && <ReceiptsModal occurrence={receipts} onClose={() => setReceipts(null)} />}
     </>
   );

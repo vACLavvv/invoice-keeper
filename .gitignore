@@ -8,7 +8,5 @@ output/
 *.exe
 *.sqlite3*
 
-.taste-skill/
-
 __pycache__/
 *.pyc

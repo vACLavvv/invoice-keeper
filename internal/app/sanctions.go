@@ -94,9 +94,14 @@ func (s *Server) screen(q store.Querier, address string) (sanctionMatch, error) 
 	return m, nil
 }
 
-// sanctionsCheck screens any address without saving it.
+// sanctionsCheck screens any address without saving it: from the payment form while typing
+// and from the extension (its key may call this and the two extension endpoints only).
 func (s *Server) sanctionsCheck(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.writeUser(r); err != nil {
+	check := s.writeUser
+	if hasBearer(r) {
+		check = s.keyUser
+	}
+	if _, err := check(r); err != nil {
 		return err
 	}
 	f, err := readForm(r, "network", "address")
@@ -114,6 +119,9 @@ func (s *Server) sanctionsCheck(w http.ResponseWriter, r *http.Request) error {
 	match, err := s.screen(s.DB, *address)
 	if err != nil {
 		return err
+	}
+	if match.Sanctioned == nil {
+		s.Sanctions.Request()
 	}
 	status, err := s.sanctionsState()
 	if err != nil {

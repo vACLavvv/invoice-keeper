@@ -29,7 +29,7 @@ func (s *Server) changeRecurringRemoval(w http.ResponseWriter, r *http.Request, 
 	if err != nil {
 		return err
 	}
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 204, nil, func(tx *sql.Tx) error {
 		var removed bool
 		err := tx.QueryRow("SELECT removed_at IS NOT NULL FROM recurring_payments WHERE id=?", id).Scan(&removed)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -82,7 +82,7 @@ func (s *Server) changePeriodRemoval(w http.ResponseWriter, r *http.Request, rem
 	if err != nil || due.Year() < 2000 || due.Year() > 2100 {
 		return invalidDate("Ожидается дата от 2000 до 2100 года в формате ГГГГ-ММ-ДД")
 	}
-	err = s.DB.Write(func(tx *sql.Tx) error {
+	err = s.paymentWrite(w, r, 204, nil, func(tx *sql.Tx) error {
 		payment, err := s.findRecurring(tx, id)
 		if err != nil {
 			return err

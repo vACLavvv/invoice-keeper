@@ -15,8 +15,9 @@
 
   const space = '[\\s\\u00a0\\u202f]';
   const number = `\\d{1,3}(?:${space}\\d{3})+(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,3})?`;
-  const symbol = { '₽': 'RUB', 'руб': 'RUB', 'руб.': 'RUB', 'р.': 'RUB', 'rub': 'RUB', '$': 'USD', 'us$': 'USD', 'usd': 'USD', '€': 'EUR', 'eur': 'EUR', 'евро': 'EUR' };
-  const currencyWord = '₽|руб\\.?|р\\.|RUB|US\\$|\\$|USD|€|EUR|евро';
+  // Dollar stablecoins count as USD: the panel keeps RUB, USD and EUR.
+  const symbol = { '₽': 'RUB', 'руб': 'RUB', 'руб.': 'RUB', 'р.': 'RUB', 'rub': 'RUB', '$': 'USD', 'us$': 'USD', 'usd': 'USD', 'usdt': 'USD', 'usdc': 'USD', '€': 'EUR', 'eur': 'EUR', 'евро': 'EUR' };
+  const currencyWord = '₽|руб\\.?|р\\.|RUB|US\\$|\\$|USDT|USDC|USD|€|EUR|евро';
   const moneyRe = new RegExp(`(?:(${currencyWord})${space}?(${number}))|(?:(${number})${space}?(${currencyWord}))`, 'gi');
 
   const months = {
@@ -95,7 +96,7 @@
   const seen = new Set();
   function add(title, money, dateIso, context, how) {
     // A selection or a lone price may lack a date: the popup suggests today and the user checks it.
-    if (!money || (!dateIso && how !== 'выделение' && how !== 'цена')) return;
+    if (!money || (!dateIso && !['выделение', 'цена', 'окно оплаты'].includes(how))) return;
     const name = clean(title) || clean(document.title) || host;
     const full = name.toLowerCase().includes(brand.toLowerCase()) ? name : `${brand} · ${name}`;
     const key = `${full.toLowerCase()}|${money.amount}|${money.currency}`;
@@ -104,6 +105,8 @@
     candidates.push({
       title: full.slice(0, 120), amount: money.amount, currency: money.currency, date: dateIso,
       yearly: yearly.test(context), context: clean(context).slice(0, 160), how,
+      // A history row («Оплачен 300 $») is shown, but not checked: it is not what to pay next.
+      done: how !== 'окно оплаты' && /оплачен|зачислен|успешн|исполнен|\bpaid\b|completed|succeeded/i.test(context),
       sourceKey: `${siteKey}:${clean(name).toLowerCase()}`.slice(0, 200),
     });
   }
@@ -116,12 +119,47 @@
     if (money) add(titleFrom(selection, money, dates) || document.title, money, dates[0]?.iso || '', selection, 'выделение');
   }
 
+  // Text of a block with its fields: «Сумма к оплате: 100», «Кошелек для оплаты: T…». Checkout dialogs
+  // often show the amount and the address in read-only inputs, which innerText leaves out.
+  const labelOf = (input) => clean(input.labels?.[0]?.innerText || input.getAttribute('aria-label') || input.placeholder
+    || input.closest('label')?.innerText || input.previousElementSibling?.innerText || input.parentElement?.previousElementSibling?.innerText || '');
+  const fullText = (el) => [el.innerText || '', ...[...el.querySelectorAll('input:not([type="hidden"]), textarea')]
+    .filter((input) => input.value).map((input) => `${labelOf(input)}: ${input.value}`)].join('\n');
+
+  // 1b. An open payment dialog («Платеж USDT (TRC20)», «Оплата заказа») is what the user is looking at:
+  //     everything else on the page — balance, history tables — is the background.
+  const payWordsRe = /оплат|к оплате|сумм|кошел|wallet|amount|pay|checkout|invoice|сч[её]т/i;
+  const dialog = (() => {
+    const marked = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], dialog[open]')].filter(visible);
+    // Without markup: the layer under the centre of the screen that is fixed over the page.
+    const centre = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    for (let node = centre; node && node !== document.body; node = node.parentElement) {
+      if (getComputedStyle(node).position === 'fixed') { marked.push(node); break; }
+    }
+    return marked.find((el) => payWordsRe.test(fullText(el)) && /\d/.test(fullText(el)));
+  })();
+  if (dialog && !candidates.length) {
+    const text = fullText(dialog);
+    let money = findMoney(text)[0];
+    if (!money) {
+      // «Сумма к оплате: 100» with the currency named elsewhere in the dialog («Платеж USDT»).
+      const amount = text.match(/(?:сумм[аы]?(?:\s+к\s+оплате)?|к оплате|итого|amount|total)[^\d\n]{0,20}:?\s*(\d[\d\s\u00a0]*(?:[.,]\d{1,2})?)/i);
+      const word = text.match(new RegExp(currencyWord, 'i'));
+      const code = word && symbol[word[0].toLowerCase()];
+      const value = amount && parseAmount(amount[1]);
+      if (code && value) money = { amount: value, currency: code, index: amount.index };
+    }
+    const heading = clean(dialog.querySelector('h1, h2, h3, h4, [class*="title" i], [class*="header" i]')?.innerText || '').split('\n')[0];
+    if (money) add(heading && heading.length <= 80 ? heading : titleFrom(text, money, []), money, findDates(text).pop()?.iso || '', text, 'окно оплаты');
+  }
+  const inDialog = candidates.some((c) => c.how === 'окно оплаты');
+
   // 2. Tables with a price column and a date column (billing pages, hosting panels).
   const priceHeader = /цена|стоимость|сумма|тариф.*руб|price|amount|cost|total/i;
   const dateHeader = /действует|оплачен|продлен|следующ|списани|окончан|истека|срок|renew|next|due|expir|until|billing date/i;
   const nameHeader = /имя|название|услуга|сервис|сервер|подписк|name|service|plan|product|item/i;
   const tables = [...document.querySelectorAll('table, [role="table"], [role="grid"]')];
-  for (const table of tables) {
+  for (const table of inDialog ? [] : tables) {
     const rows = [...table.querySelectorAll('tr, [role="row"]')];
     if (rows.length < 2) continue;
     const cellsOf = (row) => [...row.querySelectorAll('th, td, [role="columnheader"], [role="cell"], [role="gridcell"]')].map((c) => clean(c.innerText || ''));
@@ -142,7 +180,7 @@
   }
 
   // 3. Rows built from divs: the smallest blocks that contain both a price and a date.
-  if (candidates.length < 30) {
+  if (!inDialog && candidates.length < 30) {
     const blocks = [...document.body.querySelectorAll('li, article, section, div, p, tr')]
       .filter((el) => !el.closest('table') && visible(el))
       .map((el) => ({ el, text: (el.innerText || '').trim() }))
@@ -239,5 +277,31 @@
     }
   }
 
-  return { host, url: location.href, pageTitle: document.title, blocked: false, candidates: candidates.slice(0, 30) };
+  // 5. Crypto checkout: a wallet address shown as text, in a read-only field or a copy button.
+  //    The format is checked here only roughly; the server verifies the checksum and screens the address.
+  const walletRes = [
+    ['TRON', /\bT[1-9A-HJ-NP-Za-km-z]{33}\b/g],
+    ['ETH', /\b0x[0-9a-fA-F]{40}\b/g],
+    ['BTC', /\b(?:bc1[02-9ac-hj-np-z]{11,71}|[13][1-9A-HJ-NP-Za-km-z]{25,34})\b/g],
+  ];
+  const walletText = dialog ? fullText(dialog) : [
+    document.body.innerText || '',
+    ...[...document.querySelectorAll('input, textarea')].map((el) => el.value || ''),
+    ...[...document.querySelectorAll('[data-clipboard-text], [data-copy], [data-address]')]
+      .map((el) => el.dataset.clipboardText || el.dataset.copy || el.dataset.address || ''),
+  ].join('\n');
+  // Base58 strings also appear as order ids, so TRON and legacy BTC need the network named on the page.
+  const named = { TRON: /tron|trc-?20|usdt/i, BTC: /bitcoin|btc/i, ETH: /./ };
+  const wallets = [];
+  for (const [network, re] of walletRes) {
+    if (!named[network].test(walletText)) continue;
+    for (const m of walletText.matchAll(re)) {
+      // Transaction hashes are 64 hex digits; skip addresses that are part of a longer hex run.
+      if (network === 'ETH' && /[0-9a-fA-F]/.test(walletText[m.index + m[0].length] || '')) continue;
+      if (!wallets.some((w) => w.address === m[0])) wallets.push({ network, address: m[0] });
+    }
+  }
+
+  candidates.sort((a, b) => a.done - b.done);
+  return { host, url: location.href, pageTitle: document.title, blocked: false, candidates: candidates.slice(0, 30), wallets: wallets.slice(0, 3) };
 })();

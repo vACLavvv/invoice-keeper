@@ -65,6 +65,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run i18n
+      - run: npm run test:idempotency
+      - run: npm run test:webhooks
+      - run: npm run test:extension
+      - run: npm run test:async-load
+      - run: npm run test:browser-notices
+      - run: npm run test:live
+      - run: npm run test:timezone
       - run: npm run build
 
   container:

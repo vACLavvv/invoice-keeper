@@ -3,6 +3,7 @@ package app
 import (
 	"archive/zip"
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -204,9 +205,31 @@ func TestExtensionZipContainsManifest(t *testing.T) {
 	for _, f := range archive.File {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"manifest.json", "popup.html", "popup.js", "detect.js", "icons/icon-128.png"} {
+	for _, want := range []string{"manifest.json", "popup.html", "popup.js", "detect.js", "config.js", "icons/icon-128.png"} {
 		if !names["invoice-keeper-extension/"+want] {
 			t.Fatalf("zip lacks %s", want)
 		}
+	}
+	for _, f := range archive.File {
+		if f.Name != "invoice-keeper-extension/config.js" {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		config, _ := io.ReadAll(rc)
+		rc.Close()
+		// The test server has no PUBLIC_BASE_URL, so the address comes from the request.
+		if !strings.Contains(string(config), `self.INVOICE_KEEPER_SERVER = "http://`) {
+			t.Fatalf("config.js does not point at the server: %s", config)
+		}
+	}
+}
+
+func TestExtensionConfigUsesPublicBaseURL(t *testing.T) {
+	got := string(extensionConfig("https://keeper.example.ru"))
+	if !strings.Contains(got, `self.INVOICE_KEEPER_SERVER = "https://keeper.example.ru";`) {
+		t.Fatalf("unexpected config.js: %s", got)
 	}
 }

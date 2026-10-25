@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import styled from 'styled-components';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { PayModal } from '@/components/PaymentModals';
@@ -21,7 +22,14 @@ function totalsByCurrency(items: Pick<Occurrence, 'amount' | 'currency'>[]): [Cu
 const weekdays = () => Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(2026, 0, 5 + i)).toUpperCase());
 
 export default function CalendarPage() {
-  const { month, settings } = useSession();
+  const { month, setMonth, settings } = useSession();
+  const router = useRouter();
+  const linkedMonth = router.query.month;
+  useEffect(() => {
+    if (typeof linkedMonth === 'string' && /^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(linkedMonth)) {
+      setMonth(linkedMonth);
+    }
+  }, [linkedMonth, setMonth]);
   const [paying, setPaying] = useState<Occurrence | Forecast | null>(null);
   const { data, error } = useLoad(() => api<Occurrence[]>('/payment-occurrences'), []);
 

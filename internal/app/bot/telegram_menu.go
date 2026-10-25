@@ -8,7 +8,7 @@ import (
 )
 
 func (b *Telegram) navigation() [][]map[string]string {
-	rows := [][]map[string]string{{{"text": "📅 Ближайшие платежи", "callback_data": "nav:todo:0"}, {"text": "⚠️ Просрочки", "callback_data": "nav:overdue:0"}}, {{"text": "Главное меню", "callback_data": "nav:menu"}}}
+	rows := [][]map[string]string{{{"text": "📅 Ближайшие платежи", "callback_data": "nav:todo:0"}, {"text": "⚠️ Просрочки", "callback_data": "nav:overdue:0"}}, {{"text": "📊 Отчёт за месяц", "callback_data": "nav:report"}}, {{"text": "Главное меню", "callback_data": "nav:menu"}}}
 	if b.settings.PublicBaseURL != "" {
 		rows = append(rows, []map[string]string{{"text": "Открыть панель ↗", "url": b.settings.PublicBaseURL + "/payments"}})
 	}
@@ -16,7 +16,7 @@ func (b *Telegram) navigation() [][]map[string]string {
 }
 
 func (b *Telegram) menu(chatID int64, messageID int64) error {
-	return b.screen(chatID, messageID, "<b>AezaKeeper</b>\nПлатежи команды под контролем.\n\n📅 Ближайшие — неоплаченные за 7 дней и просрочки.\n⚠️ Просрочки — то, что уже требует внимания.\n\nВыберите раздел кнопкой ниже.", b.navigation())
+	return b.screen(chatID, messageID, "<b>AezaKeeper</b>\nПлатежи команды под контролем.\n\n📅 Ближайшие — неоплаченные за 7 дней и просрочки.\n⚠️ Просрочки — то, что уже требует внимания.\n📊 Отчёт — план, оплачено и категории по каждой валюте.\n\nВыберите раздел кнопкой ниже.", b.navigation())
 }
 
 func (b *Telegram) screen(chatID, messageID int64, text string, buttons [][]map[string]string) error {
@@ -80,6 +80,9 @@ func (b *Telegram) payments(chatID, messageID int64, onlyOverdue bool, page int)
 
 func (b *Telegram) navigate(c *Callback) error {
 	parts := strings.Split(c.Data, ":")
+	if len(parts) == 2 && parts[1] == "report" {
+		return b.showReport(c.Message.Chat.ID, 0, b.backend.Today().Format("2006-01"), "RUB")
+	}
 	if len(parts) == 2 && parts[1] == "menu" {
 		return b.menu(c.Message.Chat.ID, c.Message.MessageID)
 	}

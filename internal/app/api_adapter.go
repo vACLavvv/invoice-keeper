@@ -275,3 +275,7 @@ func (a apiAdapter) ResendUserEmail(w http.ResponseWriter, r *http.Request, _ in
 func (a apiAdapter) ConfirmEmail(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.confirmEmail)
 }
+
+func (a apiAdapter) StreamEvents(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.eventStream)
+}

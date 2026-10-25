@@ -157,7 +157,8 @@ const schemaVersion = 7
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
 type DB struct {
 	*sql.DB
-	Path string
+	Path    string
+	changes changeFeed
 }
 
 func OpenDB(path string) (*DB, error) {
@@ -221,11 +222,27 @@ func (db *DB) Write(fn func(tx *sql.Tx) error) error {
 	if err != nil {
 		return err
 	}
-	if err := fn(tx); err != nil {
-		tx.Rollback()
+	defer tx.Rollback()
+	// SQLite's counter belongs to this transaction's connection. Ignored inserts
+	// and read-only transactions do not change it, unlike a generic "request done"
+	// signal, which would create an SSE -> GET -> SSE refresh loop.
+	var before, after int64
+	if err := tx.QueryRow("SELECT total_changes()").Scan(&before); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.QueryRow("SELECT total_changes()").Scan(&after); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if after > before {
+		db.changes.publish()
+	}
+	return nil
 }
 
 func IsUniqueViolation(err error) bool {

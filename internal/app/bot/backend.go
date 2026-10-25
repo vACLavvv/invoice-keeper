@@ -4,9 +4,12 @@
 package bot
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"time"
+
+	"invoice-keeper/internal/app/report"
 )
 
 // Backend is what the bots need from the application.
@@ -15,6 +18,7 @@ type Backend interface {
 	// TodoText lists unpaid periods: overdue ones and, unless onlyOverdue, the next 7 days.
 	TodoText(onlyOverdue bool) (string, error)
 	PaymentPage(onlyOverdue bool, page int) (PaymentPage, error)
+	MonthlyReport(ctx context.Context, month, currency string) (report.Data, error)
 	// MarkPaid records «Оплачено» by actor; ErrNotFound for an unknown period.
 	MarkPaid(occurrenceID int64, actor string) (already bool, err error)
 	// LinkTelegram consumes a /start code; a *UserError explains a refused code to the user.

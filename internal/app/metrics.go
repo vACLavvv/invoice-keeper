@@ -91,6 +91,7 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	metric("keeper_uptime_seconds", "Seconds since this process started.", "gauge", time.Since(serviceStarted).Seconds())
 	metric("keeper_database_up", "Database query completed successfully.", "gauge", 1)
+	metric("keeper_sse_connections", "Currently open authenticated event streams.", "gauge", s.events.active())
 	last, errors := s.Worker.Health()
 	metric("keeper_scheduler_last_success_timestamp_seconds", "Last completed reminder pass (0 before first pass).", "gauge", last)
 	metric("keeper_scheduler_errors_total", "Failed reminder passes.", "counter", errors)
@@ -110,11 +111,11 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	s.metrics.mu.Lock()
 	defer s.metrics.mu.Unlock()
-	fmt.Fprintln(&body, "# HELP keeper_http_requests_total Requests excluding health and metrics.\n# TYPE keeper_http_requests_total counter")
+	fmt.Fprintln(&body, "# HELP keeper_http_requests_total Requests excluding health, metrics and event streams.\n# TYPE keeper_http_requests_total counter")
 	for i := 1; i <= 5; i++ {
 		fmt.Fprintf(&body, "keeper_http_requests_total{status_class=%q} %d\n", fmt.Sprintf("%dxx", i), s.metrics.requests[i])
 	}
-	fmt.Fprintln(&body, "# HELP keeper_http_request_duration_seconds Request duration excluding probes.\n# TYPE keeper_http_request_duration_seconds histogram")
+	fmt.Fprintln(&body, "# HELP keeper_http_request_duration_seconds Request duration excluding probes and event streams.\n# TYPE keeper_http_request_duration_seconds histogram")
 	for i, upper := range metricBuckets {
 		fmt.Fprintf(&body, "keeper_http_request_duration_seconds_bucket{le=%q} %d\n", fmt.Sprint(upper), s.metrics.buckets[i])
 	}

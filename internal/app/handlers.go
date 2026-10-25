@@ -243,7 +243,6 @@ func (s *Server) occurrenceUpdate(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	s.Worker.Kick()
-	s.Worker.Kick()
 	return writeJSON(w, 200, updated)
 }
 

@@ -51,6 +51,7 @@ type Server struct {
 	alerts      sync.WaitGroup
 	botUsername atomic.Value // set by the Telegram bot after getMe
 	metrics     serviceMetrics
+	events      eventStreams
 }
 
 func (s *Server) BotUsername() string {
@@ -68,6 +69,7 @@ func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Optio
 	}
 	s := &Server{
 		DB: db, Settings: settings, Today: today, Now: time.Now, assets: assets,
+		events:    newEventStreams(),
 		Worker:    notify.NewReminderWorker(db, settings, opts.Sender, today),
 		adminHash: security.HashPassword(settings.AdminPassword),
 	}
@@ -240,6 +242,12 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	if hasBearer(r) {
 		return s.tokenUser(r, "read", "write")
 	}
+	return s.sessionUser(r, true)
+}
+
+// Event-stream heartbeats authenticate read-only: passive connections must not
+// keep writing session activity or wait for a write lock held by a transport.
+func (s *Server) sessionUser(r *http.Request, touch bool) (*User, error) {
 	cookie, err := r.Cookie(cookieName)
 	if err != nil || cookie.Value == "" || len(cookie.Value) > 128 {
 		return nil, fail(401, "Войдите в систему")
@@ -250,7 +258,7 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 	var csrf string
 	hash := security.Digest(cookie.Value)
 	now := time.Now().Unix()
-	err = s.DB.QueryRow("SELECT user_id,is_admin,admin_fingerprint,csrf_token,last_seen_at FROM sessions WHERE token_hash=? AND expires_at>?",
+	err = s.DB.QueryRowContext(r.Context(), "SELECT user_id,is_admin,admin_fingerprint,csrf_token,last_seen_at FROM sessions WHERE token_hash=? AND expires_at>?",
 		hash, now).Scan(&userID, &isAdmin, &fingerprint, &csrf, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Сессия завершена. Войдите снова")
@@ -259,8 +267,8 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 		return nil, err
 	}
 	// «Последняя активность» in the sessions list; written at most once a minute.
-	if !lastSeen.Valid || now-lastSeen.Int64 >= 60 {
-		if _, err := s.DB.Exec("UPDATE sessions SET last_seen_at=?,ip=? WHERE token_hash=?", now, clientIP(r), hash); err != nil {
+	if touch && (!lastSeen.Valid || now-lastSeen.Int64 >= 60) {
+		if _, err := s.DB.ExecContext(r.Context(), "UPDATE sessions SET last_seen_at=?,ip=? WHERE token_hash=?", now, clientIP(r), hash); err != nil {
 			return nil, err
 		}
 	}
@@ -271,7 +279,7 @@ func (s *Server) currentUser(r *http.Request) (*User, error) {
 		return &User{ID: 0, Username: s.Settings.AdminUsername, DisplayName: "Администратор", Role: "admin", CSRFToken: csrf}, nil
 	}
 	user := &User{Role: "user", CSRFToken: csrf}
-	err = s.DB.QueryRow("SELECT id,username,display_name FROM users WHERE id=?", userID.Int64).Scan(&user.ID, &user.Username, &user.DisplayName)
+	err = s.DB.QueryRowContext(r.Context(), "SELECT id,username,display_name FROM users WHERE id=?", userID.Int64).Scan(&user.ID, &user.Username, &user.DisplayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fail(401, "Пользователь удалён")
 	}

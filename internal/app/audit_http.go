@@ -130,7 +130,7 @@ func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) error {
 		}
 		where := " WHERE " + strings.Join(append(clauses, "a.id<=?"), " AND ")
 		args := append(args, result.SnapshotID)
-		query := "SELECT " + auditPaymentColumns + auditPaymentContext + where + " ORDER BY a.id DESC"
+		query := "SELECT " + auditPaymentColumns + auditPaymentContext + where + " ORDER BY a.id DESC" // #nosec G202 -- only constant SQL fragments; user values are bound through args
 		offset := (page - 1) * size
 		if search == "" {
 			if err := tx.QueryRow("SELECT COUNT(*) FROM audit_log a"+where, args...).Scan(&result.Total); err != nil {
@@ -139,7 +139,7 @@ func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) error {
 			query += " LIMIT ? OFFSET ?"
 			args = append(args, size, offset)
 		}
-		rows, err := tx.Query(query, args...) // #nosec G202 -- query contains only constant predicates; all user values are bound through args
+		rows, err := tx.Query(query, args...)
 		if err != nil {
 			return err
 		}

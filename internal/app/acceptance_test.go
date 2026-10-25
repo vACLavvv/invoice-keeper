@@ -405,6 +405,14 @@ func TestEveryDocumentedOperationIsServed(t *testing.T) {
 	served := 0
 	for path, item := range doc.Paths.Map() {
 		for method := range item.Operations() {
+			if path == "/api/v1/events" {
+				admin.signIn() // a preceding generated operation may have logged out
+				frames, closeStream := openEventStream(t, admin, "")
+				nextEvent(t, frames, "ready")
+				closeStream()
+				served++
+				continue
+			}
 			url := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, "1")
 			r := admin.do(method, url, nil)
 			if r.status == 405 || (r.status == 404 && strings.Contains(string(r.body), `"Not Found"`)) {

@@ -20,8 +20,15 @@ func ParseDate(value string) (time.Time, error) { return time.Parse(DateLayout, 
 func FormatDate(t time.Time) string { return t.Format(DateLayout) }
 
 func Today(loc *time.Location) time.Time {
-	now := time.Now().In(loc)
-	return Civil(now.Year(), now.Month(), now.Day())
+	return TodayAt(time.Now(), loc)
+}
+
+// TodayAt derives the shared business date from an instant. Dates remain civil
+// days: the UTC-midnight representation below must not be shifted by a viewer's
+// timezone. Keeping the instant explicit also makes midnight/DST checks repeatable.
+func TodayAt(instant time.Time, loc *time.Location) time.Time {
+	local := instant.In(loc)
+	return Civil(local.Year(), local.Month(), local.Day())
 }
 
 func Timestamp() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000000-07:00") }

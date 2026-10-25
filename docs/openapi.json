@@ -3960,6 +3960,48 @@
           }
         }
       }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "Система"
+        ],
+        "summary": "Поток обновлений панели (SSE)",
+        "operationId": "streamEvents",
+        "description": "Только cookie-сессия. Поток text/event-stream сообщает о подтверждённых изменениях; финансовые данные и секреты в событии отсутствуют. При подключении и восстановлении соединения клиент заново запрашивает актуальные данные. Last-Event-ID не обеспечивает воспроизведение истории: это поток инвалидации. Соединение периодически проверяет действительность сессии. Неверные или отсутствующие права закрывают поток. API-токены не поддерживаются. События: ready при подключении, changed после commit, session-ended при завершении сессии. Проверка сессии и heartbeat каждые 15 секунд. Ограничение: 6 потоков на сессию и 128 на процесс.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE-поток; proxy buffering отключён. Клиент должен поддерживать переподключение.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Недопустимый запрос"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {

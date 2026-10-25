@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, setCsrfToken, type Settings, type User } from './api';
+import { startLiveUpdates } from './live-updates';
 
 type Session = {
   user: User;
@@ -21,6 +22,7 @@ export function SessionProvider({ children, fallback }: { children: ReactNode; f
   const [month, setMonth] = useState('');
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const authenticated = state !== null;
 
   useEffect(() => {
     Promise.all([api<User>('/auth/me'), api<Settings>('/settings')])
@@ -39,13 +41,8 @@ export function SessionProvider({ children, fallback }: { children: ReactNode; f
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const tick = () => {
-      if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]')) refresh();
-    };
-    const timer = setInterval(tick, 60_000);
-    document.addEventListener('visibilitychange', tick);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
-  }, [refresh]);
+    if (authenticated) return startLiveUpdates(refresh);
+  }, [authenticated, refresh]);
 
   if (!state || !month) return <>{fallback(error)}</>;
   return (

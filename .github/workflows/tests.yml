@@ -65,3 +65,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run i18n
       - run: npm run build
+
+  container:
+    name: Docker — запуск по инструкции
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t invoice-keeper:ci .
+      - name: Bootstrap и запуск без root
+        run: |
+          docker volume create keeper-ci
+          docker run --rm -v keeper-ci:/data invoice-keeper:ci invoice-keeper bootstrap --demo
+          docker run -d --name keeper-ci --memory=256m --cpus=0.5 --read-only --tmpfs /tmp:rw,size=16m --cap-drop=ALL --security-opt=no-new-privileges -p 127.0.0.1:18081:8000 -v keeper-ci:/data invoice-keeper:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:18081/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18081/healthz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/v1/payment-occurrences)" = 401
+      - if: always()
+        run: docker logs keeper-ci || true

@@ -8,7 +8,8 @@ let page = { host: '', url: '', pageTitle: '' };
 
 async function loadSettings() {
   const stored = await chrome.storage.local.get(['server', 'key', 'username']);
-  settings = { server: stored.server || '', key: stored.key || '' };
+  // The panel puts its own address into config.js when the extension is downloaded from it.
+  settings = { server: stored.server || self.INVOICE_KEEPER_SERVER || '', key: stored.key || '' };
   $('#server').value = settings.server;
   $('#key').value = settings.key;
   $('#connected').hidden = !settings.key;
@@ -109,7 +110,7 @@ async function call(path, options = {}) {
 function showSettings(show) {
   $('#settings').hidden = !show;
   $('#main').hidden = show;
-  $('#toggle-settings').textContent = show ? 'назад' : 'настройки';
+  $('#toggle-settings').textContent = show ? 'Назад' : 'Настройки';
 }
 
 async function saveSettings() {
@@ -134,10 +135,11 @@ function addCard(item = {}) {
   field('title').value = item.title || page.pageTitle || page.host;
   field('amount').value = item.amount || '';
   field('currency').value = item.currency || 'RUB';
-  field('date').value = item.date || '';
+  field('date').value = item.date || (item.how ? today() : '');
   card.dataset.sourceKey = item.sourceKey || '';
-  card.querySelector('.title-text').textContent = item.how ? `найдено: ${item.how}` : 'вручную';
+  card.querySelector('.title-text').textContent = item.how ? `Найдено: ${item.how}` : 'Вручную';
   const notes = [item.context];
+  if (item.how && !item.date) notes.unshift('дата не найдена — стоит сегодняшняя, проверьте');
   if (item.yearly) {
     field('use').checked = false;
     notes.unshift('похоже на годовую оплату — система повторяет ежемесячно');
@@ -148,6 +150,12 @@ function addCard(item = {}) {
   $('#list').append(card);
   updateSend();
   return card;
+}
+
+/** Today in the user's time zone, as YYYY-MM-DD. */
+function today() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 function updateSend() {
@@ -181,7 +189,7 @@ async function detect() {
   }
   const found = page.candidates || [];
   $('#headline').textContent = found.length ? `${found.length} ${plural(found.length, 'платёж', 'платежа', 'платежей')}` : 'ничего не нашли';
-  if (!found.length) notice('Выделите на странице текст с суммой и датой и откройте расширение снова — или добавьте платёж вручную.');
+  if (!found.length) notice('Суммы на странице не нашлось. Выделите текст с ценой и откройте расширение снова — или добавьте платёж вручную.');
   found.forEach(addCard);
   if (!settings.server || !settings.key) notice('Укажите адрес сервера и ключ API в настройках, чтобы отправлять платежи.', true);
 }

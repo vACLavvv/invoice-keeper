@@ -74,6 +74,8 @@
 
   const yearly = /(\/|в|per|a)\s*(год|year|yr)|ежегодно|annual|yearly/i;
   const clean = (text) => text.replace(/\s+/g, ' ').trim();
+  // offsetParent is null for position: fixed, so checkout panels and modals looked hidden.
+  const visible = (el) => (el.checkVisibility ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) : el.offsetParent !== null);
   const brand = (() => {
     const parts = host.split('.');
     return parts.length >= 2 ? parts[parts.length - 2] : host;
@@ -92,8 +94,8 @@
   const candidates = [];
   const seen = new Set();
   function add(title, money, dateIso, context, how) {
-    // A selection may lack a date: the user fills it in the popup.
-    if (!money || (!dateIso && how !== 'выделение')) return;
+    // A selection or a lone price may lack a date: the popup suggests today and the user checks it.
+    if (!money || (!dateIso && how !== 'выделение' && how !== 'цена')) return;
     const name = clean(title) || clean(document.title) || host;
     const full = name.toLowerCase().includes(brand.toLowerCase()) ? name : `${brand} · ${name}`;
     const key = `${full.toLowerCase()}|${money.amount}|${money.currency}`;
@@ -142,7 +144,7 @@
   // 3. Rows built from divs: the smallest blocks that contain both a price and a date.
   if (candidates.length < 30) {
     const blocks = [...document.body.querySelectorAll('li, article, section, div, p, tr')]
-      .filter((el) => el.offsetParent !== null && !el.closest('table'))
+      .filter((el) => !el.closest('table') && visible(el))
       .map((el) => ({ el, text: (el.innerText || '').trim() }))
       .filter(({ text }) => text.length > 0 && text.length < 400 && findMoney(text).length && findDates(text).length);
     const smallest = blocks.filter(({ el }) => !blocks.some((other) => other.el !== el && el.contains(other.el)));
@@ -151,6 +153,89 @@
       const dates = findDates(text);
       const date = dates[dates.length - 1];
       add(titleFrom(text, money, dates), money, date.iso, text, 'страница');
+    }
+  }
+
+  // 4. Nothing with a date: a lone price, such as a checkout total ("Итого 559 ₽", "К оплате") or a
+  //    plan price ("12 $/мес"). Prices are scored by the words around them; struck-out old prices,
+  //    navigation and footers are skipped. The date is taken from the same section when there is one.
+  if (!candidates.length) {
+    const totalWords = /итого|к оплате|сумма к оплате|к списанию|total|amount due|due today/i;
+    const periodWords = /\/\s*(мес|месяц|month|mo)\b|в месяц|ежемесячно|per month|monthly|\d+\s*(дн|дней|days)|месяц|month/i;
+    const priceWords = /цена|стоимость|тариф|подписк|price|plan|subscription/i;
+    const payWords = /оплат|заказ|сч[её]т|платёж|платеж|invoice|payment|order|checkout|pay\b/i;
+    const struck = (el) => {
+      for (let node = el; node && node !== document.body; node = node.parentElement) {
+        if (/^(S|DEL|STRIKE)$/.test(node.tagName) || getComputedStyle(node).textDecorationLine.includes('line-through')) return true;
+      }
+      return false;
+    };
+    const ancestor = (el, levels, limit) => {
+      let box = el;
+      for (let i = 0; i < levels && box.parentElement && box.parentElement !== document.body; i++) {
+        if ((box.parentElement.innerText || '').length > limit) break;
+        box = box.parentElement;
+      }
+      return box;
+    };
+    const prices = [];
+    const struckOut = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      const raw = el.textContent || '';
+      if (raw.length > 80 || !/\d/.test(raw) || el.closest('nav, footer, script, style, noscript, select, option, button')) continue;
+      const text = (el.innerText || '').trim();
+      const money = text.length <= 40 && findMoney(text)[0];
+      if (!money || !visible(el)) continue;
+      (struck(el) ? struckOut : prices).push({ el, money });
+    }
+    // A wrapper of an old price ("16470 ₽ -84%") is not a price either.
+    const live = prices.filter(({ el, money }) => !struckOut.some((old) => el.contains(old.el) && old.money.amount === money.amount));
+    const smallest = live.filter(({ el }) => !live.some((other) => other.el !== el && el.contains(other.el)));
+    // The amount and the ₽ are often separate spans, so the size is that of the largest digit inside.
+    const fontOf = (el) => Math.max(...[el, ...el.querySelectorAll('*')]
+      .filter((node) => /\d/.test(node.textContent || '')).map((node) => parseFloat(getComputedStyle(node).fontSize) || 0));
+    const all = smallest.map(({ el, money }) => {
+      const context = clean(ancestor(el, 2, 300).innerText || '').slice(0, 200);
+      const font = fontOf(el);
+      let score = 0;
+      if (totalWords.test(context)) score += 5;
+      if (payWords.test(context)) score += 4;
+      if (periodWords.test(context)) score += 3;
+      if (priceWords.test(context)) score += 2;
+      if (font >= 20) score += 1;
+      return { el, money, context, score, font };
+    });
+    let scored = all.filter((p) => p.score > 1).sort((a, b) => b.score - a.score || b.font - a.font);
+    // No words at all: a payment form shows the sum as its biggest number.
+    if (!scored.length) scored = all.filter((p) => p.font >= 24).sort((a, b) => b.font - a.font).slice(0, 1);
+
+    // The card of a price: its largest ancestor that holds no other found price.
+    const cardOf = (el) => {
+      let box = el;
+      while (box.parentElement && box.parentElement !== document.body && (box.parentElement.innerText || '').length < 3000
+        && !scored.some((other) => other.el !== el && box.parentElement.contains(other.el))) box = box.parentElement;
+      return box;
+    };
+    // Its name: a heading inside the card, otherwise the card's first line of words («Мобильные Shared»).
+    const nameOf = (card) => {
+      const usable = (text) => text && text.length >= 3 && text.length <= 80 && /\p{L}{3}/u.test(text) && !findMoney(text).length && !totalWords.test(text);
+      const heading = clean(card.querySelector('h1, h2, h3, h4, [class*="title" i], [class*="name" i]')?.innerText || '');
+      if (usable(heading)) return heading;
+      const line = (card.innerText || '').split('\n').map(clean).find(usable);
+      return line || clean(document.querySelector('h1')?.innerText || '') || clean(document.title.split(/\s[|—–-]\s/)[0]);
+    };
+
+    const amounts = new Set();
+    for (const { el, money, context } of scored) {
+      if (amounts.size >= 3) break;
+      if (amounts.has(money.amount + money.currency)) continue;
+      amounts.add(money.amount + money.currency);
+      const card = cardOf(el);
+      const text = card.innerText || '';
+      // A payment form signs its sum right next to it («592.54 ₽ Оплата заказа»).
+      const label = clean(context.replace(moneyRe, ' '));
+      const name = payWords.test(label) && label.length <= 60 && !totalWords.test(label) ? label : nameOf(card);
+      add(name, money, findDates(text).pop()?.iso || '', yearly.test(text) ? clean(text).slice(0, 160) : context, 'цена');
     }
   }
 

@@ -50,6 +50,7 @@ type Server struct {
 	notifier    notify.Notifier
 	alerts      sync.WaitGroup
 	botUsername atomic.Value // set by the Telegram bot after getMe
+	metrics     serviceMetrics
 }
 
 func (s *Server) BotUsername() string {
@@ -177,6 +178,7 @@ func (s *Server) routes() http.Handler {
 	})
 	handle("GET /api/v1/docs", s.docs)
 	handle("GET /api/v1/openapi.json", s.openapi)
+	handle("GET /metrics", s.prometheusMetrics)
 	handle("GET /extension.zip", s.extensionZip)
 	preflight := cors(func(http.ResponseWriter, *http.Request) error { return nil })
 	handle("OPTIONS /api/v1/extension/whoami", preflight)

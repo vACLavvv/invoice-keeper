@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -104,8 +105,8 @@ func TestPaidButtonMarksPeriodAndEditsMessage(t *testing.T) {
 	if !strings.Contains(edit["text"].(string), "✅ Оплачено — @alex, 28.01") {
 		t.Fatalf("message not updated: %v", edit["text"])
 	}
-	if _, kept := edit["reply_markup"]; kept {
-		t.Fatal("button must disappear after payment")
+	if strings.Contains(fmt.Sprint(edit["reply_markup"]), "paid:") {
+		t.Fatal("paid action must disappear after payment")
 	}
 	audit := c.get("/api/v1/audit-log").list(t)
 	expect(t, "audit actor", audit[0]["actor"], any("tg:@alex"))
@@ -212,7 +213,7 @@ func TestTodoAndOverdueCommands(t *testing.T) {
 
 	tb.Handle(message(ourChat, "/todo"))
 	todo := tg.sent("sendMessage")[0]["text"].(string)
-	for _, want := range []string{"🔴 Просрочено", "Аренда — 100.10 RUB, срок 20.01, 8 дн. назад", "🟡 В ближайшие 7 дней", "Сервер — 24.00 USD, срок 30.01, через 2 дн.", "Итого: 100.10 RUB · 24.00 USD"} {
+	for _, want := range []string{"Аренда", "100.10 RUB", "Просрочено", "Сервер", "24.00 USD", "2026-01-30", "100.10 RUB · 24.00 USD"} {
 		if !strings.Contains(todo, want) {
 			t.Fatalf("/todo lacks %q:\n%s", want, todo)
 		}
@@ -243,4 +244,66 @@ func TestPollingRemembersOffset(t *testing.T) {
 	expect(t, "no replay", len(tg.sent("sendMessage")), 1)
 	polls := tg.sent("getUpdates")
 	expect(t, "offset", polls[len(polls)-1]["offset"], any(43.0))
+}
+
+func TestTelegramMenuPaginationEscapesTitlesAndRejectsForeignNavigation(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	for range 7 {
+		c.createPayment(map[string]any{"title": "<script>invoice & test</script>", "first_due_date": "2026-01-30", "frequency": "once"})
+	}
+	tb, tg := botFor(e)
+	tb.Handle(message(ourChat, "/menu"))
+	expect(t, "menu", tg.sent("sendMessage")[0]["parse_mode"], any("HTML"))
+	tb.Handle(message(ourChat, "/todo"))
+	first := tg.sent("sendMessage")[1]
+	text := first["text"].(string)
+	if strings.Contains(text, "<script>") || !strings.Contains(text, "&lt;script&gt;") || !strings.Contains(text, "Страница 1 из 2") {
+		t.Fatalf("unsafe or unpaged list: %s", text)
+	}
+	if strings.Count(fmt.Sprint(first["reply_markup"]), "paid:") != 5 {
+		t.Fatal("first page should have five payment actions")
+	}
+	callback := pressPaid(ourChat, "1")
+	callback.CallbackQuery.Data = "nav:todo:1"
+	tb.Handle(callback)
+	second := tg.sent("editMessageText")[0]
+	if !strings.Contains(second["text"].(string), "Страница 2 из 2") || strings.Count(fmt.Sprint(second["reply_markup"]), "paid:") != 2 {
+		t.Fatal("second page should have remaining two actions")
+	}
+	callback.CallbackQuery.Message.Chat.ID = 555
+	tb.Handle(callback)
+	expect(t, "foreign callback denied", tg.sent("answerCallbackQuery")[1]["text"], any("Нет доступа"))
+	expect(t, "no data edit for foreign chat", len(tg.sent("editMessageText")), 1)
+}
+
+func TestPaidButtonChangesOnePeriodAndOneAuditRecord(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	c.createPayment(nil)
+	periods := c.get("/api/v1/payment-occurrences").list(t)
+	tb, _ := botFor(e)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() { defer wg.Done(); tb.Handle(pressPaid(ourChat, id(periods[0]))) }()
+	}
+	wg.Wait()
+	e.server.Worker.Wait()
+	paid := 0
+	for _, o := range c.get("/api/v1/payment-occurrences").list(t) {
+		if o["paid_at"] != nil {
+			paid++
+		}
+	}
+	expect(t, "exactly one period", paid, 1)
+	audits := 0
+	for _, entry := range c.get("/api/v1/audit-log").list(t) {
+		if entry["action"] == "occurrence.paid" {
+			audits++
+		}
+	}
+	expect(t, "one payment audit despite double click", audits, 1)
 }

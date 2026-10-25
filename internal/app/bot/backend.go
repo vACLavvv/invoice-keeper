@@ -14,6 +14,7 @@ type Backend interface {
 	Today() time.Time
 	// TodoText lists unpaid periods: overdue ones and, unless onlyOverdue, the next 7 days.
 	TodoText(onlyOverdue bool) (string, error)
+	PaymentPage(onlyOverdue bool, page int) (PaymentPage, error)
 	// MarkPaid records «Оплачено» by actor; ErrNotFound for an unknown period.
 	MarkPaid(occurrenceID int64, actor string) (already bool, err error)
 	// LinkTelegram consumes a /start code; a *UserError explains a refused code to the user.
@@ -33,3 +34,14 @@ type UserError struct{ Message string }
 func (e *UserError) Error() string { return e.Message }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// PaymentPage bounds Telegram messages even when the ledger has years of history.
+type PaymentPage struct {
+	Items              []PaymentItem
+	Page, Pages, Total int
+	Totals             string
+}
+type PaymentItem struct {
+	ID                                       int64
+	Title, Amount, Currency, DueDate, Status string
+}

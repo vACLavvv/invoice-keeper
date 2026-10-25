@@ -1,0 +1,9 @@
+apiVersion: 1
+datasources:
+  - name: Keeper Prometheus
+    uid: keeper-prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:19091
+    isDefault: true
+    editable: false

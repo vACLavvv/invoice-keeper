@@ -30,6 +30,7 @@ type Settings struct {
 	TrustedProxies   []netip.Prefix // TRUSTED_PROXIES: reverse proxies whose X-Forwarded-For is believed
 	LogRequests      bool           // one log line per request (LOG_REQUESTS); secrets are never logged
 	LogFormat        string         // text | json
+	MetricsToken     string         // independent read-only secret for Prometheus; empty disables /metrics
 	TelegramEnabled  bool
 	TelegramBotToken string
 	TelegramChatID   string
@@ -76,6 +77,9 @@ var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 // Validate fills defaults and rejects unsafe or incomplete configuration.
 func (s *Settings) Validate() error {
+	if s.MetricsToken != "" && (len(s.MetricsToken) < 32 || strings.ContainsAny(s.MetricsToken, " \r\n\t")) {
+		return errors.New("METRICS_TOKEN: минимум 32 символа без пробелов")
+	}
 	if s.Timezone == "" {
 		s.Timezone = "Europe/Moscow"
 	}
@@ -303,6 +307,7 @@ func FromEnv(root string) (*Settings, error) {
 		TrustedProxies:      proxies,
 		LogRequests:         !strings.EqualFold(Env("LOG_REQUESTS", "true"), "false"),
 		LogFormat:           strings.ToLower(strings.TrimSpace(Env("LOG_FORMAT", ""))),
+		MetricsToken:        Env("METRICS_TOKEN", ""),
 		TelegramEnabled:     strings.EqualFold(Env("TELEGRAM_ENABLED", "false"), "true"),
 		TelegramBotToken:    Env("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:      Env("TELEGRAM_CHAT_ID", ""),

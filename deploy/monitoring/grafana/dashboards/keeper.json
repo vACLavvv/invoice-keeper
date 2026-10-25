@@ -1,0 +1,322 @@
+{
+  "title": "AezaKeeper · Operations",
+  "uid": "keeper-operations",
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Доступность приложения",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"invoice-keeper\"}",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Секунд после проверки напоминаний",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "time() - keeper_scheduler_last_success_timestamp_seconds",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Отправки по каналам и статусам",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_deliveries > 0",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "Запросы в секунду",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by(status_class) (rate(keeper_http_requests_total[5m]))",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "title": "HTTP p95",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(keeper_http_request_duration_seconds_bucket[5m])))",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 6,
+      "title": "Память Go",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_go_heap_bytes",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 7,
+      "title": "Ошибки планировщика",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_scheduler_errors_total",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 8,
+      "title": "Активные предупреждения",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 9,
+      "title": "Размер базы SQLite (без WAL)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_database_file_bytes",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 10,
+      "title": "Горутины",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "keeper-prometheus"
+      },
+      "targets": [
+        {
+          "expr": "keeper_go_goroutines",
+          "refId": "A",
+          "legendFormat": "{{channel}} {{state}} {{status_class}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

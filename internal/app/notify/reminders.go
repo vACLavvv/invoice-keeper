@@ -170,11 +170,18 @@ type ReminderWorker struct {
 	Maintenance func(tx *sql.Tx) error
 	Today       func() time.Time
 
-	mu       sync.Mutex
-	running  bool
-	rerun    bool
-	kicks    sync.WaitGroup
-	stopping atomic.Bool // set on shutdown: no new passes, the current one ends between messages
+	mu          sync.Mutex
+	running     bool
+	rerun       bool
+	kicks       sync.WaitGroup
+	stopping    atomic.Bool // set on shutdown: no new passes, the current one ends between messages
+	lastSuccess atomic.Int64
+	errors      atomic.Uint64
+}
+
+// Health reports successful scheduler progress, independently of transport outcomes in the outbox.
+func (w *ReminderWorker) Health() (lastSuccess int64, errors uint64) {
+	return w.lastSuccess.Load(), w.errors.Load()
 }
 
 func NewReminderWorker(db *store.DB, s *config.Settings, sender Sender, today func() time.Time) *ReminderWorker {
@@ -200,7 +207,10 @@ func (w *ReminderWorker) Tick() {
 	w.mu.Unlock()
 	for {
 		if err := w.tick(); err != nil {
+			w.errors.Add(1)
 			log.Printf("Не удалось выполнить фоновую проверку платежей: %v", err)
+		} else {
+			w.lastSuccess.Store(time.Now().Unix())
 		}
 		w.mu.Lock()
 		if !w.rerun {

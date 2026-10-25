@@ -117,6 +117,7 @@ func (b *Telegram) Run(ctx context.Context) {
 	}
 	// The command menu next to the input field in Telegram.
 	if err := b.call("setMyCommands", map[string]any{"commands": []map[string]string{
+		{"command": "menu", "description": "Платежи и действия — главное меню"},
 		{"command": "todo", "description": "Что оплатить в ближайшие 7 дней"},
 		{"command": "overdue", "description": "Просроченные платежи"},
 		{"command": "chatid", "description": "ID этого чата"},
@@ -195,10 +196,16 @@ func (b *Telegram) actorName(u User) string {
 }
 
 func (b *Telegram) reply(chatID int64, text string) error {
-	return b.call("sendMessage", map[string]any{"chat_id": chatID, "text": text}, nil)
+	if !b.allowed(chatID) {
+		return b.call("sendMessage", map[string]any{"chat_id": chatID, "text": text}, nil)
+	}
+	return b.call("sendMessage", map[string]any{"chat_id": chatID, "text": text, "reply_markup": map[string]any{"inline_keyboard": b.navigation()}}, nil)
 }
 
-const botHelp = `Invoice Keeper напоминает о регулярных платежах за 3 дня до срока.
+const botHelp = `AezaKeeper · платежи команды
+Напомню за 3 дня до срока и помогу отметить оплату.
+
+/menu — главное меню с кнопками
 
 /todo — что оплатить в ближайшие 7 дней и что просрочено
 /overdue — только просроченные
@@ -250,15 +257,14 @@ func (b *Telegram) onMessage(m *Message) error {
 			return b.call("sendMessage", payload, nil)
 		}
 		return b.reply(m.Chat.ID, botHelp)
-	case "/todo", "/overdue":
+	case "/menu", "/todo", "/overdue":
 		if !b.allowed(m.Chat.ID) {
 			return b.reply(m.Chat.ID, "Этот чат не подключён к Invoice Keeper.")
 		}
-		text, err := b.backend.TodoText(command == "/overdue")
-		if err != nil {
-			return err
+		if command == "/menu" {
+			return b.menu(m.Chat.ID, 0)
 		}
-		return b.reply(m.Chat.ID, text)
+		return b.payments(m.Chat.ID, 0, command == "/overdue", 0)
 	}
 	return nil
 }
@@ -271,9 +277,15 @@ func (b *Telegram) onCallback(c *Callback) error {
 	if c.Message == nil || !b.allowed(c.Message.Chat.ID) {
 		return answer("Нет доступа")
 	}
+	if strings.HasPrefix(c.Data, "nav:") {
+		if err := answer(""); err != nil {
+			return err
+		}
+		return b.navigate(c)
+	}
 	raw, ok := strings.CutPrefix(c.Data, "paid:")
 	id, err := strconv.ParseInt(raw, 10, 64)
-	if !ok || err != nil {
+	if !ok || err != nil || id <= 0 {
 		return answer("Неизвестная кнопка")
 	}
 	// A team chat may include guests; only people who linked Telegram to a panel account mark payments.
@@ -298,12 +310,12 @@ func (b *Telegram) onCallback(c *Callback) error {
 	if already {
 		return answer("Уже отмечено ранее")
 	}
-	if err := answer("Отмечено: оплачено"); err != nil {
-		return err
-	}
-	// Without reply_markup the button disappears, so nobody presses it twice.
-	return b.call("editMessageText", map[string]any{
+	ackErr := answer("Отмечено: оплачено")
+	// Replace the payment action with safe navigation. Payment is already committed even if Telegram fails.
+	editErr := b.call("editMessageText", map[string]any{
 		"chat_id": c.Message.Chat.ID, "message_id": c.Message.MessageID,
-		"text": c.Message.Text + fmt.Sprintf("\n\n✅ Оплачено — %s, %s", strings.TrimPrefix(actor, "tg:"), schedule.ShortDate(today)),
+		"text":         c.Message.Text + fmt.Sprintf("\n\n✅ Оплачено — %s, %s", strings.TrimPrefix(actor, "tg:"), schedule.ShortDate(today)),
+		"reply_markup": map[string]any{"inline_keyboard": b.navigation()},
 	}, nil)
+	return errors.Join(ackErr, editErr)
 }

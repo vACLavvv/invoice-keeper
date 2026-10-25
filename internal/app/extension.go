@@ -9,6 +9,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -455,7 +456,8 @@ func (s *Server) suggestionsReject(w http.ResponseWriter, r *http.Request) error
 	return writeJSON(w, 200, saved)
 }
 
-// extensionZip packs the embedded extension/ folder for "Load unpacked" installation.
+// extensionZip packs the embedded extension/ folder for "Load unpacked" installation,
+// with config.js pointing at this server so the popup does not ask for its address.
 func (s *Server) extensionZip(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.currentUser(r); err != nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -475,6 +477,9 @@ func (s *Server) extensionZip(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if name == "config.js" {
+			content = extensionConfig(s.publicOrigin(r))
+		}
 		file, err := zw.Create("invoice-keeper-extension/" + name)
 		if err != nil {
 			return err
@@ -492,4 +497,21 @@ func (s *Server) extensionZip(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Disposition", `attachment; filename="invoice-keeper-extension.zip"`)
 	_, err = w.Write(archive.Bytes())
 	return err
+}
+
+// publicOrigin is the address users open: PUBLIC_BASE_URL, otherwise the scheme and Host of the request.
+func (s *Server) publicOrigin(r *http.Request) string {
+	if s.Settings.PublicBaseURL != "" {
+		return s.Settings.PublicBaseURL
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func extensionConfig(origin string) []byte {
+	quoted, _ := json.Marshal(origin)
+	return []byte("// Filled in by the panel this extension was downloaded from.\nself.INVOICE_KEEPER_SERVER = " + string(quoted) + ";\n")
 }

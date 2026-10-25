@@ -123,15 +123,18 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter 
 
 // accessLog writes method, path, masked query, status, size, duration and client address.
 func (s *Server) accessLog(next http.Handler) http.Handler {
-	if !s.Settings.LogRequests {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(rec, r)
 		if rec.status == 0 {
 			rec.status = http.StatusOK
+		}
+		if r.URL.Path != "/metrics" && r.URL.Path != "/healthz" {
+			s.metrics.observe(rec.status, time.Since(start))
+		}
+		if !s.Settings.LogRequests {
+			return
 		}
 		level := slog.LevelInfo
 		if rec.status >= 500 {

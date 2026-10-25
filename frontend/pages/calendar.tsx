@@ -5,12 +5,18 @@ import { PayModal } from '@/components/PaymentModals';
 import { Shell } from '@/components/Shell';
 import { statusLabel } from '@/components/Workspace';
 import { api, type Forecast, type Occurrence } from '@/lib/api';
-import { money, symbols, type Currency } from '@/lib/format';
+import { currencies, money, symbols, type Currency } from '@/lib/format';
 import { locale, t } from '@/lib/i18n';
 import { useLoad, useSession } from '@/lib/session';
 
 // Monday-first short weekday names in the current language (5 Jan 2026 is a Monday).
 const isOccurrence = (item: Occurrence | Forecast): item is Occurrence => 'id' in item;
+
+function totalsByCurrency(items: Pick<Occurrence, 'amount' | 'currency'>[]): [Currency, number][] {
+  const cents = new Map<Currency, number>();
+  for (const item of items) cents.set(item.currency, (cents.get(item.currency) ?? 0) + Math.round(Number(item.amount) * 100));
+  return currencies.filter((currency) => cents.has(currency)).map((currency) => [currency, cents.get(currency)! / 100]);
+}
 
 const weekdays = () => Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(2026, 0, 5 + i)).toUpperCase());
 
@@ -25,18 +31,36 @@ export default function CalendarPage() {
   const trailing = (7 - ((leading + days) % 7)) % 7;
   const items = (data ?? []).filter((o) => o.due_date.startsWith(month));
   // Periods exist only through next month; later dates come from the schedule and can be paid ahead.
-  const plannedPeriods = useLoad(() => api<Forecast[]>(`/payment-forecast?from_date=${month}-01&to_date=${month}-${days}`), [month]);
-  const forecast = plannedPeriods.data ?? [];
+  const plannedPeriods = useLoad(async () => ({
+    month,
+    items: await api<Forecast[]>(`/payment-forecast?from_date=${month}-01&to_date=${month}-${days}`),
+  }), [month]);
+  const forecastData = plannedPeriods.data?.month === month ? plannedPeriods.data.items : null;
+  // A paid-ahead period can arrive before the forecast refresh completes.
+  const recorded = new Set(items.map((item) => `${item.recurring_payment_id}:${item.due_date}`));
+  const forecast = (forecastData ?? []).filter((item) => !recorded.has(`${item.recurring_payment_id}:${item.due_date}`));
+  const totalsReady = data !== null && forecastData !== null;
+  const monthlyTotals = totalsByCurrency([...items, ...forecast]);
   const agendaDays = Array.from(new Set([...items, ...forecast].map((item) => item.due_date))).sort();
 
   return (
     <Shell title={t('Календарь')} heading={t('Календарь оплат')} subtitle={t('Посмотрите, как распределяются расходы в течение месяца.')}>
       {error && <div className="notice notice-error" role="alert">{error}</div>}
       {plannedPeriods.error && <div className="notice notice-error" role="alert">{plannedPeriods.error}</div>}
-      <div className="period-heading">
+      <CalendarToolbar>
         <MonthSwitcher />
-        <span className="muted">{forecast.length > 0 ? t('Пунктиром — будущие сроки по графику. Нажмите, чтобы оплатить заранее.') : t('План расходов по датам и валютам')}</span>
-      </div>
+        <MonthlyTotal aria-live="polite" aria-busy={!totalsReady && !error && !plannedPeriods.error}>
+          <span className="month-total-label">{t('Итого за месяц')}</span>
+          <div className="month-total-values">
+            {error || plannedPeriods.error ? <span>{t('Не удалось рассчитать итог')}</span>
+              : !totalsReady ? <span>{t('Загружаем…')}</span>
+              : monthlyTotals.length ? monthlyTotals.map(([currency, amount]) => (
+                <strong key={currency}>{money(amount)} {symbols[currency]}</strong>
+              )) : <strong>0</strong>}
+          </div>
+        </MonthlyTotal>
+      </CalendarToolbar>
+      {forecast.length > 0 && <ForecastNote>{t('Пунктиром — будущие сроки по графику. Нажмите, чтобы оплатить заранее.')}</ForecastNote>}
       <CalendarViewport role="region" aria-label={t('Календарь оплат')} tabIndex={0}>
       <div className="calendar">
         {weekdays().map((d) => <div key={d} className="calendar-weekday">{d}</div>)}
@@ -45,8 +69,7 @@ export default function CalendarPage() {
           const day = `${month}-${String(i + 1).padStart(2, '0')}`;
           const daily = items.filter((o) => o.due_date === day);
           const planned = forecast.filter((f) => f.due_date === day);
-          const totals = new Map<Currency, number>();
-          for (const x of [...daily, ...planned]) totals.set(x.currency, (totals.get(x.currency) ?? 0) + Number(x.amount));
+          const totals = totalsByCurrency([...daily, ...planned]);
           return (
             <div key={day} className={`calendar-day${day === settings.today ? ' today' : ''}`}>
               <span className="calendar-number">{i + 1}</span>
@@ -62,8 +85,8 @@ export default function CalendarPage() {
                   {f.title}<strong>{money(f.amount)} {symbols[f.currency]} *</strong>
                 </button>
               ))}
-              {totals.size > 0 && (
-                <span className="calendar-day-total">{t('Итого:')} {[...totals].map(([c, n]) => `${money(n)} ${symbols[c]}`).join(' · ')}</span>
+              {totals.length > 0 && (
+                <strong className="calendar-day-total">{t('Итого:')} {totals.map(([c, n]) => `${money(n)} ${symbols[c]}`).join(' · ')}</strong>
               )}
             </div>
           );
@@ -72,7 +95,7 @@ export default function CalendarPage() {
       </div>
       </CalendarViewport>
       <Agenda aria-label={t('Платежи по датам')}>
-        {!data || !plannedPeriods.data ? <div className="empty-state">{t('Загружаем…')}</div> : agendaDays.length === 0 ? (
+        {!totalsReady ? <div className="empty-state">{t('Загружаем…')}</div> : agendaDays.length === 0 ? (
           <div className="ledger empty-state"><b>{t('На этот месяц платежей нет')}</b>{t('Выберите другой месяц или добавьте платёж.')}</div>
         ) : agendaDays.map((day) => (
           <section className="agenda-day" key={day}>
@@ -92,6 +115,53 @@ export default function CalendarPage() {
     </Shell>
   );
 }
+
+const CalendarToolbar = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-bottom: 20px;
+  > .period-switcher { min-width: 0; }
+  @media (max-width: 720px) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+`;
+
+const MonthlyTotal = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 20px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+  padding: 14px 18px;
+  border: 1px solid var(--desk-border);
+  border-radius: 12px;
+  background: var(--desk-surface);
+  color: var(--desk-ink);
+  line-height: 1.4;
+  .month-total-label { font-size: 14px; font-weight: 600; }
+  .month-total-values { display: flex; flex-wrap: wrap; gap: 8px 20px; min-width: 0; font-size: 14px; }
+  strong { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  @media (max-width: 720px) {
+    margin-left: 0;
+    padding: 14px 16px;
+    flex-direction: column;
+    gap: 6px;
+    .month-total-values { max-width: 100%; }
+  }
+`;
+
+const ForecastNote = styled.p`
+  margin: -6px 0 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--desk-muted);
+`;
 
 const Agenda = styled.div`
   display: none;
@@ -122,11 +192,13 @@ const CalendarViewport = styled.div`
     outline-offset: 3px;
   }
   .calendar { min-width: 700px; }
-  .calendar-day-total {
-    font-size: 12px;
+  && .calendar-day-total {
+    font-size: 13px;
+    font-weight: 700;
     line-height: 1.5;
-    color: var(--desk-muted);
+    color: var(--desk-ink);
     font-variant-numeric: tabular-nums;
+    text-decoration: none;
   }
   @media (max-width: 720px) {
     display: none;

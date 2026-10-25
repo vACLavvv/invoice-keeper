@@ -23,6 +23,7 @@ import (
 	"invoice-keeper/internal/app/security"
 	"invoice-keeper/internal/app/store"
 	"invoice-keeper/internal/app/wallet"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 const cookieName = "invoice_session"
@@ -64,6 +65,12 @@ func (s *Server) SetBotUsername(name string) { s.botUsername.Store(name) }
 
 // NewServer prepares routes and materializes periods. The reminder loop is started separately.
 func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Options) (*Server, error) {
+	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
+		return nil, err
+	}
+	if err := webhooks.ImportLegacy(db, settings); err != nil {
+		return nil, err
+	}
 	today := opts.Today
 	if today == nil {
 		today = func() time.Time { return schedule.Today(settings.Location()) }
@@ -82,9 +89,6 @@ func NewServer(settings *config.Settings, db *store.DB, assets fs.FS, opts Optio
 	s.notifier = opts.Notifier
 	if s.notifier == nil && settings.TelegramBotToken != "" {
 		s.notifier = notify.TelegramNotifier(settings, "")
-	}
-	if err := ConfigureEncryption(db, settings.EncryptionKey); err != nil {
-		return nil, err
 	}
 	if err := db.Write(func(tx *sql.Tx) error { return schedule.Materialize(tx, today()) }); err != nil {
 		return nil, err
@@ -528,12 +532,16 @@ func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.currentUser(r); err != nil {
 		return err
 	}
+	channels, err := s.channelNames()
+	if err != nil {
+		return err
+	}
 	return writeJSON(w, 200, map[string]any{
 		"timezone": s.Settings.Timezone, "today": schedule.FormatDate(s.Today()), "telegram_enabled": s.Settings.TelegramEnabled,
 		"team_chat": s.Settings.TelegramEnabled && s.Settings.TelegramChatID != "", "bot_username": s.BotUsername(),
 		"reminder_days": 3, "reminder_interval_seconds": s.Settings.ReminderInterval,
 		"support_telegram": s.Settings.SupportTelegram, "support_email": s.Settings.SupportEmail,
-		"channels": s.channelNames(), "overdue_reminders": s.Settings.OverdueReminders, "sanctions_screening": s.Settings.OFACEnabled, "key_idle_days": s.Settings.KeyIdleDays,
+		"channels": channels, "overdue_reminders": s.Settings.OverdueReminders, "sanctions_screening": s.Settings.OFACEnabled, "key_idle_days": s.Settings.KeyIdleDays,
 		"security": map[string]bool{"encryption": security.Enabled(), "login_alerts": s.Settings.LoginAlerts && s.notifier != nil,
 			"paid_linked_only": s.Settings.PaidLinkedOnly},
 	})

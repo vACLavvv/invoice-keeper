@@ -9,7 +9,7 @@ import { SkeletonRows } from './Skeleton';
 
 type Failure = {
   queue: 'reminders' | 'deliveries' | 'email_verification'; occurrence_id: number;
-  kind: 'due' | 'overdue' | 'verification'; channel: string; title: string; due_date: string;
+  kind: 'due' | 'overdue' | 'verification'; channel: string; endpoint_name?: string; title: string; due_date: string;
   state: 'failed' | 'uncertain'; error: string; attempts: number; attempted_at: number | null;
   retry_after: number; can_retry: boolean; contact_id?: number; failure_token: string;
 };
@@ -38,7 +38,7 @@ export function DeliveryFailures() {
     finally { setBusy(null); }
   }
   const timestamp = (value: number | null) => value ? new Intl.DateTimeFormat(locale(), { timeZone: settings.timezone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value * 1000)) : '—';
-  const channel = (value: string) => value.startsWith('telegram') ? 'Telegram' : value.startsWith('email') ? 'Email' : value === 'max' ? 'MAX' : value === 'webhook' ? 'Webhook' : value;
+  const channel = (value: string) => value.startsWith('telegram') ? 'Telegram' : value.startsWith('email') ? 'Email' : value === 'max' ? 'MAX' : value.startsWith('webhook') ? 'Webhook' : value;
   return <Panel aria-labelledby="delivery-errors-title">
     <div className="delivery-errors-heading"><div><h2 id="delivery-errors-title">{t('Ошибки отправки')}</h2><p>{t('Неудачные отправки сохранены. Повтор доступен, когда сообщение точно не доставлено.')}</p></div>
       <label className="form-field"><span className="sr-only">{t('Состояние отправки')}</span><select value={state} onChange={(event) => { setState(event.target.value); setPage(1); }}>
@@ -50,7 +50,7 @@ export function DeliveryFailures() {
     {!data ? (error ? null : <SkeletonRows rows={2} />) : !data.items.length ? <p className="delivery-errors-empty">{t('В этой очереди ошибок нет.')}</p> : <ul>
       {data.items.map((item) => <li key={identity(item)}>
         <div className="delivery-failure-copy"><div className="delivery-failure-title"><b>{item.title || t('Уведомление')}</b><span className={`pill ${item.state === 'failed' ? 'overdue' : 'unpaid'}`}>{item.state === 'failed' ? t('Ошибка отправки') : t('Результат неизвестен')}</span></div>
-          <p>{channel(item.channel)} · {t('Попыток: {n}', { n: item.attempts })} · {timestamp(item.attempted_at)}</p>
+          <p>{channel(item.channel)}{item.endpoint_name && ` · ${item.endpoint_name}`} · {t('Попыток: {n}', { n: item.attempts })} · {timestamp(item.attempted_at)}</p>
           {item.error && <p className="delivery-failure-error">{item.error}</p>}
           {item.state === 'uncertain' && <p>{t('Ответ сервиса потерян: сообщение могло дойти. Проверьте у получателя — автоматический повтор может создать дубль.')}</p>}
           {item.queue === 'email_verification' && <p>{t('Новое письмо подтверждения можно отправить из аккаунта или карточки пользователя в разделе «Команда».')}</p>}

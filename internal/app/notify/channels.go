@@ -32,6 +32,7 @@ import (
 	"invoice-keeper/internal/app/config"
 	"invoice-keeper/internal/app/schedule"
 	"invoice-keeper/internal/app/security"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 // --- MAX ---
@@ -302,15 +303,11 @@ func publicOnly(_, address string, _ syscall.RawConn) error {
 	if err != nil {
 		return err
 	}
-	ip = ip.Unmap()
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() ||
-		ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() || carrierNAT.Contains(ip) {
+	if !webhooks.PublicAddress(ip) {
 		return ErrPrivateAddress
 	}
 	return nil
 }
-
-var carrierNAT = netip.MustParsePrefix("100.64.0.0/10")
 
 // WebhookClient connects only to public addresses unless WEBHOOK_ALLOW_PRIVATE is set; it ignores
 // HTTP(S)_PROXY, which would otherwise make the dialled address the proxy's.

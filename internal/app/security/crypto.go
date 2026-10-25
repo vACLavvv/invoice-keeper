@@ -177,7 +177,7 @@ func encryptExisting(tx *sql.Tx) error {
 		id    int64
 		value string
 	}
-	textColumns := []struct{ table, column string }{{"recurring_payments", "payment_details"}, {"receipts", "url"}, {"email_contacts", "token_secret"}, {"idempotency_keys", "response"}}
+	textColumns := []struct{ table, column string }{{"recurring_payments", "payment_details"}, {"receipts", "url"}, {"email_contacts", "token_secret"}, {"idempotency_keys", "response"}, {"webhook_endpoints", "url"}, {"webhook_endpoints", "secret"}}
 	for _, c := range textColumns {
 		identifier := "id"
 		if c.table == "idempotency_keys" {

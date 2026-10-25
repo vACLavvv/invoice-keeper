@@ -5356,6 +5356,416 @@
           }
         }
       }
+    },
+    "/api/v1/webhooks": {
+      "get": {
+        "operationId": "listWebhooks",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Сохранённые получатели автоматических напоминаний",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Добавить получателя (до 50 адресов)",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointCreate"
+              }
+            }
+          }
+        },
+        "description": "Администратор добавляет HTTP(S) адрес и необязательный HMAC-секрет. Новые адреса должны быть публичными: проверяются literal IP и адрес сокета после DNS. Включение немедленно ставит подходящие напоминания в независимую очередь получателя. Секрет не возвращается; URL хранится как чувствительное поле."
+      }
+    },
+    "/api/v1/webhooks/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "patch": {
+        "operationId": "updateWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Изменить получателя и виды напоминаний",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointPatch"
+              }
+            }
+          }
+        },
+        "description": "Пропущенные поля сохраняются; secret:\"\" удаляет секрет. Для перенесённого адреса url_readonly=true: url в ответе скрывает credentials/query, пропущенный url сохраняет оригинал. Замена URL требует публичного адреса. Смена URL или секрета во время начатой отправки отклоняется. Отключение отменяет ещё не начатые отправки, уже начатую отозвать невозможно. Отправленные/неоднозначные/неудачные доставки автоматически не повторяются."
+      },
+      "delete": {
+        "operationId": "deleteWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Удалить получателя, сохранив журнал доставки",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Успешно"
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}/test": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "post": {
+        "operationId": "testWebhook",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Один подписанный webhook.test на сохранённый адрес",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConsoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "description": "Только явная проверка администратора, в том числе отключённого получателя. Фиксированный JSON webhook.test, HMAC при наличии секрета, отдельный test delivery ID. Финансовые статусы не меняет и автоматическую очередь не затрагивает. Без редиректов/повторов, 10 секунд, не более 2 одновременных тестов/ручных запросов."
+      }
+    },
+    "/api/v1/webhooks/{id}/deliveries": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "История автоматических отправок одному получателю",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешно",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; изменения требуют CSRF"
+          },
+          "404": {
+            "description": "Получатель не найден"
+          },
+          "409": {
+            "description": "Адрес уже добавлен или отправка по этому адресу уже выполняется"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных тестов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка"
+          }
+        },
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 25,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -8107,6 +8517,10 @@
           },
           "failure_token": {
             "type": "string"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "description": "Название получателя webhook, включая удалённых; channel остаётся стабильным ключом очереди."
           }
         }
       },
@@ -8285,6 +8699,285 @@
           "body",
           "truncated",
           "error"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookDeliverySummary": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "uncertain",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempted_at": {
+            "type": "integer",
+            "nullable": true
+          },
+          "sent_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "attempted_at",
+          "sent_at",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "url_readonly": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_due": {
+            "type": "boolean"
+          },
+          "notify_overdue": {
+            "type": "boolean"
+          },
+          "has_secret": {
+            "type": "boolean"
+          },
+          "allow_private": {
+            "type": "boolean"
+          },
+          "legacy_source": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "last_delivery": {
+            "type": "object",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WebhookDeliverySummary"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "url_readonly",
+          "enabled",
+          "notify_due",
+          "notify_overdue",
+          "has_secret",
+          "allow_private",
+          "legacy_source",
+          "created_at",
+          "updated_at",
+          "last_delivery"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpointList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "items",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpointCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 4096,
+            "writeOnly": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_due": {
+            "type": "boolean"
+          },
+          "notify_overdue": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookEndpointPatch": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "secret": {
+            "type": "string",
+            "maxLength": 4096,
+            "writeOnly": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "notify_due": {
+            "type": "boolean"
+          },
+          "notify_overdue": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "uncertain",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempted_at": {
+            "type": "integer",
+            "nullable": true
+          },
+          "sent_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string"
+          },
+          "occurrence_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "due",
+              "overdue"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retry_after": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "state",
+          "attempted_at",
+          "sent_at",
+          "error",
+          "occurrence_id",
+          "kind",
+          "attempts",
+          "retry_after"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookDeliveryPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDelivery"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pages": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total",
+          "pages"
         ],
         "additionalProperties": false
       }

@@ -6,19 +6,24 @@ import (
 )
 
 // channelNames is what the panel shows in «Помощь» and the journal.
-func (s *Server) channelNames() map[string]bool {
+func (s *Server) channelNames() (map[string]bool, error) {
+	var webhook bool
+	if err := s.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM webhook_endpoints WHERE enabled=1 AND deleted_at IS NULL AND (notify_due=1 OR notify_overdue=1))").Scan(&webhook); err != nil {
+		return nil, err
+	}
 	return map[string]bool{
 		"telegram": s.Settings.TelegramEnabled, "max": s.Worker.Channels["max"] != nil,
-		"email": s.Worker.Channels["email"] != nil, "webhook": s.Worker.Channels["webhook"] != nil,
-	}
+		"email": s.Worker.Channels["email"] != nil, "webhook": webhook || s.Worker.Channels["webhook"] != nil,
+	}, nil
 }
 
 func (s *Server) deliveriesList(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.adminUser(r); err != nil {
 		return err
 	}
-	rows, err := s.DB.Query(`SELECT d.occurrence_id,d.kind,d.channel,d.state,d.attempts,d.attempted_at,d.sent_at,d.error,r.title,o.due_date,d.recipient
+	rows, err := s.DB.Query(`SELECT d.occurrence_id,d.kind,d.channel,d.state,d.attempts,d.attempted_at,d.sent_at,d.error,r.title,o.due_date,COALESCE(e.name,d.recipient)
 		FROM deliveries d JOIN payment_occurrences o ON o.id=d.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id
+		LEFT JOIN webhook_endpoints e ON d.channel='webhook:'||e.id
 		ORDER BY COALESCE(d.attempted_at,0) DESC, o.due_date DESC LIMIT 200`)
 	if err != nil {
 		return err
@@ -49,6 +54,9 @@ func (s *Server) deliveriesList(w http.ResponseWriter, r *http.Request) error {
 		}
 		if strings.HasPrefix(d.Channel, "email:") {
 			d.Channel = "email_personal"
+		}
+		if strings.HasPrefix(d.Channel, "webhook:") {
+			d.Channel = "webhook"
 		}
 		items = append(items, d)
 	}

@@ -8,6 +8,7 @@ import (
 	"invoice-keeper/internal/app/audit"
 	"invoice-keeper/internal/app/notify"
 	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 // Failed is a confirmed rejection/exhausted safe retry; uncertain may already
@@ -17,6 +18,7 @@ type deliveryFailure struct {
 	OccurrenceID int64  `json:"occurrence_id"`
 	Kind         string `json:"kind"`
 	Channel      string `json:"channel"`
+	EndpointName string `json:"endpoint_name,omitempty"`
 	Title        string `json:"title"`
 	DueDate      string `json:"due_date"`
 	State        string `json:"state"`
@@ -94,6 +96,11 @@ func (s *Server) deliveryFailures(w http.ResponseWriter, r *http.Request) error 
 		}
 		for i := range result.Items {
 			item := &result.Items[i]
+			if id, ok := webhooks.ParseChannel(item.Channel); ok {
+				if err := q.QueryRow("SELECT name FROM webhook_endpoints WHERE id=?", id).Scan(&item.EndpointName); err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+			}
 			if item.State == "failed" {
 				item.CanRetry, err = s.Worker.CanRetryFailed(q, item.Queue, item.OccurrenceID, item.Kind, item.Channel, item.recipient)
 				if err != nil {

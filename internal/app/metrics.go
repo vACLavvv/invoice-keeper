@@ -53,7 +53,7 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	// Finish database reads before writing a 200: a broken scrape must not look healthy.
 	rows, err := s.DB.QueryContext(r.Context(), `SELECT 'telegram',state,count(*) FROM reminders GROUP BY state
- UNION ALL SELECT CASE WHEN channel LIKE 'email:%' THEN 'email' WHEN channel LIKE 'telegram:%' THEN 'telegram' ELSE channel END,state,count(*) FROM deliveries GROUP BY 1,2
+ UNION ALL SELECT CASE WHEN channel LIKE 'email:%' THEN 'email' WHEN channel LIKE 'telegram:%' THEN 'telegram' WHEN channel LIKE 'webhook:%' THEN 'webhook' ELSE channel END,state,count(*) FROM deliveries GROUP BY 1,2
  UNION ALL SELECT 'telegram_personal',state,count(*) FROM personal_reminders GROUP BY state
  UNION ALL SELECT 'email_verification',welcome_state,count(*) FROM email_contacts GROUP BY welcome_state`)
 	if err != nil {

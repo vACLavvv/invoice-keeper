@@ -15,6 +15,7 @@ import (
 	"invoice-keeper/internal/app/schedule"
 	"invoice-keeper/internal/app/security"
 	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 // MaxDeliveryAttempts stops retrying a certainly-undelivered message (no connection, server busy).
@@ -49,6 +50,9 @@ func (w *ReminderWorker) broadcastChannels() map[string][]string {
 }
 
 func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
+	if err := w.enqueueWebhooks(tx, today); err != nil {
+		return err
+	}
 	windows := map[string][]any{
 		"due":     {"o.due_date>=? AND o.due_date<=?", schedule.FormatDate(today), schedule.FormatDate(today.AddDate(0, 0, 3))},
 		"overdue": {"o.due_date>=? AND o.due_date<?", schedule.FormatDate(today.AddDate(0, 0, -overdueWindow)), schedule.FormatDate(today)},
@@ -277,6 +281,20 @@ func (w *ReminderWorker) deliver() (bool, error) {
 }
 
 func (w *ReminderWorker) deliveryEligible(tx store.Querier, row ReminderRow, channel string) (bool, error) {
+	if id, ok := webhooks.ParseChannel(channel); ok {
+		endpoint, err := webhooks.Get(tx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil || !endpoint.EnabledFor(row.Kind) {
+			return false, err
+		}
+		duplicate, err := webhookAlreadyDispatched(tx, endpoint, row.OccurrenceID, row.Kind)
+		if err != nil || duplicate {
+			return false, err
+		}
+		return stillPayable(tx, row.OccurrenceID)
+	}
 	if row.Kind == "overdue" && !w.Settings.OverdueReminders {
 		return false, nil
 	}
@@ -326,8 +344,8 @@ func DefaultChannels(s *config.Settings) map[string]Sender {
 	if s.SMTPHost != "" {
 		channels["email"] = EmailSender(s)
 	}
-	if s.WebhookURL != "" {
-		channels["webhook"] = WebhookSender(s, nil)
-	}
+	// WEBHOOK_URL is imported once into webhook_endpoints by server bootstrap.
+	// Explicit Channels["webhook"] transports remain available to embedded users
+	// and older tests, but .env can no longer resurrect a disabled destination.
 	return channels
 }

@@ -327,6 +327,20 @@ func (w *ReminderWorker) tick() (bool, error) {
 }
 
 func (w *ReminderWorker) drainBatch() (bool, error) {
+	// Independent webhook requests must not hold up Telegram/email. Only this
+	// pass owns the two-slot webhook pool; Wait/Run still wait for its completion.
+	type result struct {
+		more bool
+		err  error
+	}
+	webhookDone := make(chan result, 1)
+	go func() { more, err := w.deliverWebhooks(); webhookDone <- result{more, err} }()
+	more, err := w.drainOtherChannels()
+	webhook := <-webhookDone
+	return more || webhook.more, errors.Join(err, webhook.err)
+}
+
+func (w *ReminderWorker) drainOtherChannels() (bool, error) {
 	more, err := w.sendEmailVerifications()
 	if err != nil {
 		return false, err

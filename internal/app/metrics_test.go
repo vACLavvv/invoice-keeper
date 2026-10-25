@@ -69,3 +69,29 @@ func TestMetricsBusinessGaugesAndAPIEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func TestMetricsAggregatesWebhookRecipientsWithoutAddressLabels(t *testing.T) {
+	e := setup(t)
+	c := e.client()
+	c.signIn()
+	e.settings.MetricsToken = strings.Repeat("m", 40)
+	payment := c.createPayment(map[string]any{"title": "Private webhook payment", "frequency": "once"})
+	var occurrence int64
+	if err := e.db.QueryRow("SELECT id FROM payment_occurrences WHERE recurring_payment_id=? LIMIT 1", payment["id"]).Scan(&occurrence); err != nil {
+		t.Fatal(err)
+	}
+	for _, channel := range []string{"webhook:1", "webhook:2"} {
+		if _, err := e.db.Exec("INSERT INTO deliveries(occurrence_id,kind,channel,state) VALUES(?,'due',?,'failed')", occurrence, channel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := c.do("GET", "/api/v1/metrics", nil, "Authorization", "Bearer "+e.settings.MetricsToken)
+	expect(t, "scrape", response.status, 200)
+	body := string(response.body)
+	if !strings.Contains(body, "keeper_deliveries{channel=\"webhook\",state=\"failed\"} 2\n") {
+		t.Fatal("webhook metrics must aggregate per-recipient rows")
+	}
+	if strings.Contains(body, "webhook:") || strings.Contains(body, "Private webhook payment") {
+		t.Fatal("metrics contain recipient identities")
+	}
+}

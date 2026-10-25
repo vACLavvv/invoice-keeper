@@ -27,6 +27,8 @@ const channelNames = (): Record<Delivery['channel'], string> => ({
 });
 
 const actions = (): Record<string, string> => ({
+  'webhook.create': t('Добавлен получатель вебхука'), 'webhook.update': t('Изменён получатель вебхука'),
+  'webhook.delete': t('Удалён получатель вебхука'), 'webhook.test': t('Отправлен тест получателю вебхука'),
   'delivery.retry': t('Повтор отправки'), 'webhook.request.started': t('Отправлен запрос к вебхуку'), 'webhook.request.completed': t('Получен результат запроса к вебхуку'),
   login: t('Вход в систему'), 'recurring.create': t('Добавлен регулярный платёж'), 'recurring.archive': t('Прекращён регулярный платёж'),
   'recurring.update': t('Изменён регулярный платёж'), 'recurring.pause': t('Платёж поставлен на паузу'), 'recurring.resume': t('Платёж снят с паузы'),

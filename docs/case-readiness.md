@@ -25,7 +25,7 @@
 |---|---|
 | Календарь и итоги на дату | «Календарь»; API forecast/summary |
 | Email через SMTP | Подтверждённые адреса участников, личные напоминания; `email_test.go` |
-| Webhook | HMAC-SHA256, delivery ID и защита SSRF; `channels_test.go` |
+| Webhook | Несколько получателей из панели, отдельные очереди, HMAC-SHA256, delivery ID и защита SSRF; `webhook_endpoints_test.go`, `notify/webhook_deliveries_test.go`, `channels_test.go` |
 | Другие каналы | MAX, личный Telegram; `telegram_delivery_test.go` проверяет сохраняемую очередь, повторы и повторную проверку привязки; реальная доставка зависит от настроек |
 | Логи входа и действий | Журнал + audit chain; названия платежей/сроки, поиск и фильтры; `audit_http_test.go`; структурированные HTTP-логи без секретов |
 | «Оплачено» в Telegram | Проверка привязанного аккаунта; одна транзакция/период; защита двойного нажатия |

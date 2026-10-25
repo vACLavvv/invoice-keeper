@@ -3,8 +3,10 @@ package notify
 import (
 	"database/sql"
 	"errors"
-	"invoice-keeper/internal/app/store"
 	"strings"
+
+	"invoice-keeper/internal/app/store"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 var ErrNotRetryable = errors.New("Попытка уже изменилась или её нельзя безопасно повторить")
@@ -19,6 +21,9 @@ func (w *ReminderWorker) CanRetryFailed(q store.Querier, queue string, id int64,
 	}
 	if queue != "deliveries" {
 		return false, nil
+	}
+	if _, ok := webhooks.ParseChannel(channel); ok {
+		return w.deliveryEligible(q, ReminderRow{OccurrenceID: id, Kind: kind}, channel)
 	}
 	sender, _ := w.senderFor(channel)
 	if sender == nil {

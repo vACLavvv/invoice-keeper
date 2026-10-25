@@ -25,6 +25,7 @@ import (
 	"invoice-keeper/internal/app/audit"
 	"invoice-keeper/internal/app/config"
 	"invoice-keeper/internal/app/notify"
+	"invoice-keeper/internal/app/webhooks"
 )
 
 const consoleBodyLimit = 64 << 10
@@ -207,26 +208,8 @@ func (s *Server) consoleDestination(input consoleRequest) (*url.URL, bool, error
 	return u, s.Settings.WebhookAllowPrivate, nil
 }
 
-// Extra reserved ranges are blocked here in addition to WebhookClient's socket
-// check. Resolution is pinned to the validated IP, preventing DNS rebinding.
-var consoleReserved = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("192.0.2.0/24"), netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"), netip.MustParsePrefix("198.51.100.0/24"), netip.MustParsePrefix("203.0.113.0/24"), netip.MustParsePrefix("240.0.0.0/4"),
-	netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("::/96"), netip.MustParsePrefix("64:ff9b::/96"), netip.MustParsePrefix("64:ff9b:1::/48"),
-	netip.MustParsePrefix("100::/64"), netip.MustParsePrefix("2001::/32"), netip.MustParsePrefix("2001:db8::/32"), netip.MustParsePrefix("2002::/16"),
-}
-
 func consolePublic(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	if !ip.IsValid() || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-		return false
-	}
-	for _, prefix := range consoleReserved {
-		if prefix.Contains(ip) {
-			return false
-		}
-	}
-	return true
+	return webhooks.PublicAddress(ip)
 }
 func consoleClient(allowPrivate bool) *http.Client {
 	client := notify.WebhookClient(&config.Settings{WebhookAllowPrivate: allowPrivate})
@@ -350,10 +333,24 @@ func (s *Server) webhookConsoleRequest(w http.ResponseWriter, r *http.Request) e
 	if err != nil {
 		return err
 	}
+	var secretTarget *url.URL
+	if input.Destination != "custom" {
+		secretTarget, _ = url.Parse(s.Settings.WebhookURL)
+	}
+	result, err := s.executeWebhookConsole(r, admin, input, target, allowPrivate, s.Settings.WebhookSecret, secretTarget)
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, 200, result)
+}
+
+// executeWebhookConsole shares limits and transport protections with one-click
+// endpoint tests. It never holds a database transaction while awaiting a receiver.
+func (s *Server) executeWebhookConsole(r *http.Request, admin *User, input consoleRequest, target *url.URL, allowPrivate bool, secret string, secretTarget *url.URL) (consoleResponse, error) {
 	for {
 		active := s.webhookConsoleActive.Load()
 		if active >= 2 {
-			return &apiError{Status: 429, Detail: "Уже выполняются два запроса. Дождитесь результата.", Header: http.Header{"Retry-After": []string{"1"}}}
+			return consoleResponse{}, &apiError{Status: 429, Detail: "Уже выполняются два запроса. Дождитесь результата.", Header: http.Header{"Retry-After": []string{"1"}}}
 		}
 		if s.webhookConsoleActive.CompareAndSwap(active, active+1) {
 			break
@@ -362,13 +359,13 @@ func (s *Server) webhookConsoleRequest(w http.ResponseWriter, r *http.Request) e
 	defer s.webhookConsoleActive.Add(-1)
 	id, err := consoleRequestID()
 	if err != nil {
-		return err
+		return consoleResponse{}, err
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), consoleTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, input.Method, target.String(), strings.NewReader(input.Body))
 	if err != nil {
-		return fail(422, "Не удалось составить HTTP-запрос")
+		return consoleResponse{}, fail(422, "Не удалось составить HTTP-запрос")
 	}
 	request.GetBody = nil
 	request.Close = true
@@ -382,25 +379,19 @@ func (s *Server) webhookConsoleRequest(w http.ResponseWriter, r *http.Request) e
 	if input.Destination == "configured" && input.Method == "POST" {
 		request.Header.Set("X-Invoice-Keeper-Event", "webhook.test")
 		request.Header.Set("X-Invoice-Keeper-Delivery", "test:"+id)
-		if s.Settings.WebhookSecret != "" {
-			request.Header.Set("X-Invoice-Keeper-Signature", notify.WebhookSignature(s.Settings.WebhookSecret, []byte(input.Body)))
+		if secret != "" {
+			request.Header.Set("X-Invoice-Keeper-Signature", notify.WebhookSignature(secret, []byte(input.Body)))
 		}
 	}
 	if err := s.consoleAudit(admin.Username, "webhook.request.started", id, input.Method, target.Hostname(), 0); err != nil {
-		return err
+		return consoleResponse{}, err
 	}
 	started := time.Now()
 	result := consoleResponse{Headers: []consoleHeader{}}
 	client := consoleClient(allowPrivate)
 	defer client.CloseIdleConnections()
 	response, sendErr := client.Do(request)
-	// Custom query parameters belong to the operator and may be ordinary values
-	// such as ?limit=1. Only the server-configured URL can contain hidden secrets.
-	var secretTarget *url.URL
-	if input.Destination != "custom" {
-		secretTarget, _ = url.Parse(s.Settings.WebhookURL)
-	}
-	redact := consoleRedactor(s.Settings, secretTarget, input.Headers)
+	redact := consoleRedactor(&config.Settings{WebhookSecret: secret}, secretTarget, input.Headers)
 	if sendErr != nil {
 		switch {
 		case errors.Is(sendErr, notify.ErrPrivateAddress):
@@ -455,5 +446,5 @@ func (s *Server) webhookConsoleRequest(w http.ResponseWriter, r *http.Request) e
 		log.Print("Webhook console: could not record completion in audit log")
 		result.Error = "Запрос завершён, но результат не записан в журнал. Не повторяйте его автоматически."
 	}
-	return writeJSON(w, 200, result)
+	return result, nil
 }

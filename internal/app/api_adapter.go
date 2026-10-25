@@ -316,3 +316,22 @@ func (a apiAdapter) GetWebhookConsole(w http.ResponseWriter, r *http.Request) {
 func (a apiAdapter) SendWebhookConsoleRequest(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.webhookConsoleRequest)
 }
+
+func (a apiAdapter) ListWebhooks(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhooksList)
+}
+func (a apiAdapter) CreateWebhook(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhooksCreate)
+}
+func (a apiAdapter) UpdateWebhook(w http.ResponseWriter, r *http.Request, _ int64) {
+	a.s.serveAPI(w, r, a.s.webhooksUpdate)
+}
+func (a apiAdapter) DeleteWebhook(w http.ResponseWriter, r *http.Request, _ int64) {
+	a.s.serveAPI(w, r, a.s.webhooksDelete)
+}
+func (a apiAdapter) TestWebhook(w http.ResponseWriter, r *http.Request, _ int64) {
+	a.s.serveAPI(w, r, a.s.webhooksTest)
+}
+func (a apiAdapter) ListWebhookDeliveries(w http.ResponseWriter, r *http.Request, _ int64, _ api.ListWebhookDeliveriesParams) {
+	a.s.serveAPI(w, r, a.s.webhooksHistory)
+}

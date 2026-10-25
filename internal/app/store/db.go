@@ -157,7 +157,7 @@ func allowOneTime(tx *sql.Tx) error {
 	return nil
 }
 
-const schemaVersion = 9
+const schemaVersion = 10
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.
@@ -200,7 +200,7 @@ func (db *DB) initialize() error {
 		return errors.New("Неизвестная версия базы. Запуск остановлен без изменения данных.")
 	}
 	return db.Write(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema + emailSchema + idempotencySchema); err != nil {
+		if _, err := tx.Exec(schema + deliverySchema + sanctionsSchema + auditSchema + pairingSchema + emailSchema + idempotencySchema + webhookSchema); err != nil {
 			return err
 		}
 		for _, c := range addedColumns {

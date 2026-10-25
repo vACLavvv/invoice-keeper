@@ -70,7 +70,7 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 			channel = "other"
 		}
 		switch state {
-		case "pending", "sending", "sent", "uncertain", "failed", "cancelled":
+		case "pending", "sending", "sent", "uncertain", "failed", "cancelled", "verified", "expired":
 		default:
 			state = "other"
 		}
@@ -104,7 +104,7 @@ func (s *Server) prometheusMetrics(w http.ResponseWriter, r *http.Request) error
 	}
 	fmt.Fprintln(&body, "# HELP keeper_deliveries Notification records by transport and state.\n# TYPE keeper_deliveries gauge")
 	for _, ch := range []string{"telegram", "telegram_personal", "email", "email_verification", "max", "webhook", "other"} {
-		for _, st := range []string{"pending", "sending", "sent", "uncertain", "failed", "cancelled", "other"} {
+		for _, st := range []string{"pending", "sending", "sent", "uncertain", "failed", "cancelled", "verified", "expired", "other"} {
 			fmt.Fprintf(&body, "keeper_deliveries{channel=%q,state=%q} %d\n", ch, st, counts[ch][st])
 		}
 	}

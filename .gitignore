@@ -9,3 +9,6 @@ output/
 *.sqlite3*
 
 .taste-skill/
+
+__pycache__/
+*.pyc

@@ -99,7 +99,9 @@ func TestWebhookPayloadSignatureAndOutcomes(t *testing.T) {
 	status = 400
 	expect(t, "rejected not retried", send(row).State, "uncertain")
 	receiver.Close()
-	expect(t, "unreachable retried", send(row).State, "pending")
+	// A stale keep-alive may fail after writing, which is correctly ambiguous. A fresh
+	// transport makes this specifically a refused connection, safe to retry on every OS.
+	expect(t, "unreachable retried", WebhookSender(settings, nil)(row).State, "pending")
 }
 
 func TestEmailReminder(t *testing.T) {

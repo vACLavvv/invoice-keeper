@@ -15,6 +15,8 @@ import (
 
 type stubBackend struct{}
 
+func (stubBackend) PaymentPage(bool, int) (PaymentPage, error) { return PaymentPage{Pages: 1}, nil }
+
 func (stubBackend) Today() time.Time                                 { return time.Date(2026, 1, 28, 0, 0, 0, 0, time.UTC) }
 func (stubBackend) TodoText(bool) (string, error)                    { return "", nil }
 func (stubBackend) MarkPaid(int64, string) (bool, error)             { return false, ErrNotFound }

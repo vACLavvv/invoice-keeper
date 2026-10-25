@@ -4,6 +4,9 @@ package app
 
 import (
 	"errors"
+	"fmt"
+	"invoice-keeper/internal/app/schedule"
+	"strings"
 	"time"
 
 	"invoice-keeper/internal/app/bot"
@@ -40,4 +43,35 @@ func (b botBackend) LinkTelegram(code string, from bot.User, chatID int64) (stri
 		}
 	}
 	return name, err
+}
+
+// PaymentPage shares the web ledger's dates, deletion rules and separate currencies.
+func (b botBackend) PaymentPage(onlyOverdue bool, page int) (bot.PaymentPage, error) {
+	until := b.s.Today().AddDate(0, 0, 7)
+	items, err := b.s.loadOccurrences(b.s.DB, occurrenceFilter{to: &until})
+	if err != nil {
+		return bot.PaymentPage{}, err
+	}
+	result := bot.PaymentPage{}
+	totals := map[string]int64{}
+	for _, o := range items {
+		if o.Status != "overdue" && (onlyOverdue || o.Status != "unpaid") {
+			continue
+		}
+		result.Items = append(result.Items, bot.PaymentItem{ID: o.ID, Title: o.Title, Amount: o.Amount, Currency: o.Currency, DueDate: o.DueDate, Status: o.Status})
+		totals[o.Currency] += o.amountCents
+	}
+	result.Total = len(result.Items)
+	result.Pages = max(1, (result.Total+4)/5)
+	result.Page = min(max(page, 0), result.Pages-1)
+	start := result.Page * 5
+	result.Items = result.Items[start:min(start+5, result.Total)]
+	var parts []string
+	for _, c := range currencies {
+		if totals[c] > 0 {
+			parts = append(parts, fmt.Sprintf("%s %s", schedule.Money(totals[c]), c))
+		}
+	}
+	result.Totals = strings.Join(parts, " · ")
+	return result, nil
 }

@@ -1,0 +1,29 @@
+groups:
+  - name: keeper
+    rules:
+      - alert: KeeperUnavailable
+        expr: up{job="invoice-keeper"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: 'Invoice Keeper is unavailable or its metrics credential is invalid'
+          description: 'Check systemctl status invoice-keeper and journalctl -u invoice-keeper. Follow docs/operations.md.'
+      - alert: KeeperSchedulerStalled
+        expr: time() - keeper_scheduler_last_success_timestamp_seconds > clamp_min(keeper_scheduler_interval_seconds * 3, 180)
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: 'Reminder scheduler has stopped completing passes'
+      - alert: KeeperDeliveryNeedsReview
+        expr: sum(keeper_deliveries{state=~"uncertain|failed"}) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'Notification delivery needs manual review in the application journal'
+          description: 'Do not blindly retry uncertain deliveries: the recipient may already have received them.'
+      - alert: KeeperHTTPFailures
+        expr: sum(rate(keeper_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(keeper_http_requests_total[5m])), 0.001) > 0.05 and sum(increase(keeper_http_requests_total[5m])) > 10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: 'More than 5% of application requests fail'

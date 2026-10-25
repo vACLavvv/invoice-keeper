@@ -97,19 +97,27 @@ export default function CalendarPage() {
       <Agenda aria-label={t('Платежи по датам')}>
         {!totalsReady ? <div className="empty-state">{t('Загружаем…')}</div> : agendaDays.length === 0 ? (
           <div className="ledger empty-state"><b>{t('На этот месяц платежей нет')}</b>{t('Выберите другой месяц или добавьте платёж.')}</div>
-        ) : agendaDays.map((day) => (
-          <section className="agenda-day" key={day}>
-            <h2><time dateTime={day}>{new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', weekday: 'short' }).format(new Date(day + 'T12:00:00'))}</time>{day === settings.today && <span>{t('Сегодня')}</span>}</h2>
-            {[...items.filter((item) => item.due_date === day), ...forecast.filter((item) => item.due_date === day)].map((item) => (
-              <button type="button" className="agenda-payment" key={'id' in item ? `period-${item.id}` : `plan-${item.recurring_payment_id}-${day}`} onClick={() => setPaying(item)}>
-                <b>{item.title}</b>
-                <strong>{money(item.amount)} <small>{symbols[item.currency]}</small></strong>
-                <span className={`pill ${isOccurrence(item) ? item.status : 'archived'}`}>{isOccurrence(item) ? statusLabel(item.status) : t('По графику')}</span>
-                <span className="agenda-open" aria-hidden="true">›</span>
-              </button>
-            ))}
-          </section>
-        ))}
+        ) : agendaDays.map((day) => {
+          const daily = [...items.filter((item) => item.due_date === day), ...forecast.filter((item) => item.due_date === day)];
+          const totals = totalsByCurrency(daily);
+          return (
+            <section className="agenda-day" key={day}>
+              <h2><time dateTime={day}>{new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'long', weekday: 'short' }).format(new Date(day + 'T12:00:00'))}</time>{day === settings.today && <span>{t('Сегодня')}</span>}</h2>
+              {daily.map((item) => (
+                <button type="button" className="agenda-payment" key={'id' in item ? `period-${item.id}` : `plan-${item.recurring_payment_id}-${day}`} onClick={() => setPaying(item)}>
+                  <b>{item.title}</b>
+                  <strong>{money(item.amount)} <small>{symbols[item.currency]}</small></strong>
+                  <span className={`pill ${isOccurrence(item) ? item.status : 'archived'}`}>{isOccurrence(item) ? statusLabel(item.status) : t('По графику')}</span>
+                  <span className="agenda-open" aria-hidden="true">›</span>
+                </button>
+              ))}
+              <p className="agenda-day-total">
+                <strong>{t('Итого:')}</strong>
+                {totals.map(([currency, amount]) => <strong key={currency}>{money(amount)} {symbols[currency]}</strong>)}
+              </p>
+            </section>
+          );
+        })}
       </Agenda>
       {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}
     </Shell>
@@ -174,11 +182,13 @@ const Agenda = styled.div`
   h2 > span { color: var(--desk-accent); font-size: 14px; }
   .agenda-payment { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 16px; background: var(--desk-surface); border: 1px solid var(--desk-border); border-radius: 12px; text-align: left; color: var(--desk-ink); }
   .agenda-payment + .agenda-payment { margin-top: 8px; }
-  b { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: 16px; font-weight: 550; }
-  strong { grid-column: 1; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  small { font-size: 14px; font-weight: 400; }
+  .agenda-payment b { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: 16px; font-weight: 550; }
+  .agenda-payment strong { grid-column: 1; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .agenda-payment small { font-size: 14px; font-weight: 400; }
   .pill { grid-column: 1; justify-self: start; }
   .agenda-open { grid-column: 2; grid-row: 2 / 4; align-self: center; font-size: 24px; color: var(--desk-muted); }
+  .agenda-day-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin: 12px 0 0; padding: 10px 16px 0; border-top: 1px solid var(--desk-border); color: var(--desk-ink); line-height: 1.5; }
+  .agenda-day-total strong { min-width: 0; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 `;
 
 const CalendarViewport = styled.div`

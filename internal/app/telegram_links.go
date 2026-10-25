@@ -88,6 +88,9 @@ func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error 
 	}
 	where, args := ownerClause(user)
 	err = s.DB.Write(func(tx *sql.Tx) error {
+		if err := cancelTelegramDeliveries(tx, where, args...); err != nil {
+			return err
+		}
 		result, err := tx.Exec("DELETE FROM telegram_links WHERE "+where, args...) // #nosec G202 -- owner is a constant clause, values are parameters
 		if err != nil {
 			return err
@@ -101,6 +104,14 @@ func (s *Server) myTelegramUnlink(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	return noContent(w)
+}
+
+// A send and unlink both hold the database write lock. A claimed row can therefore be
+// cancelled here only before its network call; the worker checks its state again before sending.
+func cancelTelegramDeliveries(tx *sql.Tx, where string, args ...any) error {
+	_, err := tx.Exec(`UPDATE deliveries SET state='cancelled' WHERE state IN ('pending','sending')
+		AND channel IN (SELECT 'telegram:'||chat_id FROM telegram_links WHERE `+where+`)`, args...) // #nosec G202 -- caller supplies constant owner clauses, values are parameters
+	return err
 }
 
 // linkTelegram consumes a /start code; it returns the panel name the chat now belongs to.
@@ -130,8 +141,14 @@ func (s *Server) linkTelegram(code string, from bot.User, chatID int64) (string,
 				return fail(404, "Пользователь удалён")
 			}
 		}
-		// One Telegram account per panel user and vice versa.
-		if _, err := tx.Exec("DELETE FROM telegram_links WHERE telegram_user_id=? OR "+owner, append([]any{from.ID}, ownerArg...)...); err != nil {
+		// One Telegram account per panel user and vice versa. A replaced association
+		// cannot retain pending reminders for its previous chat or owner.
+		previous := "telegram_user_id=? OR " + owner
+		previousArgs := append([]any{from.ID}, ownerArg...)
+		if err := cancelTelegramDeliveries(tx, previous, previousArgs...); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM telegram_links WHERE "+previous, previousArgs...); err != nil {
 			return err
 		}
 		var dbUser any

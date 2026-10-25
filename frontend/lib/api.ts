@@ -41,7 +41,7 @@ export type Reminder = {
   occurrence_id: number; state: 'pending' | 'sending' | 'sent' | 'uncertain' | 'cancelled'; attempts: number;
   attempted_at: number | null; sent_at: string | null; message_id: string | null; error: string | null; title: string; due_date: string;
 };
-export type AuditEntry = { id: number; actor: string; action: string; entity: string; created_at: string };
+export type AuditEntry = { id: number; actor: string; action: string; entity: string; created_at: string; payment_title?: string; recurring_payment_id?: number; occurrence_id?: number; due_date?: string; payment_state?: 'active' | 'archived' | 'deleted' };
 export type AuditPage = {
   items: AuditEntry[]; total: number; page: number; pages: number; page_size: number; snapshot_id: number; actors: string[]; actions: string[];
 };
@@ -143,3 +143,5 @@ export function query(params: Record<string, string | undefined | null>): string
   const s = q.toString();
   return s ? '?' + s : '';
 }
+
+export type DeletedPayment = { kind: 'payment' | 'period'; recurring_payment_id: number; title: string; amount: string; currency: Currency; due_date: string | null; paid_at: string | null; removed_at: string; active: boolean };

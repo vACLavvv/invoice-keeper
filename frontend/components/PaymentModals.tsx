@@ -356,7 +356,7 @@ export function ArchiveModal({ payment, onClose }: Close & { payment: Recurring 
   const { refresh } = useSession();
   const toast = useToast();
   return (
-    <Modal title={t('Прекратить повторение?')} onClose={onClose}>
+    <Modal title={payment.frequency === 'once' ? t('В архив') : t('Прекратить повторение?')} onClose={onClose}>
       <ModalForm
         onSubmit={async () => {
           await api(`/recurring-payments/${payment.id}`, { method: 'DELETE' });

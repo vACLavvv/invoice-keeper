@@ -286,14 +286,9 @@ func (w *ReminderWorker) tick() error {
 	if err := w.sendEmailVerifications(); err != nil {
 		return err
 	}
-	if w.Settings.TelegramEnabled {
-		if err := w.sendPersonal(today); err != nil {
+	if w.Settings.TelegramEnabled && w.Settings.TelegramChatID != "" {
+		if err := w.sendTeam(); err != nil {
 			return err
-		}
-		if w.Settings.TelegramChatID != "" {
-			if err := w.sendTeam(); err != nil {
-				return err
-			}
 		}
 	}
 	return w.deliver()
@@ -361,76 +356,6 @@ func (w *ReminderWorker) sendTeam() error {
 		}
 		if result.State == "pending" {
 			return nil
-		}
-	}
-	return nil
-}
-
-// sendPersonal writes to linked users in private: the assignee of a payment, and the admin for
-// assigned payments (or for all, when there is no team chat). Only upcoming periods (today…+3 days),
-// so linking an account does not flood it with old debts. One message per period and chat.
-func (w *ReminderWorker) sendPersonal(today time.Time) error {
-	noTeamChat := w.Settings.TelegramChatID == ""
-	for range 20 {
-		if w.stopped() {
-			return nil
-		}
-		var row ReminderRow
-		var chat int64
-		found := false
-		err := w.DB.Write(func(tx *sql.Tx) error {
-			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`,t.chat_id
-				FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
-				JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
-				WHERE r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
-				AND NOT EXISTS (SELECT 1 FROM personal_reminders p WHERE p.occurrence_id=o.id AND p.chat_id=t.chat_id)
-				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, schedule.FormatDate(today), schedule.FormatDate(today.AddDate(0, 0, 3))).
-				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
-					&row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch, &chat)
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			found = true
-			if err := row.openDetails(); err != nil {
-				return err
-			}
-			_, err = tx.Exec("INSERT INTO personal_reminders(occurrence_id,chat_id,state) VALUES(?,?,'sending')", row.OccurrenceID, chat)
-			return err
-		})
-		if err != nil || !found {
-			return err
-		}
-		row.ChatID = itoa(chat)
-		var result SendResult
-		err = w.DB.Write(func(tx *sql.Tx) error {
-			eligible, err := stillPayable(tx, row.OccurrenceID)
-			if err != nil {
-				return err
-			}
-			if !eligible {
-				// No message left the process; allow a later undo to enqueue it again.
-				_, err := tx.Exec("DELETE FROM personal_reminders WHERE occurrence_id=? AND chat_id=?", row.OccurrenceID, chat)
-				return err
-			}
-			result = w.send(row)
-			if result.State == "pending" {
-				// Certainly not delivered (no connection or rate limit): try again on a later pass.
-				_, err := tx.Exec("DELETE FROM personal_reminders WHERE occurrence_id=? AND chat_id=?", row.OccurrenceID, chat)
-				return err
-			}
-			state, sentAt := "failed", any(nil)
-			if result.State == "sent" {
-				state, sentAt = "sent", schedule.Timestamp()
-			}
-			_, err = tx.Exec("UPDATE personal_reminders SET state=?,sent_at=?,error=? WHERE occurrence_id=? AND chat_id=?",
-				state, sentAt, nullable(result.Error), row.OccurrenceID, chat)
-			return err
-		})
-		if err != nil || result.State == "pending" {
-			return err
 		}
 	}
 	return nil

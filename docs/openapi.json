@@ -3918,6 +3918,48 @@
           }
         }
       }
+    },
+    "/api/v1/deleted-payments": {
+      "get": {
+        "tags": [
+          "Регулярные платежи"
+        ],
+        "summary": "Удалённые платежи и отдельные периоды",
+        "operationId": "listDeletedPayments",
+        "description": "Только администратор. Удалённый платёж представляет все свои периоды. Отдельно удалённые периоды видны после восстановления родительского платежа. Восстановление использует существующие /restore; даты, чеки и архив/пауза сохраняются.",
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список от новых удалений к старым",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeletedPayment"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5609,6 +5651,28 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "payment_title": {
+            "type": "string",
+            "description": "Текущее название платежа; подписанная запись журнала не изменяется."
+          },
+          "recurring_payment_id": {
+            "type": "integer"
+          },
+          "occurrence_id": {
+            "type": "integer"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "payment_state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "deleted"
+            ]
           }
         }
       },
@@ -6179,6 +6243,64 @@
             "type": "string",
             "minLength": 32,
             "maxLength": 128
+          }
+        }
+      },
+      "DeletedPayment": {
+        "type": "object",
+        "required": [
+          "kind",
+          "recurring_payment_id",
+          "title",
+          "amount",
+          "currency",
+          "due_date",
+          "paid_at",
+          "removed_at",
+          "active"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "payment",
+              "period"
+            ]
+          },
+          "recurring_payment_id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{2}$"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUB",
+              "USD",
+              "EUR"
+            ]
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "paid_at": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "removed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "active": {
+            "type": "boolean"
           }
         }
       }

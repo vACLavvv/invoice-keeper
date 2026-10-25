@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import styled from 'styled-components';
 import { CategoryChart, Legend, MonthChart } from '@/components/BudgetCharts';
 import { Shell } from '@/components/Shell';
 import { currencyTitle } from '@/components/Workspace';
@@ -31,7 +32,11 @@ export default function BudgetPage() {
           <div className="summary-grid">
             {currencies.map((c) => <BudgetCard key={c} currency={c} line={data.currencies[c]} />)}
           </div>
-          <div className="notice">{t('Разовые платежи учтены один раз, регулярные — по своему повторению, по сроку оплаты. Будущие месяцы посчитаны по графику без создания записей в истории, паузы учтены. Конвертации валют нет.')}</div>
+          <PlanNote className="notice">
+            <p>{t('План считается по срокам оплаты: разовые платежи — один раз, регулярные — по графику с учётом пауз. Валюты считаем отдельно.')}</p>
+            <p>{t('«Осталось оплатить» — план минус отмеченное как оплаченное.')}</p>
+            <p>{t('Оплату отмечает команда. Баланс и списания в банке не проверяются.')}</p>
+          </PlanNote>
           {used.length > 0 && (
             <section className="work-panel chart-panel">
               <div className="work-panel-heading">
@@ -71,13 +76,13 @@ export default function BudgetPage() {
               {used.length > 0 && <section className="work-panel chart-panel"><div className="chart-body"><CategoryChart budget={data} currency={chartCurrency} /></div></section>}
               <div className="ledger table-wrap cards">
                 <table>
-                  <thead><tr><th>{t('КАТЕГОРИЯ')}</th>{shown.map((c) => <th key={c}>{c} · {t('ПЛАН')}</th>)}{shown.map((c) => <th key={c + 'r'}>{c} · {t('ОСТАЛОСЬ')}</th>)}</tr></thead>
+                  <thead><tr><th>{t('КАТЕГОРИЯ')}</th>{shown.map((c) => <th key={c}>{c} · {t('ПЛАН')}</th>)}{shown.map((c) => <th key={c + 'r'}>{c} · {t('Осталось оплатить')}</th>)}</tr></thead>
                   <tbody>
                     {data.categories.map((row) => (
                       <tr key={row.category ?? '-'}>
                         <td>{row.category ?? <span className="muted">{t('Без категории')}</span>}</td>
                         {shown.map((c) => <td key={c} className="amount-cell" data-label={`${c} · ${t('план')}`}>{money(row.currencies[c].planned)}<small>{symbols[c]}</small></td>)}
-                        {shown.map((c) => <td key={c + 'r'} className="date-cell" data-label={`${c} · ${t('осталось')}`}>{money(row.currencies[c].remaining)} {symbols[c]}</td>)}
+                        {shown.map((c) => <td key={c + 'r'} className="date-cell" data-label={`${c} · ${t('Осталось оплатить')}`}>{money(row.currencies[c].remaining)} {symbols[c]}</td>)}
                       </tr>
                     ))}
                   </tbody>
@@ -102,8 +107,14 @@ function BudgetCard({ currency, line }: { currency: Currency; line: BudgetLine }
       <p className="summary-caption">{t('План на год')}</p>
       <div className="budget-card-detail">
         <span>{t('Оплачено')} <b>{money(line.paid)} {symbols[currency]}</b></span>
-        <span>{t('Осталось')} <b>{money(line.remaining)} {symbols[currency]}</b></span>
+        <span>{t('Осталось оплатить')} <b>{money(line.remaining)} {symbols[currency]}</b></span>
       </div>
     </article>
   );
 }
+
+const PlanNote = styled.div`
+  display: grid;
+  gap: 8px;
+  p { margin: 0; line-height: 1.5; }
+`;

@@ -503,8 +503,8 @@ func (s *Server) recurringPause(w http.ResponseWriter, r *http.Request) error {
 		inPause := `SELECT o.id FROM payment_occurrences o WHERE o.recurring_payment_id=? AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date>=?
 			AND (? IS NULL OR o.due_date<=?) AND NOT EXISTS (SELECT 1 FROM receipts x WHERE x.occurrence_id=o.id)`
 		args := []any{id, schedule.FormatDate(today), untilValue, untilValue}
-		for _, table := range []string{"reminders", "personal_reminders"} {
-			if _, err := tx.Exec("DELETE FROM "+table+" WHERE occurrence_id IN ("+inPause+")", args...); err != nil { // #nosec G202 -- table is one of two constant names, values are parameters
+		for _, table := range []string{"reminders", "personal_reminders", "deliveries"} {
+			if _, err := tx.Exec("DELETE FROM "+table+" WHERE occurrence_id IN ("+inPause+")", args...); err != nil { // #nosec G202 -- table is one of three constant names, values are parameters
 				return err
 			}
 		}

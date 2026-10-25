@@ -32,6 +32,33 @@ export function Ledger({ mode }: { mode: Mode }) {
   const [deleting, setDeleting] = useState<Occurrence | null>(null);
   const [paying, setPaying] = useState<Occurrence | null>(null);
   const [receipts, setReceipts] = useState<Occurrence | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [linkedError, setLinkedError] = useState<string | null>(null);
+  const linkedOccurrence = typeof router.query.occurrence === 'string' && /^[1-9]\d*$/.test(router.query.occurrence)
+    ? router.query.occurrence : '';
+
+  // Journal links identify an exact period, including one outside the visible
+  // history filters. A stale link receives the same access checks as any period.
+  useEffect(() => {
+    let current = true;
+    setLinkedError(null);
+    if (!linkedOccurrence) { setOpening(false); return; }
+    setPaying(null);
+    setOpening(true);
+    api<Occurrence>(`/payment-occurrences/${linkedOccurrence}`)
+      .then((occurrence) => { if (current) setPaying(occurrence); })
+      .catch((e: Error) => { if (current) setLinkedError(e.message); })
+      .finally(() => { if (current) setOpening(false); });
+    return () => { current = false; };
+  }, [linkedOccurrence]);
+
+  function closePayment() {
+    setPaying(null);
+    if (linkedOccurrence) {
+      const { occurrence: _occurrence, ...rest } = router.query;
+      void router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true, scroll: false });
+    }
+  }
 
   // Links from the overview tiles: ?view=overdue|week|once, ?currency=USD.
   useEffect(() => {
@@ -91,6 +118,8 @@ export function Ledger({ mode }: { mode: Mode }) {
       </div>
       {history && range === 'month' && <p className="history-date-note muted">{t('История отобрана по фактической дате оплаты. Для неоплаченных архивных записей используется срок.')}</p>}
       {error && <div className="notice notice-error" role="alert">{error}</div>}
+      {opening && <div className="notice" role="status">{t('Загружаем…')}</div>}
+      {linkedError && <div className="notice notice-error" role="alert">{linkedError}</div>}
       {allOverdue.length > 0 && (
         <div id="due-notice" className="notice">
           <span className="notice-symbol" aria-hidden="true">{ws.clock}</span>
@@ -220,7 +249,7 @@ export function Ledger({ mode }: { mode: Mode }) {
         <span>{settings.telegram_enabled ? t('Напоминания за 3 дня до срока') : t('Telegram выключен · настройте в .env')}</span>
       </div>
       {deleting && <DeletePaymentModal payment={deleting} onClose={() => setDeleting(null)} />}
-      {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}
+      {paying && <PayModal occurrence={paying} onClose={closePayment} />}
       {receipts && <ReceiptsModal occurrence={receipts} onClose={() => setReceipts(null)} />}
     </>
   );

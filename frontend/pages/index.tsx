@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useState } from 'react';
+import styled from 'styled-components';
 import { PayModal } from '@/components/PaymentModals';
 import { Shell } from '@/components/Shell';
 import { Notice } from '@/components/ui';
@@ -85,7 +86,10 @@ export default function Overview() {
               <div className="currency-ledger-caption"><span>{t('Оплачено')} {totals ? money(totals.paid) : '—'} {symbols[c]}</span><span>{t('из')} {totals ? money(totals.total) : '—'} {symbols[c]}</span></div>
             </Link>;
           })}
-          <div className="desk-panel-footer"><span>{t('Валюты считаем отдельно')}</span></div>
+          <PlanNote className="desk-panel-footer">
+            <p>{t('Платежи со сроком в этом месяце минус отмеченное как оплаченное. Валюты считаем отдельно.')}</p>
+            <p>{t('Оплату отмечает команда. Баланс и списания в банке не проверяются.')}</p>
+          </PlanNote>
         </section>
       </div>
       <div className="overview-secondary">
@@ -102,3 +106,9 @@ export default function Overview() {
     </Shell>
   );
 }
+
+const PlanNote = styled.div`
+  display: grid;
+  gap: 8px;
+  p { margin: 0; font-size: 13px; line-height: 1.5; }
+`;

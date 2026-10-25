@@ -250,6 +250,9 @@ func (a apiAdapter) MarkNotifications(w http.ResponseWriter, r *http.Request) {
 func (a apiAdapter) RestoreRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
 	a.s.serveAPI(w, r, a.s.recurringRestore)
 }
+func (a apiAdapter) ListDeletedPayments(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.deletedPaymentList)
+}
 func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
 	a.s.serveAPI(w, r, a.s.periodDelete)
 }

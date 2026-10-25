@@ -22,11 +22,52 @@ func (s *Server) auditVerify(w http.ResponseWriter, r *http.Request) error {
 }
 
 type auditEntry struct {
-	ID        int64  `json:"id"`
-	Actor     string `json:"actor"`
-	Action    string `json:"action"`
-	Entity    string `json:"entity"`
-	CreatedAt string `json:"created_at"`
+	ID                 int64  `json:"id"`
+	Actor              string `json:"actor"`
+	Action             string `json:"action"`
+	Entity             string `json:"entity"`
+	CreatedAt          string `json:"created_at"`
+	PaymentTitle       string `json:"payment_title,omitempty"`
+	RecurringPaymentID int64  `json:"recurring_payment_id,omitempty"`
+	OccurrenceID       int64  `json:"occurrence_id,omitempty"`
+	DueDate            string `json:"due_date,omitempty"`
+	PaymentState       string `json:"payment_state,omitempty"`
+}
+
+// This is current display context, not a change to the signed journal. Removed
+// and archived rows are retained deliberately. Resolve only actions whose entity
+// is a payment ID: e.g. recurring.import contains a count, user.create a user ID.
+// Canonical ID comparisons also keep malformed legacy entities from resolving.
+// Pausing physically removes some unpaid occurrences, whose SQLite IDs can then
+// be reused. Older audit entities have no identity snapshot, so any later pause
+// makes occurrence/receipt context ambiguous; leave it unresolved rather than
+// attach the wrong payment. Audit IDs, unlike timestamps, strictly order events.
+const auditPaymentContext = ` FROM audit_log a
+LEFT JOIN payment_occurrences o ON a.action IN (
+  'occurrence.paid','occurrence.unpaid','occurrence.prepaid','occurrence.create',
+  'occurrence.delete','occurrence.restore','receipt.add','receipt.delete')
+  AND o.id=CAST(a.entity AS INTEGER) AND CAST(o.id AS TEXT)=a.entity
+  AND a.id>COALESCE((SELECT MAX(id) FROM audit_log WHERE action='recurring.pause'),0)
+LEFT JOIN recurring_payments r ON r.id=CASE
+  WHEN o.id IS NOT NULL THEN o.recurring_payment_id
+  WHEN a.action IN ('recurring.create','recurring.update','recurring.archive',
+    'recurring.pause','recurring.resume','recurring.delete','recurring.restore','wallet.sanctioned')
+    AND CAST(CAST(a.entity AS INTEGER) AS TEXT)=a.entity THEN CAST(a.entity AS INTEGER)
+  END`
+
+const auditPaymentColumns = `a.id,a.actor,a.action,a.entity,a.created_at,
+COALESCE(r.title,''),COALESCE(r.id,0),COALESCE(o.id,0),COALESCE(o.due_date,''),
+CASE WHEN r.id IS NULL THEN ''
+  WHEN r.removed_at IS NOT NULL OR o.removed_at IS NOT NULL THEN 'deleted'
+  WHEN r.active=0 THEN 'archived' ELSE 'active' END`
+
+func (e auditEntry) matches(search string) bool {
+	for _, value := range []string{e.Actor, e.Action, e.Entity, e.PaymentTitle, e.DueDate} {
+		if strings.Contains(strings.ToLower(value), search) {
+			return true
+		}
+	}
+	return false
 }
 
 // auditPage is the journal with filters and pages. snapshot_id (the newest id when page 1 was
@@ -40,7 +81,7 @@ func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) error {
 	page := q.integer("page", 1, 1, 100000)
 	size := q.integer("page_size", 25, 1, 100)
 	snapshot := q.integer("snapshot_id", 0, 0, math.MaxInt32)
-	actor, action, search := q.values.Get("actor"), q.values.Get("action"), strings.TrimSpace(q.values.Get("search"))
+	actor, action, search := q.values.Get("actor"), q.values.Get("action"), strings.ToLower(strings.TrimSpace(q.values.Get("search")))
 	if len(actor) > 80 || len(action) > 80 {
 		q.add("actor", "Максимальная длина — 80", "string_too_long")
 	}
@@ -58,21 +99,16 @@ func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) error {
 		return local.UTC().Format("2006-01-02T15:04:05")
 	}
 	if from != nil {
-		clauses, args = append(clauses, "created_at>=?"), append(args, bound(*from))
+		clauses, args = append(clauses, "a.created_at>=?"), append(args, bound(*from))
 	}
 	if to != nil {
-		clauses, args = append(clauses, "created_at<?"), append(args, bound(to.AddDate(0, 0, 1)))
+		clauses, args = append(clauses, "a.created_at<?"), append(args, bound(to.AddDate(0, 0, 1)))
 	}
 	if actor != "" {
-		clauses, args = append(clauses, "actor=?"), append(args, actor)
+		clauses, args = append(clauses, "a.actor=?"), append(args, actor)
 	}
 	if action != "" {
-		clauses, args = append(clauses, "action=?"), append(args, action)
-	}
-	if search != "" {
-		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(search) + "%"
-		clauses = append(clauses, `(actor LIKE ? ESCAPE '\' OR action LIKE ? ESCAPE '\' OR entity LIKE ? ESCAPE '\')`)
-		args = append(args, like, like, like)
+		clauses, args = append(clauses, "a.action=?"), append(args, action)
 	}
 	result := struct {
 		Items      []auditEntry `json:"items"`
@@ -92,28 +128,45 @@ func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) error {
 		} else {
 			result.SnapshotID = int64(snapshot)
 		}
-		where := " WHERE " + strings.Join(append(clauses, "id<=?"), " AND ")
+		where := " WHERE " + strings.Join(append(clauses, "a.id<=?"), " AND ")
 		args := append(args, result.SnapshotID)
-		if err := tx.QueryRow("SELECT COUNT(*) FROM audit_log"+where, args...).Scan(&result.Total); err != nil {
-			return err
+		query := "SELECT " + auditPaymentColumns + auditPaymentContext + where + " ORDER BY a.id DESC"
+		offset := (page - 1) * size
+		if search == "" {
+			if err := tx.QueryRow("SELECT COUNT(*) FROM audit_log a"+where, args...).Scan(&result.Total); err != nil {
+				return err
+			}
+			query += " LIMIT ? OFFSET ?"
+			args = append(args, size, offset)
 		}
-		result.Pages = max(1, (result.Total+size-1)/size)
-		rows, err := tx.Query("SELECT id,actor,action,entity,created_at FROM audit_log"+where+" ORDER BY id DESC LIMIT ? OFFSET ?", // #nosec G202 -- where contains only constant predicates above; all user values are bound through args
-			append(args, size, (page-1)*size)...)
+		rows, err := tx.Query(query, args...) // #nosec G202 -- query contains only constant predicates; all user values are bound through args
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var e auditEntry
-			if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.Entity, &e.CreatedAt); err != nil {
+			if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.Entity, &e.CreatedAt,
+				&e.PaymentTitle, &e.RecurringPaymentID, &e.OccurrenceID, &e.DueDate, &e.PaymentState); err != nil {
 				return err
+			}
+			if search != "" {
+				// SQLite LIKE/lower handles ASCII only. Stream matches in Go so
+				// Cyrillic titles work too, retaining only this page in memory.
+				if !e.matches(search) {
+					continue
+				}
+				result.Total++
+				if result.Total <= offset || result.Total > offset+size {
+					continue
+				}
 			}
 			result.Items = append(result.Items, e)
 		}
 		if err := rows.Err(); err != nil {
 			return err
 		}
+		result.Pages = max(1, (result.Total+size-1)/size)
 		for column, list := range map[string]*[]string{"actor": &result.Actors, "action": &result.Actions} {
 			values, err := tx.Query("SELECT DISTINCT " + column + " FROM audit_log ORDER BY 1") // #nosec G202 -- column is one of two constant names
 			if err != nil {

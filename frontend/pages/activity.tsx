@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import styled from 'styled-components';
 import { Shell } from '@/components/Shell';
 import { Button, Card, Field, Input, Muted, Notice, Row, Select } from '@/components/ui';
 import { ScreeningPill, walletNetworks } from '@/components/Wallet';
-import { api, query, type AuditCheck, type AuditPage, type Delivery, type Reminder, type SanctionsStatus, type Screening, type WalletNetwork } from '@/lib/api';
+import { api, query, type AuditCheck, type AuditEntry, type AuditPage, type Delivery, type Reminder, type SanctionsStatus, type Screening, type WalletNetwork } from '@/lib/api';
 import { useToast } from '@/lib/toast';
 import { date } from '@/lib/format';
 import { locale, t } from '@/lib/i18n';
@@ -44,6 +45,23 @@ const actions = (): Record<string, string> => ({
 });
 
 const actorLabel = (actor: string) => actor === 'email-confirmation' ? t('Подтверждение почты') : actor;
+
+function AuditPayment({ entry }: { entry: AuditEntry }) {
+  if (!entry.payment_title) return null;
+  const href = entry.payment_state === 'deleted' ? '/trash'
+    : entry.occurrence_id ? `/history?occurrence=${entry.occurrence_id}`
+    : entry.recurring_payment_id ? `/recurring?payment=${entry.recurring_payment_id}` : null;
+  const state = entry.payment_state === 'deleted' ? t('Удалено') : entry.payment_state === 'archived' ? t('В архиве') : '';
+  return (
+    <div className="audit-payment">
+      {href ? <Link href={href}>{entry.payment_title}</Link> : <span>{entry.payment_title}</span>}
+      {(entry.due_date || state) && <small>
+        {entry.due_date && <time dateTime={entry.due_date}>{t('срок {date}', { date: date(entry.due_date) })}</time>}
+        {entry.due_date && state && ' · '}{state}
+      </small>}
+    </div>
+  );
+}
 
 type Tab = 'actions' | 'delivery' | 'sanctions';
 type Filters = { from_date?: string; to_date?: string; actor?: string; action?: string; search?: string };
@@ -136,6 +154,7 @@ function AuditLog() {
         </div>
       </form>
       <div className="audit-caption"><span>{t('Время событий: {tz}', { tz: settings.timezone })}</span><span>{t('Доступно только администратору')}</span></div>
+      <p className="audit-context-note">{t('Названия и состояние платежей показаны на текущий момент.')}</p>
       {error && <div className="notice notice-error" role="alert">{error} · {t('Список не обновлён.')}</div>}
       <div className="ledger table-wrap cards" aria-live="polite">
         {!data ? <div className="empty-state">{t('Загружаем историю…')}</div> : data.items.length === 0 ? (
@@ -148,7 +167,7 @@ function AuditLog() {
                 <tr key={a.id}>
                   <td className="date-cell">{time.format(new Date(a.created_at))}</td>
                   <td className="audit-actor" data-label={t('Кто')}>{actorLabel(a.actor)}</td>
-                  <td className="audit-detail" data-label={t('Действие')}><b>{actions()[a.action] ?? a.action}</b></td>
+                  <td className="audit-detail" data-label={t('Действие')}><b>{actions()[a.action] ?? a.action}</b><AuditPayment entry={a} /></td>
                   <td data-label={t('Результат')}><span className={`pill ${a.action === 'wallet.sanctioned' ? 'overdue' : 'paid'}`}>{a.action === 'wallet.sanctioned' ? t('Внимание') : t('Успешно')}</span></td>
                 </tr>
               ))}
@@ -341,6 +360,10 @@ const AuditSection = styled.section`
   }
   .audit-detail > b { font-weight: 550; }
   .audit-detail { max-width: 420px; }
+  .audit-payment { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 6px; overflow-wrap: anywhere; }
+  .audit-payment a { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .audit-payment small { font-size: 14px; color: var(--desk-muted); }
+  .audit-context-note { margin: 0 0 14px; font-size: 14px; color: var(--desk-muted); }
   .audit-filters label { color: var(--desk-ink); font-size: 14px; }
   .audit-filters input, .audit-filters select { font-size: 15px; }
   .audit-caption, .audit-pagination { font-size: 14px; color: var(--desk-muted); }

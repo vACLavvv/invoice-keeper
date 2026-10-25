@@ -33,7 +33,22 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Недоступно",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Работает",
+                  "color": "green"
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -50,7 +65,7 @@
     },
     {
       "id": 2,
-      "title": "Секунд после проверки напоминаний",
+      "title": "После последней проверки напоминаний",
       "type": "stat",
       "gridPos": {
         "x": 12,
@@ -71,7 +86,24 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 120
+              },
+              {
+                "color": "red",
+                "value": 180
+              }
+            ]
+          }
         },
         "overrides": []
       },

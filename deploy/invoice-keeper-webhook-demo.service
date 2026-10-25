@@ -1,0 +1,28 @@
+[Unit]
+Description=Invoice Keeper local signed webhook demonstration consumer
+After=network.target
+[Service]
+User=invoice-keeper
+Group=invoice-keeper
+EnvironmentFile=/opt/invoice-keeper/config/webhook-demo.env
+ExecStart=/usr/bin/python3 /opt/invoice-keeper/bin/webhook_demo_receiver.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+MemoryMax=48M
+CPUQuota=5%
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=
+ReadWritePaths=/opt/invoice-keeper/data/webhook-demo
+IPAddressDeny=any
+IPAddressAllow=localhost
+[Install]
+WantedBy=multi-user.target

@@ -63,7 +63,7 @@ export default function CalendarPage() {
                 </button>
               ))}
               {totals.size > 0 && (
-                <span className="calendar-day-total">{[...totals].map(([c, n]) => `${money(n)} ${symbols[c]}`).join(' · ')}</span>
+                <span className="calendar-day-total">{t('Итого:')} {[...totals].map(([c, n]) => `${money(n)} ${symbols[c]}`).join(' · ')}</span>
               )}
             </div>
           );

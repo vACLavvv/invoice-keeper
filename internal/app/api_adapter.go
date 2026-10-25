@@ -308,3 +308,11 @@ func (a apiAdapter) ListDeliveryFailures(w http.ResponseWriter, r *http.Request,
 func (a apiAdapter) RetryDeliveryFailure(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.retryDeliveryFailure)
 }
+
+func (a apiAdapter) GetWebhookConsole(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhookConsoleSettings)
+}
+
+func (a apiAdapter) SendWebhookConsoleRequest(w http.ResponseWriter, r *http.Request) {
+	a.s.serveAPI(w, r, a.s.webhookConsoleRequest)
+}

@@ -42,16 +42,17 @@ type Server struct {
 	Today     func() time.Time
 	Now       func() time.Time // wall clock for one-time codes; replaceable in tests
 
-	assets      fs.FS
-	pages       map[string]page
-	adminHash   string
-	handler     http.Handler
-	limiter     *rateLimiter
-	notifier    notify.Notifier
-	alerts      sync.WaitGroup
-	botUsername atomic.Value // set by the Telegram bot after getMe
-	metrics     serviceMetrics
-	events      eventStreams
+	assets               fs.FS
+	pages                map[string]page
+	adminHash            string
+	handler              http.Handler
+	limiter              *rateLimiter
+	notifier             notify.Notifier
+	alerts               sync.WaitGroup
+	botUsername          atomic.Value // set by the Telegram bot after getMe
+	metrics              serviceMetrics
+	events               eventStreams
+	webhookConsoleActive atomic.Int32 // bounded interactive outbound requests
 }
 
 func (s *Server) BotUsername() string {

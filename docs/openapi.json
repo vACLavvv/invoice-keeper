@@ -31,6 +31,10 @@
     },
     {
       "name": "Система"
+    },
+    {
+      "name": "Webhook",
+      "description": "Административная консоль HTTP-запросов"
     }
   ],
   "paths": {
@@ -5248,6 +5252,110 @@
           }
         }
       }
+    },
+    "/api/v1/webhook-console": {
+      "get": {
+        "operationId": "getWebhookConsole",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Настройки конструктора HTTP-запросов",
+        "description": "Только сессия администратора. Секрет подписи, userinfo, query и fragment настроенного URL не возвращаются. API-токены не разрешены.",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Доступный приёмник и лимиты",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConsoleSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; для POST требуется CSRF"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных запросов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка; не повторяйте POST без проверки результата"
+          }
+        }
+      }
+    },
+    "/api/v1/webhook-console/requests": {
+      "post": {
+        "operationId": "sendWebhookConsoleRequest",
+        "tags": [
+          "Webhook"
+        ],
+        "summary": "Выполнить один GET или POST с сервера",
+        "description": "Только сессия администратора и CSRF. custom принимает публичный HTTP(S) URL с проверкой адреса при подключении. configured использует точный WEBHOOK_URL сервера и подписывает POST его секретом; health разрешает только GET к /healthz настроенного локального приёмника. Переходы по редиректам и автоматические повторы отключены. Не более двух запросов одновременно, таймаут 10 секунд, тело до 64 KiB, ответ до 128 KiB. Нельзя передавать cookie панели и служебные/прокси-заголовки. Настройки фоновой рассылки не меняются. Сетевой сбой возвращается в error с status=0; удалённые HTTP 4xx/5xx возвращаются как результат запроса. POST может изменить данные получателя; повторять его автоматически нельзя.",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookConsoleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ответ удалённого сервиса или результат сетевой ошибки",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConsoleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос"
+          },
+          "413": {
+            "description": "Превышен размер запроса"
+          },
+          "415": {
+            "description": "Ожидается application/json"
+          },
+          "401": {
+            "description": "Требуется вход"
+          },
+          "403": {
+            "description": "Только сессия администратора; для POST требуется CSRF"
+          },
+          "422": {
+            "description": "Неверные параметры"
+          },
+          "429": {
+            "description": "Ограничение частоты или параллельных запросов"
+          },
+          "500": {
+            "description": "Внутренняя ошибка; не повторяйте POST без проверки результата"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8047,6 +8155,138 @@
             }
           }
         }
+      },
+      "WebhookConsoleHeader": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookConsoleSettings": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "signing_enabled": {
+            "type": "boolean"
+          },
+          "health_available": {
+            "type": "boolean"
+          },
+          "max_body_bytes": {
+            "type": "integer"
+          },
+          "max_response_bytes": {
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "target",
+          "signing_enabled",
+          "health_available",
+          "max_body_bytes",
+          "max_response_bytes",
+          "timeout_seconds"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookConsoleRequest": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "enum": [
+              "custom",
+              "configured",
+              "health"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookConsoleHeader"
+            },
+            "maxItems": 20
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "method"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookConsoleResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 599
+          },
+          "status_text": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookConsoleHeader"
+            }
+          },
+          "body": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "status_text",
+          "duration_ms",
+          "headers",
+          "body",
+          "truncated",
+          "error"
+        ],
+        "additionalProperties": false
       }
     }
   }

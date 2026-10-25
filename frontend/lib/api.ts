@@ -104,14 +104,14 @@ export class ApiError extends Error {
 }
 
 /** JSON by default; a FormData body is sent as multipart (file uploads). */
-export function api<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string } = {}): Promise<T> {
+export function api<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<T> {
   const method = options.method ?? 'GET';
   if (!options.idempotencyKey && protectedPaymentMutation(method, path)) {
     return withPaymentKey(csrfToken, method + ' ' + path + '\n' + JSON.stringify(options.body ?? null), (key) => request<T>(path, { ...options, idempotencyKey: key }));
   }
   return request<T>(path, options);
 }
-async function request<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string }): Promise<T> {
+async function request<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string; signal?: AbortSignal }): Promise<T> {
   const headers: Record<string, string> = {};
   if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
   if (options.idempotencyKey) headers['X-Idempotency-Key'] = options.idempotencyKey;
@@ -120,7 +120,7 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
   let response: Response;
   try {
     response = await fetch('/api/v1' + path, {
-      method: options.method ?? 'GET', headers, credentials: 'same-origin',
+      method: options.method ?? 'GET', headers, credentials: 'same-origin', signal: options.signal,
       body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     });
   } catch {

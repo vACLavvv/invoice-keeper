@@ -34,6 +34,7 @@ const sections = (isAdmin: boolean): NavSection[] => [
   { title: t('Управление'), admin: true, items: [
     { href: '/team', label: t('Команда'), icon: ws.users },
     { href: '/activity', label: t('Журнал'), icon: ws.activity },
+    { href: '/webhook', label: t('Вебхук'), icon: ws.webhook },
   ] },
   { title: t('Учётная запись'), items: [
     { href: '/account', label: t('Аккаунт'), icon: ws.account },

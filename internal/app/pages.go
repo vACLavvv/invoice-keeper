@@ -26,7 +26,7 @@ type page struct {
 // panelPages require a session; everything else under / is public or 404.
 var panelPages = map[string]string{
 	"/": "index.html", "/recurring": "recurring.html", "/calendar": "calendar.html",
-	"/team": "team.html", "/activity": "activity.html",
+	"/team": "team.html", "/activity": "activity.html", "/webhook": "webhook.html",
 	"/suggestions": "suggestions.html", "/extension": "extension.html",
 	"/budget": "budget.html", "/help": "help.html", "/account": "account.html",
 	"/trash": "trash.html", "/payments": "payments.html", "/history": "history.html", "/notifications": "notifications.html",

@@ -10,6 +10,7 @@ import { useLoad, useSession } from '@/lib/session';
 import { useToast } from '@/lib/toast';
 import { ws } from './icons';
 import { CreatePaymentModal } from './PaymentModals';
+import { Modal } from './Modal';
 
 type NavItem = { href: string; label: string; icon: ReactNode; count?: 'open' | 'unread' | 'inbox' };
 type NavSection = { title: string; admin?: boolean; items: NavItem[] };
@@ -57,11 +58,13 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
   const { mode, setMode, language, setLanguage } = usePreferences();
   const toast = useToast();
   const [creating, setCreating] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const open = useLoad(() => api<Occurrence[]>('/payment-occurrences?include_archived=false'), []).data;
   const feed = useLoad(() => api<NotificationFeed>('/notifications'), []).data;
   const inbox = useLoad(() => (isAdmin ? api<Suggestion[]>('/payment-suggestions?status=pending') : Promise.resolve([])), [isAdmin]).data;
   const counts = { open: open?.filter((o) => o.status !== 'paid').length, unread: feed?.unread_count, inbox: inbox?.length };
   const dark = mode === 'dark';
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
   // The workspace stylesheets lay out some pages by body[data-page] (as in the main branch).
   useEffect(() => { document.body.dataset.page = pathname === '/' ? 'overview' : pathname.slice(1); }, [pathname]);
 
@@ -74,32 +77,36 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
     }
   }
 
+  const navigation = sections(isAdmin).filter((s) => !s.admin || isAdmin).map((section) => (
+    <div key={section.title}>
+      <span className="nav-section">{section.title}</span>
+      {section.items.map((item) => {
+        const active = pathname === item.href;
+        const count = item.count ? counts[item.count] : undefined;
+        return (
+          <Link key={item.href} href={item.href} className={`nav-item${active ? ' active' : ''}`}
+            aria-current={active ? 'page' : undefined} title={item.label} onClick={() => setMenuOpen(false)}>
+            <span className="nav-icon" aria-hidden="true">{item.icon}</span> {item.label}
+            {count ? <span className="nav-count">{count}</span> : null}
+          </Link>
+        );
+      })}
+    </div>
+  ));
+
   return (
     <div className="app-layout">
       <Head><title>{`${title} · Invoice Keeper`}</title></Head>
+      <a className="skip-link" href="#main-content">{t('К содержимому')}</a>
       <aside className="sidebar">
         <Link className="brand" href="/"><img src="/favicon.svg" alt="" width={36} height={36} /><span>invoice<span className="brand-light">keeper</span></span></Link>
         <div className="workspace-label">
           <span className="workspace-avatar">IK</span>
-          <span>{t('Рабочее пространство')}<small>{t('Финансы команды')}</small></span>
+          <span>{t('Финансы команды')}<small>{t('Рабочее пространство')}</small></span>
           <span className="small-dot" title={settings.telegram_enabled ? t('Напоминания в Telegram включены') : t('Telegram не подключён')} />
         </div>
         <nav aria-label={t('Разделы')}>
-          {sections(isAdmin).filter((s) => !s.admin || isAdmin).map((section) => (
-            <div key={section.title}>
-              <span className="nav-section">{section.title}</span>
-              {section.items.map((item) => {
-                const active = pathname === item.href;
-                const count = item.count ? counts[item.count] : undefined;
-                return (
-                  <Link key={item.href} href={item.href} className={`nav-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined} title={item.label}>
-                    <span className="nav-icon" aria-hidden="true">{item.icon}</span> {item.label}
-                    {count ? <span className="nav-count">{count}</span> : null}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
+          {navigation}
         </nav>
         <div className="sidebar-bottom">
           <a className="docs-link" href="/api/v1/docs" target="_blank" rel="noopener">{t('Документация API')} <span>↗</span></a>
@@ -112,6 +119,12 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
       </aside>
       <div className="main-shell">
         <header className="topbar">
+          <div className="mobile-brand">
+            <button type="button" className="menu-toggle" aria-label={t('Открыть меню')} aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            </button>
+            <Link href="/">invoicekeeper</Link>
+          </div>
           <span className="workspace-breadcrumb">{t('Рабочее пространство')} <span className="breadcrumb">/</span> <b>{title}</b></span>
           <div className="topbar-right">
             <button type="button" className="theme-toggle lang-toggle" onClick={() => setLanguage(language === 'ru' ? 'en' : 'ru')}
@@ -125,15 +138,12 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
             <Link className="bell-button" href="/notifications" aria-label={t('Уведомления: {n} непрочитанных', { n: counts.unread ?? 0 })}>
               {ws.bell} <span>{counts.unread ?? 0}</span>
             </Link>
-            <span className="small-dot" />
-            <span>{date(settings.today, { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-            <span className="timezone">{settings.timezone}</span>
+            <time className="workspace-date" dateTime={settings.today} title={settings.timezone}>{date(settings.today, { day: 'numeric', month: 'long', year: 'numeric' })}</time>
           </div>
         </header>
-        <main id="main-content">
+        <main id="main-content" tabIndex={-1}>
           <section className="page-heading">
             <div>
-              <div className="eyebrow">{t('ФИНАНСЫ КОМАНДЫ')}</div>
               <h1>{heading}</h1>
               {subtitle && <p className="muted">{subtitle}</p>}
             </div>
@@ -151,6 +161,11 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
           <span>{t('Сделано для спокойной работы')} ↗</span>
         </footer>
       </div>
+      {menuOpen && <Modal title={t('Разделы')} eyebrow="" onClose={() => setMenuOpen(false)}>
+        <nav className="mobile-navigation" aria-label={t('Разделы')}>{navigation}</nav>
+        <div className="mobile-account"><Link href="/account" onClick={() => setMenuOpen(false)}>{user.display_name} · {t('Аккаунт')}</Link>
+          <button className="text-button" type="button" onClick={logout}>{t('Выйти')}</button></div>
+      </Modal>}
       {creating && <CreatePaymentModal onClose={() => setCreating(false)} />}
     </div>
   );

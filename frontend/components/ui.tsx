@@ -35,7 +35,7 @@ export const Tile = styled.div<{ $interactive?: boolean }>`
   min-width: 0;
   padding: 22px;
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: var(--desk-radius, 20px);
   background: var(--panel);
   color: var(--ink);
   overflow: hidden;

@@ -83,7 +83,7 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
 function MethodToggle({ method, onChange }: { method: Method; onChange: (m: Method) => void }) {
   return (
     <Choice label={t('Как платим')} value={method} onChange={onChange} options={[
-      ['fiat', t('💳 Банк или карта'), t('Ссылка на счёт и реквизиты')],
+      ['fiat', t('Банк или карта'), t('Ссылка на счёт и реквизиты')],
       ['crypto', t('₿ Криптовалюта'), t('Кошелёк получателя, проверка по санкциям OFAC')],
     ]} />
   );

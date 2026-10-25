@@ -162,7 +162,7 @@ export function Ledger({ mode }: { mode: Mode }) {
             </div>
           ) : (
             <table>
-              <thead><tr><th>{t('ПЛАТЁЖ')}</th><th>{t('СУММА')}</th><th>{t('СРОК ОПЛАТЫ')}</th><th>{t('СТАТУС')}</th><th>{t('ДАТА ОПЛАТЫ')}</th><th /></tr></thead>
+              <thead><tr><th>{t('Платёж')}</th><th className="amount-heading">{t('Сумма')}</th><th>{t('Срок оплаты')}</th><th>{t('Статус')}</th><th>{t('Дата оплаты')}</th><th /></tr></thead>
               <tbody>
                 {items.map((o) => (
                   <tr key={o.id} className={`payment-row ${o.status}`}>

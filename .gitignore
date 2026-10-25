@@ -7,3 +7,5 @@ bin/
 output/
 *.exe
 *.sqlite3*
+
+.taste-skill/

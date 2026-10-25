@@ -5,6 +5,8 @@ import '@/styles/workspace/workspace.css';
 import '@/styles/workspace/apple.css';
 import '@/styles/workspace/extras.css';
 import '@/styles/workspace/typography.css';
+import '@/styles/workspace/taste.css';
+import '@/styles/workspace/refinement.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { useRouter } from 'next/router';

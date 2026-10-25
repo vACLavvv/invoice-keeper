@@ -177,6 +177,8 @@ const Card = styled(Link)`
 
 const RuleTile = styled(Tile)`
   ${alternatingCard}
+  &:nth-child(odd) { ${darkCard} }
+  &:nth-child(even) { ${lightCard} }
 `;
 
 const Rules = styled.div`

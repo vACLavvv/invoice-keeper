@@ -1,3 +1,4 @@
+import { DeletePaymentModal } from '@/components/DeletePaymentModal';
 import { useState } from 'react';
 import { ws } from '@/components/icons';
 import { ArchiveModal, EditPaymentModal, ImportModal, PauseModal } from '@/components/PaymentModals';
@@ -19,7 +20,7 @@ const repeat = (r: Recurring) => ({
 export default function RecurringPage() {
   const { isAdmin, refresh } = useSession();
   const toast = useToast();
-  const [modal, setModal] = useState<{ kind: 'edit' | 'pause' | 'archive'; payment: Recurring } | 'import' | null>(null);
+  const [modal, setModal] = useState<{ kind: 'edit' | 'pause' | 'archive' | 'delete'; payment: Recurring } | 'import' | null>(null);
   const { data, error } = useLoad(() => api<Recurring[]>('/recurring-payments'), []);
 
   async function resume(r: Recurring) {
@@ -69,7 +70,7 @@ export default function RecurringPage() {
                   </td>
                   <td className="amount-cell" data-label={t('Сумма')}>{money(r.amount)}<small>{symbols[r.currency]}</small></td>
                   <td className="date-cell" data-label={t('Повторение')}>{repeat(r)}</td>
-                  <td className="date-cell" data-label={t('Срок')}>{date(r.next_due_date ?? r.first_due_date, { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                  <td className="date-cell" data-label={t('Срок')}>{r.next_due_date ? date(r.next_due_date, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
                   <td data-label={t('Состояние')}>
                     <span className={`pill ${!r.active ? 'archived' : r.paused ? 'unpaid' : 'paid'}`}>
                       {!r.active ? t('Архив') : r.paused ? (r.paused.until ? t('Пауза до {date}', { date: date(r.paused.until) }) : t('На паузе')) : t('Активен')}
@@ -86,7 +87,8 @@ export default function RecurringPage() {
                             : <button type="button" className="row-action edit" onClick={() => setModal({ kind: 'pause', payment: r })}>{t('Пауза')}</button>)}
                           <button type="button" className="row-action delete" onClick={() => setModal({ kind: 'archive', payment: r })}>{t('Прекратить ↗')}</button>
                         </div>
-                      ) : '—'}
+                      ) : null}
+                      <button type="button" className="row-action delete" onClick={() => setModal({ kind: 'delete', payment: r })}>{t('Удалить')}</button>
                     </td>
                   )}
                 </tr>
@@ -95,6 +97,7 @@ export default function RecurringPage() {
           </table>
         )}
       </div>
+      {modal && modal !== 'import' && modal.kind === 'delete' && <DeletePaymentModal payment={modal.payment} onClose={() => setModal(null)} />}
       {modal === 'import' && <ImportModal onClose={() => setModal(null)} />}
       {modal && modal !== 'import' && modal.kind === 'edit' && <EditPaymentModal payment={modal.payment} onClose={() => setModal(null)} />}
       {modal && modal !== 'import' && modal.kind === 'pause' && <PauseModal payment={modal.payment} onClose={() => setModal(null)} />}

@@ -23,7 +23,7 @@ const MaxDeliveryAttempts = 5
 const overdueWindow = 7
 
 const unpaidActive = `FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
-WHERE r.active=1 AND o.paid_at IS NULL`
+WHERE r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL`
 
 // broadcast channels send every reminder of a kind; personal Telegram chats are added separately.
 func (w *ReminderWorker) broadcastChannels() map[string][]string {
@@ -66,7 +66,7 @@ func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 			SELECT o.id,'overdue','telegram:'||t.chat_id,'pending' FROM payment_occurrences o
 			JOIN recurring_payments r ON r.id=o.recurring_payment_id
 			JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
-			WHERE r.active=1 AND o.paid_at IS NULL AND `+window[0].(string),
+			WHERE r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL AND `+window[0].(string),
 			append([]any{w.Settings.TelegramChatID == ""}, window[1:]...)...); err != nil {
 			return err
 		}
@@ -75,7 +75,7 @@ func (w *ReminderWorker) enqueueDeliveries(tx *sql.Tx, today time.Time) error {
 	for _, st := range []stmt{
 		{"UPDATE deliveries SET state='uncertain',error='Отправка прервана; автоматический повтор остановлен' WHERE state='sending' AND attempted_at<?", []any{now - 300}},
 		{`UPDATE deliveries SET state='cancelled' WHERE state='pending' AND occurrence_id IN
-			(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0)`, nil},
+			(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0 OR r.removed_at IS NOT NULL OR o.removed_at IS NOT NULL)`, nil},
 	} {
 		if _, err := tx.Exec(st.query, st.args...); err != nil {
 			return err
@@ -122,7 +122,7 @@ func (w *ReminderWorker) deliver() error {
 		err := w.DB.Write(func(tx *sql.Tx) error {
 			err := tx.QueryRow(`SELECT d.channel,d.kind,o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
 				FROM deliveries d JOIN payment_occurrences o ON o.id=d.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
-				WHERE d.state='pending' AND d.retry_after<=? AND r.active=1 AND o.paid_at IS NULL
+				WHERE d.state='pending' AND d.retry_after<=? AND r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL
 				AND (d.channel IN (`+in+`) OR (? AND d.channel LIKE 'telegram:%'))
 				ORDER BY o.due_date,o.id LIMIT 1`, append(append([]any{time.Now().Unix()}, args...), personal)...).
 				Scan(&channel, &row.Kind, &row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
@@ -147,10 +147,19 @@ func (w *ReminderWorker) deliver() error {
 		sender, chat := w.senderFor(channel)
 		row.ChatID = chat
 		result := SendResult{State: "uncertain", Error: "Канал не настроен"}
-		if sender != nil {
-			result = w.sendWith(sender, row)
-		}
+		// Serialize the final eligibility check and sending with payment removal.
 		err = w.DB.Write(func(tx *sql.Tx) error {
+			eligible, err := stillPayable(tx, row.OccurrenceID)
+			if err != nil {
+				return err
+			}
+			if !eligible {
+				_, err := tx.Exec("UPDATE deliveries SET state='cancelled' WHERE occurrence_id=? AND kind=? AND channel=?", row.OccurrenceID, row.Kind, channel)
+				return err
+			}
+			if sender != nil {
+				result = w.sendWith(sender, row)
+			}
 			var attempts int
 			if err := tx.QueryRow("SELECT attempts FROM deliveries WHERE occurrence_id=? AND kind=? AND channel=?", row.OccurrenceID, row.Kind, channel).
 				Scan(&attempts); err != nil {
@@ -165,7 +174,7 @@ func (w *ReminderWorker) deliver() error {
 			case state == "pending":
 				delay = max(delay, 60) // never again in the same pass
 			}
-			_, err := tx.Exec("UPDATE deliveries SET state=?,sent_at=?,error=?,retry_after=? WHERE occurrence_id=? AND kind=? AND channel=?",
+			_, err = tx.Exec("UPDATE deliveries SET state=?,sent_at=?,error=?,retry_after=? WHERE occurrence_id=? AND kind=? AND channel=?",
 				state, sentAt, nullable(result.Error), time.Now().Unix()+delay, row.OccurrenceID, row.Kind, channel)
 			return err
 		})

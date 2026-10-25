@@ -48,9 +48,9 @@ const recurringSelect = `SELECT r.id,r.title,r.amount_cents,r.currency,r.first_d
 u.id,u.display_name,u.username,r.payment_url,r.payment_details,r.description,
 r.wallet_network,r.wallet_address,x.sdn_name,x.currency,x.sdn_uid,EXISTS(SELECT 1 FROM sanctioned_addresses),
 r.active,r.created_at,r.deleted_at,
-(SELECT COUNT(*) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.paid_at IS NULL),
-(SELECT MIN(o.due_date) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.paid_at IS NULL AND o.due_date>=?)
-FROM recurring_payments r LEFT JOIN users u ON u.id=r.assignee_id LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
+(SELECT COUNT(*) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.removed_at IS NULL AND o.paid_at IS NULL),
+(SELECT MIN(o.due_date) FROM payment_occurrences o WHERE o.recurring_payment_id=r.id AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date>=?)
+FROM (SELECT * FROM recurring_payments WHERE removed_at IS NULL) r LEFT JOIN users u ON u.id=r.assignee_id LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
 
 // activePause is the pause in force today or later: open-ended or ending today or later.
 func activePause(pauses []schedule.Pause, today time.Time) *schedule.Pause {
@@ -415,6 +415,14 @@ func (s *Server) recurringUpdate(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) recurringDelete(w http.ResponseWriter, r *http.Request) error {
+	q := &queryParams{values: r.URL.Query()}
+	mode := q.choice("mode", "archive", "delete")
+	if err := q.err(); err != nil {
+		return err
+	}
+	if mode == "delete" {
+		return s.recurringRemove(w, r)
+	}
 	user, err := s.adminWrite(r)
 	if err != nil {
 		return err
@@ -425,7 +433,7 @@ func (s *Server) recurringDelete(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = s.DB.Write(func(tx *sql.Tx) error {
 		var active bool
-		err := tx.QueryRow("SELECT active FROM recurring_payments WHERE id=?", id).Scan(&active)
+		err := tx.QueryRow("SELECT active FROM recurring_payments WHERE id=? AND removed_at IS NULL", id).Scan(&active)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fail(404, "Регулярный платёж не найден")
 		}
@@ -492,7 +500,7 @@ func (s *Server) recurringPause(w http.ResponseWriter, r *http.Request) error {
 			id, schedule.FormatDate(today), untilValue, user.Username, schedule.Timestamp()); err != nil {
 			return err
 		}
-		inPause := `SELECT o.id FROM payment_occurrences o WHERE o.recurring_payment_id=? AND o.paid_at IS NULL AND o.due_date>=?
+		inPause := `SELECT o.id FROM payment_occurrences o WHERE o.recurring_payment_id=? AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date>=?
 			AND (? IS NULL OR o.due_date<=?) AND NOT EXISTS (SELECT 1 FROM receipts x WHERE x.occurrence_id=o.id)`
 		args := []any{id, schedule.FormatDate(today), untilValue, untilValue}
 		for _, table := range []string{"reminders", "personal_reminders"} {

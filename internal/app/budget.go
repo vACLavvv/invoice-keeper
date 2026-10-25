@@ -71,9 +71,10 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 		amount   int64
 		currency string
 		paid     bool
+		removed  bool
 	}
 	occurrences := map[key]recorded{}
-	rows, err := s.DB.Query("SELECT recurring_payment_id,due_date,amount_cents,currency,paid_at IS NOT NULL FROM payment_occurrences WHERE due_date>=? AND due_date<=?",
+	rows, err := s.DB.Query("SELECT o.recurring_payment_id,o.due_date,o.amount_cents,o.currency,o.paid_at IS NOT NULL,o.removed_at IS NOT NULL OR r.removed_at IS NOT NULL FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.due_date>=? AND o.due_date<=?",
 		schedule.FormatDate(from), schedule.FormatDate(to))
 	if err != nil {
 		return err
@@ -81,7 +82,7 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 	for rows.Next() {
 		var k key
 		var o recorded
-		if err := rows.Scan(&k.payment, &k.due, &o.amount, &o.currency, &o.paid); err != nil {
+		if err := rows.Scan(&k.payment, &k.due, &o.amount, &o.currency, &o.paid, &o.removed); err != nil {
 			rows.Close()
 			return err
 		}
@@ -136,7 +137,9 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 		for _, due := range schedule.ProjectedDates(p, pauses[p.ID], from, to) {
 			k := key{p.ID, schedule.FormatDate(due)}
 			if o, ok := occurrences[k]; ok {
-				count(p.ID, due, o.amount, o.currency, o.paid)
+				if !o.removed {
+					count(p.ID, due, o.amount, o.currency, o.paid)
+				}
 				delete(occurrences, k)
 			} else {
 				count(p.ID, due, p.Amount, p.Currency, false)
@@ -145,6 +148,9 @@ func (s *Server) budget(w http.ResponseWriter, r *http.Request) error {
 	}
 	// Whatever is left (archived payments, history) counts as recorded.
 	for k, o := range occurrences {
+		if o.removed {
+			continue
+		}
 		due, _ := schedule.ParseDate(k.due)
 		count(k.payment, due, o.amount, o.currency, o.paid)
 	}

@@ -121,7 +121,7 @@ type Plan struct {
 }
 
 func LoadPlans(q store.Querier, where string) ([]Plan, error) {
-	rows, err := q.Query("SELECT id,amount_cents,anchor_day,next_index,first_due_date,currency,frequency FROM recurring_payments WHERE " + where)
+	rows, err := q.Query("SELECT id,amount_cents,anchor_day,next_index,first_due_date,currency,frequency FROM recurring_payments WHERE removed_at IS NULL AND " + where)
 	if err != nil {
 		return nil, err
 	}

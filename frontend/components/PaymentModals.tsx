@@ -1,3 +1,4 @@
+import { DeletePaymentModal } from '@/components/DeletePaymentModal';
 import { useRef, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { api, type Forecast, type ImportResult, type Occurrence, type Receipt, type Recurring, type TeamUser } from '@/lib/api';
@@ -284,10 +285,12 @@ export function PauseModal({ payment, onClose }: Close & { payment: Recurring })
 
 /** Marks a period paid; a forecast date (no period yet) is created and paid ahead in one step. */
 export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occurrence | Forecast }) {
-  const { settings, refresh } = useSession();
+  const { settings, refresh, isAdmin } = useSession();
+  const [deleting, setDeleting] = useState(false);
   const toast = useToast();
   const ahead = !('id' in o);
   const paid = !ahead && o.paid_at !== null;
+  if (deleting) return <DeletePaymentModal payment={o} onClose={onClose} />;
   return (
     <Modal title={ahead ? t('Оплатить заранее') : paid ? t('Изменить оплату') : t('Отметить оплату')} onClose={onClose}>
       <ModalForm
@@ -319,6 +322,7 @@ export function PayModal({ occurrence: o, onClose }: Close & { occurrence: Occur
           {ahead ? t('Период появится в календаре уже оплаченным, напоминания по нему не будет.') : t('Изменение затронет только этот период.')}
         </InfoBox>
         <SanctionsWarning wallet={o.wallet} />
+        {isAdmin && <Button type="button" $variant="ghost" onClick={() => setDeleting(true)}>{t('Удалить платёж…')}</Button>}
         <Field>
           {t('Фактическая дата оплаты')}
           <Input name="paid_at" type="date" defaultValue={(!ahead && o.paid_at) || settings.today} max={settings.today} required />

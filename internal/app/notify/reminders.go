@@ -227,7 +227,7 @@ func (w *ReminderWorker) Kick() {
 func (w *ReminderWorker) Wait() { w.kicks.Wait() }
 
 const eligible = `SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
-WHERE r.active=1 AND o.paid_at IS NULL AND o.due_date<=?`
+WHERE r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date<=?`
 
 type stmt struct {
 	query string
@@ -246,7 +246,7 @@ func (w *ReminderWorker) tick() error {
 			{"DELETE FROM auth_attempts WHERE reset_at<=?", []any{now}},
 			{"UPDATE reminders SET state='uncertain',error='Отправка прервана; автоматический повтор остановлен' WHERE state='sending' AND attempted_at<?", []any{now - 300}},
 			{`UPDATE reminders SET state='cancelled' WHERE state='pending' AND occurrence_id IN
-				(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0)`, nil},
+				(SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.paid_at IS NOT NULL OR r.active=0 OR r.removed_at IS NOT NULL OR o.removed_at IS NOT NULL)`, nil},
 		}
 		if w.Settings.TelegramEnabled && w.Settings.TelegramChatID != "" {
 			horizon := schedule.FormatDate(today.AddDate(0, 0, 3))
@@ -295,7 +295,7 @@ func (w *ReminderWorker) sendTeam() error {
 		err := w.DB.Write(func(tx *sql.Tx) error {
 			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`
 				FROM reminders m JOIN payment_occurrences o ON o.id=m.occurrence_id JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
-				WHERE m.state='pending' AND m.retry_after<=? AND r.active=1 AND o.paid_at IS NULL
+				WHERE m.state='pending' AND m.retry_after<=? AND r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL
 				ORDER BY o.due_date,o.id LIMIT 1`, time.Now().Unix()).Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate,
 				&row.PaymentURL, &row.PaymentDetails, &row.WalletNetwork, &row.WalletAddress, &row.SanctionsMatch)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -323,7 +323,7 @@ func (w *ReminderWorker) sendTeam() error {
 		err = w.DB.Write(func(tx *sql.Tx) error {
 			var paid sql.NullString
 			var active bool
-			if err := tx.QueryRow("SELECT o.paid_at,r.active FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.id=?",
+			if err := tx.QueryRow("SELECT o.paid_at,(r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL) FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.id=?",
 				row.OccurrenceID).Scan(&paid, &active); err != nil {
 				return err
 			}
@@ -367,7 +367,7 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 			err := tx.QueryRow(`SELECT o.id,r.title,o.amount_cents,o.currency,o.due_date,`+reminderColumns+`,t.chat_id
 				FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id`+sanctionsJoin+`
 				JOIN telegram_links t ON (t.user_id IS NOT NULL AND t.user_id=r.assignee_id) OR (t.is_admin=1 AND (r.assignee_id IS NOT NULL OR ?))
-				WHERE r.active=1 AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
+				WHERE r.active=1 AND r.removed_at IS NULL AND o.removed_at IS NULL AND o.paid_at IS NULL AND o.due_date>=? AND o.due_date<=?
 				AND NOT EXISTS (SELECT 1 FROM personal_reminders p WHERE p.occurrence_id=o.id AND p.chat_id=t.chat_id)
 				ORDER BY o.due_date,o.id LIMIT 1`, noTeamChat, schedule.FormatDate(today), schedule.FormatDate(today.AddDate(0, 0, 3))).
 				Scan(&row.OccurrenceID, &row.Title, &row.AmountCents, &row.Currency, &row.DueDate, &row.PaymentURL, &row.PaymentDetails,
@@ -389,8 +389,18 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 			return err
 		}
 		row.ChatID = itoa(chat)
-		result := w.send(row)
+		var result SendResult
 		err = w.DB.Write(func(tx *sql.Tx) error {
+			eligible, err := stillPayable(tx, row.OccurrenceID)
+			if err != nil {
+				return err
+			}
+			if !eligible {
+				// No message left the process; allow a later undo to enqueue it again.
+				_, err := tx.Exec("DELETE FROM personal_reminders WHERE occurrence_id=? AND chat_id=?", row.OccurrenceID, chat)
+				return err
+			}
+			result = w.send(row)
 			if result.State == "pending" {
 				// Certainly not delivered (no connection or rate limit): try again on a later pass.
 				_, err := tx.Exec("DELETE FROM personal_reminders WHERE occurrence_id=? AND chat_id=?", row.OccurrenceID, chat)
@@ -400,7 +410,7 @@ func (w *ReminderWorker) sendPersonal(today time.Time) error {
 			if result.State == "sent" {
 				state, sentAt = "sent", schedule.Timestamp()
 			}
-			_, err := tx.Exec("UPDATE personal_reminders SET state=?,sent_at=?,error=? WHERE occurrence_id=? AND chat_id=?",
+			_, err = tx.Exec("UPDATE personal_reminders SET state=?,sent_at=?,error=? WHERE occurrence_id=? AND chat_id=?",
 				state, sentAt, nullable(result.Error), row.OccurrenceID, chat)
 			return err
 		})
@@ -453,3 +463,11 @@ func (w *ReminderWorker) Run(ctx context.Context) {
 
 // stopped reports a shutdown: passes leave their loops between messages.
 func (w *ReminderWorker) stopped() bool { return w.stopping.Load() }
+
+// Called inside the transaction that sends, so a committed deletion stops stale claims too.
+func stillPayable(tx *sql.Tx, id int64) (bool, error) {
+	var eligible bool
+	err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id
+ WHERE o.id=? AND o.paid_at IS NULL AND o.removed_at IS NULL AND r.active=1 AND r.removed_at IS NULL)`, id).Scan(&eligible)
+	return eligible, err
+}

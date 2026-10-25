@@ -161,7 +161,7 @@ type Refresher struct {
 
 func (s *Refresher) walletsInUse() (bool, error) {
 	var n int
-	err := s.DB.QueryRow("SELECT COUNT(*) FROM recurring_payments WHERE wallet_key IS NOT NULL AND active=1").Scan(&n)
+	err := s.DB.QueryRow("SELECT COUNT(*) FROM recurring_payments WHERE wallet_key IS NOT NULL AND active=1 AND removed_at IS NULL").Scan(&n)
 	return n > 0, err
 }
 

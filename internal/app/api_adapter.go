@@ -65,7 +65,7 @@ func (a apiAdapter) UpdateRecurringPayment(w http.ResponseWriter, r *http.Reques
 	a.s.serveAPI(w, r, a.s.recurringUpdate)
 }
 
-func (a apiAdapter) ArchiveRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+func (a apiAdapter) ArchiveRecurringPayment(w http.ResponseWriter, r *http.Request, _ int, _ api.ArchiveRecurringPaymentParams) {
 	a.s.serveAPI(w, r, a.s.recurringDelete)
 }
 
@@ -245,4 +245,14 @@ func (a apiAdapter) ListNotifications(w http.ResponseWriter, r *http.Request) {
 
 func (a apiAdapter) MarkNotifications(w http.ResponseWriter, r *http.Request) {
 	a.s.serveAPI(w, r, a.s.notificationRead)
+}
+
+func (a apiAdapter) RestoreRecurringPayment(w http.ResponseWriter, r *http.Request, _ int) {
+	a.s.serveAPI(w, r, a.s.recurringRestore)
+}
+func (a apiAdapter) DeletePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
+	a.s.serveAPI(w, r, a.s.periodDelete)
+}
+func (a apiAdapter) RestorePeriod(w http.ResponseWriter, r *http.Request, _ int, _ string) {
+	a.s.serveAPI(w, r, a.s.periodRestore)
 }

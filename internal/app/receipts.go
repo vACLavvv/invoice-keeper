@@ -192,7 +192,7 @@ func (s *Server) receiptFile(w http.ResponseWriter, r *http.Request) error {
 	}
 	var name, contentType sql.NullString
 	var data []byte
-	err = s.DB.QueryRow("SELECT file_name,content_type,data FROM receipts WHERE id=? AND kind='file'", id).Scan(&name, &contentType, &data)
+	err = s.DB.QueryRow("SELECT file_name,content_type,data FROM receipts WHERE id=? AND kind='file' AND occurrence_id IN (SELECT o.id FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id WHERE o.removed_at IS NULL AND r.removed_at IS NULL)", id).Scan(&name, &contentType, &data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fail(404, "Чек не найден")
 	}
@@ -227,6 +227,9 @@ func (s *Server) receiptsDelete(w http.ResponseWriter, r *http.Request) error {
 			return fail(404, "Чек не найден")
 		}
 		if err != nil {
+			return err
+		}
+		if _, err := s.findOccurrence(tx, occurrenceID); err != nil {
 			return err
 		}
 		if user.Role != "admin" && (!author.Valid || author.Int64 != user.ID) {

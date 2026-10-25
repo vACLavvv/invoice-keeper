@@ -244,7 +244,7 @@ func (s *Server) recurringImport(w http.ResponseWriter, r *http.Request) error {
 
 	existing := map[string]bool{}
 	// SQLite lower() knows only ASCII, so Cyrillic titles are lowercased in Go.
-	titles, err := s.DB.Query("SELECT title FROM recurring_payments WHERE active=1")
+	titles, err := s.DB.Query("SELECT title FROM recurring_payments WHERE active=1 AND removed_at IS NULL")
 	if err != nil {
 		return err
 	}

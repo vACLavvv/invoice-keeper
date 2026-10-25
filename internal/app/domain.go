@@ -44,7 +44,7 @@ type Person struct {
 const occurrenceSelect = `SELECT o.id,o.recurring_payment_id,r.title,o.amount_cents,o.currency,o.due_date,o.paid_at,r.active,o.updated_by,
 r.frequency,r.category,u.id,u.display_name,u.username,(SELECT COUNT(*) FROM receipts x WHERE x.occurrence_id=o.id),
 r.payment_url,r.payment_details,r.description,r.wallet_network,r.wallet_address,x.sdn_name,x.currency,x.sdn_uid,EXISTS(SELECT 1 FROM sanctioned_addresses)
-FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id LEFT JOIN users u ON u.id=r.assignee_id
+FROM payment_occurrences o JOIN recurring_payments r ON r.id=o.recurring_payment_id AND r.removed_at IS NULL AND o.removed_at IS NULL LEFT JOIN users u ON u.id=r.assignee_id
 LEFT JOIN sanctioned_addresses x ON x.address_key=r.wallet_key`
 
 type scanner interface{ Scan(dest ...any) error }

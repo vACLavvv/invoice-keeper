@@ -27,6 +27,8 @@ const channelNames = (): Record<Delivery['channel'], string> => ({
 const actions = (): Record<string, string> => ({
   login: t('Вход в систему'), 'recurring.create': t('Добавлен регулярный платёж'), 'recurring.archive': t('Прекращён регулярный платёж'),
   'recurring.update': t('Изменён регулярный платёж'), 'recurring.pause': t('Платёж поставлен на паузу'), 'recurring.resume': t('Платёж снят с паузы'),
+  'recurring.delete': t('Удалён платёж со всеми периодами'), 'recurring.restore': t('Восстановлен платёж'),
+  'occurrence.delete': t('Удалён период платежа'), 'occurrence.restore': t('Восстановлен период платежа'),
   'recurring.import': t('Импорт платежей из CSV'),
   'occurrence.paid': t('Отмечена или исправлена оплата'), 'occurrence.unpaid': t('Отменена оплата'),
   'occurrence.prepaid': t('Оплачен будущий период'), 'occurrence.create': t('Создан будущий период'),

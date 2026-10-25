@@ -1,3 +1,4 @@
+import { DeletePaymentModal } from '@/components/DeletePaymentModal';
 import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { MonthSwitcher } from './MonthSwitcher';
@@ -27,6 +28,7 @@ export function Ledger({ mode }: { mode: Mode }) {
   const [assignee, setAssignee] = useState('');
   const [search, setSearch] = useState('');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+  const [deleting, setDeleting] = useState<Occurrence | null>(null);
   const [paying, setPaying] = useState<Occurrence | null>(null);
   const [receipts, setReceipts] = useState<Occurrence | null>(null);
 
@@ -185,6 +187,7 @@ export function Ledger({ mode }: { mode: Mode }) {
                           <a className="row-action edit" href={o.payment_url} target="_blank" rel="noopener noreferrer"
                             title={o.payment_details ? t('Оплатить · {details}', { details: o.payment_details }) : t('Открыть ссылку на оплату')}>{t('Оплатить ↗')}</a>
                         )}
+                        {isAdmin && <button type="button" className="row-action delete" onClick={() => setDeleting(o)}>{t('Удалить')}</button>}
                         <button type="button" className="row-action edit" onClick={() => setReceipts(o)} title={t('Чеки и ссылки')}>
                           {t('Чеки')}{o.receipts > 0 ? ` · ${o.receipts}` : ''}
                         </button>
@@ -208,6 +211,7 @@ export function Ledger({ mode }: { mode: Mode }) {
         <span><span className="small-dot" /> {t('Изменения сохраняются автоматически')}</span>
         <span>{settings.telegram_enabled ? t('Напоминания за 3 дня до срока') : t('Telegram выключен · настройте в .env')}</span>
       </div>
+      {deleting && <DeletePaymentModal payment={deleting} onClose={() => setDeleting(null)} />}
       {paying && <PayModal occurrence={paying} onClose={() => setPaying(null)} />}
       {receipts && <ReceiptsModal occurrence={receipts} onClose={() => setReceipts(null)} />}
     </>

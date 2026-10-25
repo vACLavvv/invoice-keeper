@@ -119,6 +119,9 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"audit_log", "chain", "TEXT"},
 	// v5: one-time payments (frequency 'once', see allowOneTime) and «За что платим».
 	{"recurring_payments", "description", "TEXT"},
+	// v6: reversible removal, separate from archiving (deleted_at).
+	{"recurring_payments", "removed_at", "TEXT"},
+	{"payment_occurrences", "removed_at", "TEXT"},
 }
 
 const frequencyColumn = "TEXT NOT NULL DEFAULT 'monthly' CHECK(frequency IN ('monthly','quarterly','yearly','once'))"
@@ -147,7 +150,7 @@ func allowOneTime(tx *sql.Tx) error {
 	return nil
 }
 
-const schemaVersion = 5
+const schemaVersion = 6
 
 // DB wraps SQLite. Every write runs in a BEGIN IMMEDIATE transaction, so writers
 // (requests, reminder workers, other processes) are serialized by SQLite itself.

@@ -706,7 +706,7 @@
         "tags": [
           "Регулярные платежи"
         ],
-        "summary": "Прекратить повторение, сохранив историю",
+        "summary": "Прекратить повторение или удалить весь платёж",
         "operationId": "archiveRecurringPayment",
         "security": [
           {
@@ -717,7 +717,7 @@
             "apiKey": []
           }
         ],
-        "description": "Только администратор. Новые периоды и напоминания больше не создаются; созданные периоды и оплаты остаются. Повторный вызов тоже возвращает 204.",
+        "description": "Только администратор. Новые периоды и напоминания больше не создаются; созданные периоды и оплаты остаются. Повторный вызов тоже возвращает 204. mode=delete скрывает платёж и все его периоды из списков, расчётов и календаря и отменяет неотправленные напоминания. Даты оплаты и чеки сохраняются для восстановления; ранее удалённые периоды остаются удалёнными.",
         "parameters": [
           {
             "name": "payment_id",
@@ -728,11 +728,24 @@
               "type": "integer",
               "minimum": 0
             }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "description": "archive (по умолчанию): прекратить повторение; delete: удалить платёж со всеми периодами с возможностью восстановления.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "archive",
+                "delete"
+              ],
+              "default": "archive"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Платёж в архиве"
+            "description": "Платёж архивирован или удалён"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -3480,6 +3493,186 @@
           }
         }
       }
+    },
+    "/api/v1/recurring-payments/{payment_id}/restore": {
+      "post": {
+        "tags": [
+          "Регулярные платежи"
+        ],
+        "summary": "Восстановить удалённый платёж",
+        "operationId": "restoreRecurringPayment",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "description": "Только администратор. Возвращает платёж, периоды, даты оплаты и чеки. Состояние архива/паузы сохраняется. Отдельно удалённые периоды не восстанавливаются.",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "description": "ID регулярного платежа",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Выполнено (повторный вызов также 204)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/recurring-payments/{payment_id}/periods/{due_date}": {
+      "delete": {
+        "tags": [
+          "Регулярные платежи"
+        ],
+        "summary": "Удалить один период",
+        "operationId": "deletePeriod",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "description": "Только администратор. Удаляет существующий или будущий период из графика (до трёх лет вперёд). Остальные периоды и расписание сохраняются. Удалённый срок не создаётся повторно.",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "description": "ID регулярного платежа",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "due_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Срок периода в формате YYYY-MM-DD, 2000–2100."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Выполнено (повторный вызов также 204)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/recurring-payments/{payment_id}/periods/{due_date}/restore": {
+      "post": {
+        "tags": [
+          "Регулярные платежи"
+        ],
+        "summary": "Восстановить удалённый период",
+        "operationId": "restorePeriod",
+        "security": [
+          {
+            "cookieAuth": [],
+            "csrfToken": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "description": "Только администратор. Восстанавливает период с прежними датой оплаты и чеками. Если весь платёж удалён, сначала восстановите его.",
+        "parameters": [
+          {
+            "name": "payment_id",
+            "in": "path",
+            "required": true,
+            "description": "ID регулярного платежа",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "due_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Срок периода в формате YYYY-MM-DD, 2000–2100."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Выполнено (повторный вызов также 204)"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5141,7 +5334,7 @@
           "action": {
             "type": "string",
             "example": "occurrence.paid",
-            "description": "login, recurring.create, recurring.archive, occurrence.paid, occurrence.unpaid, user.create, user.update, user.delete, api_key.create, api_key.delete, suggestion.create, suggestion.accept, suggestion.reject"
+            "description": "login, recurring.create, recurring.archive, recurring.delete, recurring.restore, occurrence.delete, occurrence.restore, occurrence.paid, occurrence.unpaid, user.create, user.update, user.delete, api_key.create, api_key.delete, suggestion.create, suggestion.accept, suggestion.reject"
           },
           "entity": {
             "type": "string"

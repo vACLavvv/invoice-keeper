@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import styled from 'styled-components';
+import styled, { css } from 'styled-components';
 import { Shell } from '@/components/Shell';
 import { Chevron, Muted, SectionTitle, Tile, TileTitle } from '@/components/ui';
 import { t } from '@/lib/i18n';
@@ -72,15 +72,15 @@ export default function Help() {
       </Grid>
       <SectionTitle>{t('правила этого сервера')}</SectionTitle>
       <Rules>
-        <Tile><Big>{settings.reminder_days}</Big><Muted>{t('дня до срока — напоминание')}</Muted></Tile>
-        <Tile><Big>{tz}</Big><Muted>{t('часовой пояс: от него зависит «сегодня»')}</Muted></Tile>
-        <Tile>
+        <RuleTile><Big>{settings.reminder_days}</Big><Muted>{t('дня до срока — напоминание')}</Muted></RuleTile>
+        <RuleTile><Big>{tz}</Big><Muted>{t('часовой пояс: от него зависит «сегодня»')}</Muted></RuleTile>
+        <RuleTile>
           <Big>{channels.length ? channels.join(' · ') : '—'}</Big>
           <Muted>{!channels.length ? t('напоминания пока не отправляются')
             : settings.telegram_enabled ? (settings.team_chat ? t('Telegram: общий чат и личные сообщения') : t('Telegram: личные сообщения привязанным пользователям'))
             : t('каналы напоминаний')}</Muted>
           {settings.bot_username && <Muted>@{settings.bot_username}</Muted>}
-        </Tile>
+        </RuleTile>
       </Rules>
       <DocsLink href="/api/v1/docs" target="_blank" rel="noopener noreferrer">
         <span><b>{t('Документация API')}</b><span>{t('Методы, параметры и примеры запросов для интеграций.')}</span></span>
@@ -120,18 +120,43 @@ const Grid = styled.div`
   gap: 1.2rem;
 `;
 
+// Each grid alternates in reading order, including when it becomes one column.
+// Local colour tokens keep titles, descriptions and arrows legible in both themes.
+const alternatingCard = css`
+  --help-card-background: #ffffff;
+  --help-card-ink: #202126;
+  --help-card-border: #dfe2e7;
+  --help-card-hover: #f3f4f6;
+  --ink: var(--help-card-ink);
+  --desk-ink: var(--help-card-ink);
+  --desk-muted: var(--help-card-ink);
+  --apple-secondary: var(--help-card-ink);
+  background: var(--help-card-background);
+  color: var(--help-card-ink);
+  border-color: var(--help-card-border);
+  &:nth-child(even) {
+    --help-card-background: #202126;
+    --help-card-ink: #ffffff;
+    --help-card-border: #202126;
+    --help-card-hover: #303238;
+  }
+`;
+
 const Card = styled(Link)`
   display: grid;
   gap: 0.6rem;
   padding: 1.6rem;
   border-radius: ${({ theme }) => theme.radius.lg};
-  background: var(--desk-surface);
-  border: 1px solid var(--desk-border);
-  color: var(--desk-ink);
+  border: 1px solid;
+  ${alternatingCard}
   font-size: 15px;
   line-height: 1.55;
   transition: background 0.15s;
-  &:hover { background: var(--desk-raised); }
+  &:hover { background: var(--help-card-hover); }
+`;
+
+const RuleTile = styled(Tile)`
+  ${alternatingCard}
 `;
 
 const Rules = styled.div`
@@ -144,7 +169,7 @@ const Rules = styled.div`
 const Big = styled.div`
   font-size: 2.6rem;
   font-weight: 500;
-  color: ${({ theme }) => theme.color.strong};
+  color: inherit;
   word-break: break-word;
 `;
 

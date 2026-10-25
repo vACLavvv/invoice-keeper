@@ -235,8 +235,6 @@ dialog.workspace-dialog { position: fixed; inset: 0; margin: auto; padding: 0; o
   .budget-card-detail { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
-  .budget-year-label { flex-wrap: wrap; font-size: 14px; gap: 10px; }
-  .budget-year-label input { width: 110px; min-height: 46px; }
   .login-form-side { width: 100%; min-width: 0; padding: 24px 20px; }
   .login-topbar { gap: 12px; flex-wrap: wrap; }
   .login-content { width: 100%; min-width: 0; max-width: none; }

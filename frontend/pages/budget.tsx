@@ -25,10 +25,6 @@ export default function BudgetPage() {
           <button type="button" className="status-tab selected" aria-live="polite">{t('На {year} год', { year })}</button>
           <button type="button" className="status-tab" aria-label={t('Следующий год')} onClick={() => setYear((y) => Math.min(2100, y + 1))}>›</button>
         </div>
-        <label className="budget-year-label">{t('Год')}
-          <input type="number" min={2000} max={2100} value={year} aria-label={t('Год бюджета')}
-            onChange={(e) => { const v = Number(e.target.value); if (v >= 2000 && v <= 2100) setYear(v); }} />
-        </label>
       </div>
       {!data ? <div className="ledger empty-state">{t('Считаем…')}</div> : (
         <>

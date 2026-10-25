@@ -165,6 +165,7 @@ export const en: Record<string, string> = {
   'Возможно, ссылка устарела. Вернитесь к платежам.': 'The link may be outdated. Go back to payments.',
   'на главную →': 'to the main page →',
   'Аккаунт': 'Account',
+  'Меню аккаунта': 'Account menu',
   'мой аккаунт': 'my account',
   '@{login} · {role}': '@{login} · {role}',
   'администратор': 'administrator',

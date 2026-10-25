@@ -5,6 +5,12 @@ import '@/styles/workspace/workspace.css';
 import '@/styles/workspace/apple.css';
 import '@/styles/workspace/extras.css';
 import '@/styles/workspace/typography.css';
+// The ui-ux-pro-max design system on top: Fira Sans for text, Fira Code for figures (self-hosted, CSP font-src 'self').
+import '@fontsource/fira-sans/400.css';
+import '@fontsource/fira-sans/500.css';
+import '@fontsource/fira-sans/600.css';
+import '@fontsource-variable/fira-code/index.css';
+import '@/styles/workspace/pro.css';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { useRouter } from 'next/router';

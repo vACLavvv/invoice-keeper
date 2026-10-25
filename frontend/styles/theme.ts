@@ -1,13 +1,13 @@
 import { createGlobalStyle, css } from 'styled-components';
 
 // Root font-size is 10px, so 1rem = 10px: 1.4rem is 14px.
-// Two palettes in the spirit of a hosting control panel: dark (default for dark systems) and light.
+// Two palettes of the ui-ux-pro-max design system (Swiss minimal, navy + amber): light and dark.
 // The sign-in page always uses the light landing palette (`light`).
 
 const shared = {
-  accent: '#0071e3',
-  accentDeep: '#005bbb',
-  accentSoft: 'rgba(0, 113, 227, 0.1)',
+  accent: '#1e40af',
+  accentDeep: '#1e3a8a',
+  accentSoft: 'rgba(30, 64, 175, 0.08)',
 };
 
 const light = {
@@ -22,7 +22,7 @@ const light = {
 const base = {
   light,
   radius: { sm: '0.8rem', md: '1.2rem', lg: '1.6rem', xl: '2.4rem', sheet: '4.8rem', pill: '99rem' },
-  font: `Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
+  font: `'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
   mobile: '@media (max-width: 720px)',
 };
 
@@ -31,26 +31,26 @@ export const darkTheme = {
   name: 'dark' as 'dark' | 'light',
   color: {
     ...shared,
-    page: '#0b0b0d',
-    surface: '#18181b',
-    tile: '#202024',
-    tileHover: '#26262b',
-    inset: '#111113',
+    page: '#0b1120',
+    surface: '#111a2e',
+    tile: '#172238',
+    tileHover: '#1d2a44',
+    inset: '#0d1526',
     hover: 'rgba(255, 255, 255, 0.03)',
-    line: '#303035',
-    text: '#e4e4e7',
-    strong: '#f5f5f7',
-    muted: '#a1a1aa',
-    faint: '#6b6b73',
-    ghost: '#303035',
+    line: '#24324d',
+    text: '#e2e8f0',
+    strong: '#f8fafc',
+    muted: '#94a3b8',
+    faint: '#64748b',
+    ghost: '#24324d',
     chevron: '#000000',
     chevronText: '#ffffff',
     shadow: 'rgba(0, 0, 0, 0.6)',
-    paid: '#4ed36b',
-    unpaid: '#f2c94c',
-    overdue: '#ff6150',
-    overdueSoft: 'rgba(255, 97, 80, 0.12)',
-    unpaidSoft: 'rgba(242, 201, 76, 0.12)',
+    paid: '#34d399',
+    unpaid: '#fbbf24',
+    overdue: '#f87171',
+    overdueSoft: 'rgba(248, 113, 113, 0.12)',
+    unpaidSoft: 'rgba(251, 191, 36, 0.12)',
   },
 };
 
@@ -59,26 +59,26 @@ export const lightTheme: typeof darkTheme = {
   name: 'light',
   color: {
     ...shared,
-    page: '#f5f5f7',
+    page: '#f8fafc',
     surface: '#ffffff',
-    tile: '#f5f5f7',
-    tileHover: '#ececf0',
+    tile: '#f1f5f9',
+    tileHover: '#e2e8f0',
     inset: '#ffffff',
     hover: 'rgba(17, 18, 20, 0.025)',
-    line: '#e5e5e9',
-    text: '#1d1d1f',
-    strong: '#1d1d1f',
-    muted: '#6e6e73',
-    faint: '#a1a1a6',
-    ghost: '#e5e5e9',
-    chevron: '#111214',
+    line: '#e2e8f0',
+    text: '#0f172a',
+    strong: '#0f172a',
+    muted: '#475569',
+    faint: '#94a3b8',
+    ghost: '#e2e8f0',
+    chevron: '#0f172a',
     chevronText: '#ffffff',
     shadow: 'rgba(17, 18, 20, 0.18)',
-    paid: '#1f9d55',
-    unpaid: '#b7791f',
-    overdue: '#d9412b',
-    overdueSoft: 'rgba(217, 65, 43, 0.1)',
-    unpaidSoft: 'rgba(183, 121, 31, 0.12)',
+    paid: '#047857',
+    unpaid: '#b45309',
+    overdue: '#dc2626',
+    overdueSoft: 'rgba(220, 38, 38, 0.08)',
+    unpaidSoft: 'rgba(180, 83, 9, 0.1)',
   },
 };
 

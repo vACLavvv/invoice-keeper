@@ -1,5 +1,10 @@
 // English texts for t(): the key is the Russian original. `node scripts/i18n-check.mjs` lists missing keys.
 export const en: Record<string, string> = {
+  'Фильтры': "Filters",
+  'По графику': "Scheduled",
+  'Выберите другой месяц или добавьте платёж.': "Choose another month or add a payment.",
+  'На этот месяц платежей нет': "No payments this month",
+  'Платежи по датам': "Payments by date",
   'Убрать': "Remove",
   'Файл не прикреплён': "File not attached",
   'Прикрепить': "Attach",

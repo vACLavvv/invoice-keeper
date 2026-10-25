@@ -38,8 +38,10 @@ export const Tile = styled.div<{ $interactive?: boolean }>`
   border-radius: var(--desk-radius, 20px);
   background: var(--panel);
   color: var(--ink);
+  overflow-wrap: anywhere;
   overflow: hidden;
   transition: border-color 0.16s;
+  @media (max-width: 600px) { padding: 18px; }
   ${({ $interactive }) => $interactive && css`cursor: pointer; &:hover { border-color: #a8b9ce; }`}
 `;
 
@@ -106,10 +108,13 @@ export const Textarea = styled.textarea`
 
 export const Row = styled.div<{ $gap?: number; $wrap?: boolean; $between?: boolean }>`
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: ${({ $gap = 1.2 }) => $gap * 10}px;
   flex-wrap: ${({ $wrap }) => ($wrap ? 'wrap' : 'nowrap')};
   justify-content: ${({ $between }) => ($between ? 'space-between' : 'flex-start')};
+  > * { min-width: 0; }
+  @media (max-width: 600px) { flex-wrap: wrap; }
 `;
 
 /** Payment title with a muted second line, as in the ledger. */

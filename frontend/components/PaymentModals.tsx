@@ -616,7 +616,7 @@ const Segment = styled.button<{ $selected: boolean }>`
 
 const ScheduleRow = styled(FormRow)`
   &.form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  @media (max-width: 480px) { &.form-row { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 600px) { &.form-row { grid-template-columns: minmax(0, 1fr); } }
 `;
 
 const Group = styled.div`

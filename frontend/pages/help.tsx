@@ -136,7 +136,7 @@ const Card = styled(Link)`
 
 const Rules = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 1.2rem;
   ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }
 `;

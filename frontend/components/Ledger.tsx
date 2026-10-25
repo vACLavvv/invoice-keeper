@@ -27,6 +27,7 @@ export function Ledger({ mode }: { mode: Mode }) {
   const [category, setCategory] = useState('');
   const [assignee, setAssignee] = useState('');
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
   const [deleting, setDeleting] = useState<Occurrence | null>(null);
   const [paying, setPaying] = useState<Occurrence | null>(null);
@@ -59,6 +60,7 @@ export function Ledger({ mode }: { mode: Mode }) {
   const overdue = filtered.filter((o) => o.status === 'overdue');
   const items = (overdueOnly && !history ? overdue : filtered).slice();
   if (history) items.sort((a, b) => (b.paid_at ?? '').localeCompare(a.paid_at ?? '') || b.id - a.id);
+  const filterCount = [kind, currency, category, assignee, history && historyFilter !== 'all'].filter(Boolean).length;
   const anyFilter = !!(q || currency || kind || category || assignee || range !== 'all' || overdueOnly || (history && historyFilter !== 'all'));
   const allOverdue = (data ?? []).filter((o) => o.active && o.status === 'overdue');
   const exportUrl = '/api/v1/payment-occurrences/export' + query({
@@ -118,42 +120,48 @@ export function Ledger({ mode }: { mode: Mode }) {
               )}
             </div>
           ) : <span />}
-          <div className="ledger-filters">
+          <div className="ledger-search-tools">
             <label className="search-field">
               <span aria-hidden="true">{ws.search}</span>
               <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Поиск')} aria-label={t('Найти платёж')} />
             </label>
+            <button type="button" className="button secondary ledger-filter-toggle" aria-expanded={filtersOpen} aria-controls="payment-filters" onClick={() => setFiltersOpen((v) => !v)}>
+              {t('Фильтры')}{filterCount > 0 && <span className="filter-count">{filterCount}</span>}
+            </button>
+          </div>
+        </div>
+        <div className="ledger-filter-panel" id="payment-filters" data-open={filtersOpen}>
             {history && (
-              <select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value as HistoryFilter)} aria-label={t('Записи истории')}>
+              <label>{t('Записи истории')}<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value as HistoryFilter)} aria-label={t('Записи истории')}>
                 <option value="all">{t('Все записи')}</option>
                 <option value="paid">{t('Оплаченные')}</option>
                 <option value="archived">{t('Архивные')}</option>
-              </select>
+              </select></label>
             )}
-            <select value={kind} onChange={(e) => setKind(e.target.value as Kind)} aria-label={t('Тип платежа')}>
+            <label>{t('Тип платежа')}<select value={kind} onChange={(e) => setKind(e.target.value as Kind)} aria-label={t('Тип платежа')}>
               <option value="">{t('Все типы')}</option>
               <option value="repeat">{t('Регулярные')}</option>
               <option value="once">{t('Разовые')}</option>
-            </select>
-            <select value={currency} onChange={(e) => setCurrency(e.target.value as Currency | '')} aria-label={t('Валюта')}>
+            </select></label>
+            <label>{t('Валюта')}<select value={currency} onChange={(e) => setCurrency(e.target.value as Currency | '')} aria-label={t('Валюта')}>
               <option value="">{t('Все валюты')}</option>
               {currencies.map((c) => <option key={c}>{c}</option>)}
-            </select>
+            </select></label>
             {categories.length > 0 && (
-              <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t('Категория')}>
+              <label>{t('Категория')}<select value={category} onChange={(e) => setCategory(e.target.value)} aria-label={t('Категория')}>
                 <option value="">{t('Все категории')}</option>
                 {categories.map((c) => <option key={c} value={c}>{c}</option>)}
                 <option value="-">{t('Без категории')}</option>
-              </select>
+              </select></label>
             )}
             {isAdmin && users.length > 0 && (
-              <select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label={t('Ответственный')}>
+              <label>{t('Ответственный')}<select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label={t('Ответственный')}>
                 <option value="">{t('Все ответственные')}</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.display_name}</option>)}
                 <option value="-">{t('Без ответственного')}</option>
-              </select>
+              </select></label>
             )}
-          </div>
+            {filterCount > 0 && <button type="button" className="text-button filter-reset" onClick={() => { setKind(''); setCurrency(''); setCategory(''); setAssignee(''); setHistoryFilter('all'); }}>{t('Сбросить фильтры')}</button>}
         </div>
         <div id="occurrence-table" className="table-wrap" aria-live="polite">
           {!data ? <div className="empty-state">{t('Загружаем платежи…')}</div> : items.length === 0 ? (
@@ -168,7 +176,7 @@ export function Ledger({ mode }: { mode: Mode }) {
               <tbody>
                 {items.map((o) => (
                   <tr key={o.id} className={`payment-row ${o.status}`}>
-                    <td>
+                    <td className="payment-title-cell">
                       <div className="payment-name">
                         <span className={`payment-icon ${o.currency.toLowerCase()}`} aria-hidden="true">{ws.receipt}</span>
                         <span>
@@ -177,11 +185,11 @@ export function Ledger({ mode }: { mode: Mode }) {
                         </span>
                       </div>
                     </td>
-                    <td className="amount-cell">{money(o.amount)}<small>{symbols[o.currency]}</small></td>
-                    <td className={`date-cell${o.is_late ? ' late' : ''}`}>{date(o.due_date)}<small className="due-hint">{dueHint(o, settings.today)}</small></td>
-                    <td><span className={`pill ${o.status}`}>{statusLabel(o.status)}</span></td>
-                    <td className="date-cell">{date(o.paid_at)}</td>
-                    <td>
+                    <td className="amount-cell payment-amount-cell" data-label={t('Сумма')}>{money(o.amount)}<small>{symbols[o.currency]}</small></td>
+                    <td className={`date-cell payment-due-cell${o.is_late ? ' late' : ''}`} data-label={t('Срок оплаты')}>{date(o.due_date)}<small className="due-hint">{dueHint(o, settings.today)}</small></td>
+                    <td className="payment-status-cell"><span className={`pill ${o.status}`}>{statusLabel(o.status)}</span></td>
+                    <td className="date-cell payment-paid-cell" data-label={t('Дата оплаты')} data-empty={!o.paid_at}>{date(o.paid_at)}</td>
+                    <td className="payment-actions-cell">
                       <div className="row-action-group">
                         {o.payment_url && o.status !== 'paid' && !o.wallet?.sanctioned && (
                           <a className="row-action edit" href={o.payment_url} target="_blank" rel="noopener noreferrer"
@@ -191,7 +199,7 @@ export function Ledger({ mode }: { mode: Mode }) {
                         {(o.status === 'paid' || !o.active) && <button type="button" className="row-action edit" onClick={() => setReceipts(o)} title={t('Чеки и ссылки')}>
                           {t('Чеки')}{o.receipts > 0 ? ` · ${o.receipts}` : ''}
                         </button>}
-                        <button type="button" className={`row-action${o.status === 'paid' || !o.active ? ' edit' : ''}`} onClick={() => setPaying(o)}>
+                        <button type="button" className={`row-action payment-primary-action${o.status === 'paid' || !o.active ? ' edit' : ''}`} onClick={() => setPaying(o)}>
                           {!o.active ? t('Открыть запись') : o.status === 'paid' ? t('Изменить ↗') : t('Отметить оплату')}
                         </button>
                       </div>

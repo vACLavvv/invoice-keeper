@@ -16,7 +16,7 @@
   &:hover { background: var(--desk-raised); }
 `,u=n.U.div.withConfig({displayName:"help__Rules",componentId:"sc-f6b861fc-2"})`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 1.2rem;
   ${({theme:e})=>e.mobile} { grid-template-columns: 1fr; }
 `,c=n.U.div.withConfig({displayName:"help__Big",componentId:"sc-f6b861fc-3"})`

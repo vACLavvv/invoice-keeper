@@ -1,0 +1,236 @@
+/* Responsive layout contract: desktop >1100, compact workspace <=1100,
+   phone <=720. These rules own layout; colours and type stay in refinement. */
+.main-shell, #main-content, .page-heading > div, .desk-panel,
+.overview-desk, .overview-secondary, .ledger, .table-wrap, .summary-card {
+  min-width: 0;
+}
+#main-content { width: 100%; }
+img, video { max-width: 100%; }
+.payment-name > span, .work-item-copy, .deadline-copy { min-width: 0; }
+.payment-name b, .work-item-copy b, .deadline-copy b { overflow-wrap: anywhere; }
+.form-info, .notice, .confirm-copy { overflow-wrap: anywhere; }
+html:has(dialog[open]) { overflow: hidden; }
+dialog { overscroll-behavior: contain; }
+.modal-header h2 { overflow-wrap: anywhere; }
+
+/* Search stays visible; secondary filters have their own area and labels. */
+.ledger-toolbar { flex-wrap: wrap; align-items: center; }
+.ledger-search-tools { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 260px; }
+.ledger-search-tools .search-field { flex: 1; min-width: 0; min-height: 46px; }
+.ledger-search-tools .search-field input { width: 100%; min-width: 0; }
+.ledger-filter-toggle { display: none; }
+.ledger-filter-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 14px; padding: 0 18px 18px; border-bottom: 1px solid var(--desk-border); }
+.ledger-filter-panel label { display: grid; align-content: start; gap: 6px; min-width: 0; font-size: 14px; color: var(--desk-muted); }
+.ledger-filter-panel select { width: 100%; min-width: 0; min-height: 46px; }
+.filter-reset { align-self: end; justify-self: start; min-height: 44px; }
+.filter-count { display: inline-grid; place-items: center; min-width: 22px; min-height: 22px; border-radius: 5px; background: var(--desk-active); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.mobile-preferences { border-top: 1px solid var(--desk-border); padding-top: 16px; margin-top: 16px; }
+.mobile-preferences .topbar-right { justify-content: flex-start; }
+.mobile-preferences .lang-toggle { display: inline-flex; }
+
+@media (max-width: 1100px) {
+  .topbar { gap: 12px; }
+  .mobile-brand { min-width: 0; gap: 6px; }
+  .mobile-brand > a { min-width: 0; white-space: nowrap; }
+  .menu-toggle, .topbar-right { flex-shrink: 0; }
+  .page-heading, body[data-page='overview'] .page-heading, body:not([data-page='overview']) .page-heading {
+    grid-template-columns: minmax(0, 1fr); min-height: 0; gap: 16px;
+  }
+  .page-heading > .button { justify-self: start; }
+  .ledger-filter-toggle { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .ledger-filter-panel[data-open='false'] { display: none; }
+  .ledger-toolbar { align-items: stretch; }
+  .ledger-toolbar > .status-tabs { flex: 1 1 100%; }
+  .period-heading { flex-wrap: wrap; align-items: center; gap: 16px; }
+  .period-switcher .icon-button { width: 44px; height: 44px; flex-shrink: 0; }
+  .period-switcher h2 { min-width: 0; font-size: 18px; }
+  .period-heading > .muted { max-width: none; text-align: left; font-size: 14px; }
+  .summary-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+
+  .overview-desk { grid-template-columns: minmax(0, 1fr); }
+  .month-ledger { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .month-ledger .desk-panel-heading, .month-ledger .ledger-explanation, .month-ledger .desk-panel-footer { grid-column: 1 / -1; }
+  .currency-ledger-row { min-width: 0; margin: 0; padding: 18px; border-top: 0; }
+  .currency-ledger-row + .currency-ledger-row { border-left: 1px solid var(--desk-rule); }
+  .currency-ledger-heading { display: grid; gap: 6px; }
+  .currency-ledger-heading strong { font-size: 25px; overflow-wrap: anywhere; }
+  .currency-ledger-caption { display: grid; gap: 4px; }
+}
+
+@media (max-width: 1250px) {
+  /* Semantic slots replace the old nth-child table coordinates. */
+  #occurrence-table { overflow: visible; }
+  #occurrence-table table, #occurrence-table tbody { display: block; width: 100%; white-space: normal; }
+  #occurrence-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  #occurrence-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; padding: 20px; border-bottom: 1px solid var(--desk-border); }
+  #occurrence-table tr:last-child { border-bottom: 0; }
+  #occurrence-table td:nth-child(n) { grid-column: auto; grid-row: auto; padding: 0; margin: 0; min-width: 0; border: 0; text-align: left; white-space: normal; font-size: 15px; }
+  #occurrence-table td:nth-child(n)::before { content: none; }
+  #occurrence-table td.payment-title-cell { grid-column: 1 / -1; }
+  #occurrence-table .payment-name { min-width: 0; }
+  #occurrence-table .payment-name b { font-size: 17px; }
+  #occurrence-table .payment-name small { font-size: 14px; }
+  #occurrence-table td.payment-amount-cell { grid-column: 1; grid-row: 2; font-size: 19px; font-weight: 600; overflow-wrap: anywhere; }
+  #occurrence-table td.payment-status-cell { grid-column: 2; grid-row: 2; justify-self: end; align-self: start; }
+  #occurrence-table td.payment-due-cell { grid-column: 1; grid-row: 3; }
+  #occurrence-table td.payment-paid-cell { grid-column: 2; grid-row: 3; }
+  #occurrence-table td.payment-paid-cell[data-empty='true'] { display: none; }
+  #occurrence-table td.payment-due-cell::before, #occurrence-table td.payment-paid-cell::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 13px; color: var(--desk-muted); }
+  #occurrence-table td.payment-actions-cell { grid-column: 1 / -1; padding-top: 14px; border-top: 1px solid var(--desk-rule); }
+  #occurrence-table .row-action-group { justify-content: flex-end; }
+  #occurrence-table .row-action { min-height: 44px; font-size: 14px; }
+}
+
+@media (max-width: 720px) {
+  #main-content { padding: 20px 16px 28px; }
+  .topbar, [data-theme='dark'] .topbar { padding: 0 12px; min-height: 64px; height: 64px; }
+  .mobile-brand > a { font-size: 18px; }
+  .topbar-right { gap: 0; }
+  .topbar > .topbar-right .lang-toggle, .workspace-date { display: none; }
+  .topbar .theme-toggle, .topbar .bell-button { width: 44px; min-width: 44px; padding: 0; min-height: 44px; justify-content: center; }
+  .bell-button span { font-size: 12px; }
+  .page-heading, body[data-page='overview'] .page-heading, body:not([data-page='overview']) .page-heading { padding: 0; margin-bottom: 24px; }
+  .page-heading h1 { font-size: clamp(26px, 6.5vw, 32px); line-height: 1.2; }
+  :root .page-heading .muted { font-size: 15px; max-width: none; line-height: 1.5; }
+  .page-heading > .button { width: 100%; justify-content: center; min-height: 46px; }
+  .page-heading > div { width: 100%; }
+  .mobile-navigation { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .mobile-navigation .nav-item { display: flex; justify-content: flex-start; width: 100%; min-height: 46px; font-size: 16px; white-space: normal; padding: 10px 12px; }
+  .mobile-navigation .nav-section { display: none; }
+  .mobile-navigation .nav-count { margin-left: auto; }
+  .mobile-account { flex-wrap: wrap; gap: 12px; font-size: 14px; }
+  .mobile-account a { overflow-wrap: anywhere; }
+
+  .period-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .payment-range-label { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 6px; font-size: 14px; }
+  .payment-range-label select { width: 100%; max-width: none; min-height: 46px; }
+  .period-heading .row-action-group { justify-content: space-between; gap: 8px; }
+  .period-heading .text-button { min-height: 44px; display: inline-flex; align-items: center; }
+  .period-switcher { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; width: 100%; gap: 10px; }
+  .period-switcher h2 { font-size: 18px; text-align: center; }
+  .period-heading > .muted { width: 100%; max-width: none; text-align: left; font-size: 14px; }
+  .ledger-toolbar { padding: 16px; gap: 12px; }
+  .ledger-toolbar > .status-tabs { flex-wrap: wrap; justify-content: flex-start; gap: 6px; }
+  .status-tab { flex: 0 1 auto; min-height: 44px; }
+  .ledger-search-tools { flex-basis: 100%; gap: 8px; }
+  .ledger-filter-toggle { padding: 10px 12px; }
+  .ledger-filter-panel { grid-template-columns: minmax(0, 1fr); padding: 0 16px 16px; }
+  #occurrence-table tr { padding: 18px 16px; gap: 12px; }
+  #occurrence-table td.payment-actions-cell .row-action-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  #occurrence-table .row-action { display: flex; align-items: center; justify-content: center; text-align: center; white-space: normal; width: 100%; padding: 11px 12px; }
+  #occurrence-table .payment-primary-action { grid-column: 1 / -1; order: -1; background: var(--desk-raised); border-color: var(--desk-control); color: var(--desk-ink); }
+  #occurrence-table td.payment-status-cell .pill { white-space: normal; }
+  .ledger-footer, .bottom-caption { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .ledger-footer > span:last-child, .bottom-caption > span { max-width: none; text-align: left; }
+  .notice { align-items: flex-start; }
+  .notice .attention-copy { flex: 1 1 180px; min-width: 0; }
+  .notice .notice-detail { margin-left: auto; min-height: 40px; }
+
+  /* Phone cards show their labels above values, without a rigid second column. */
+  .table-wrap.cards tr { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px 16px; gap: 16px 12px; }
+  .table-wrap.cards td { overflow-wrap: anywhere; white-space: normal; }
+  .table-wrap.cards td[data-label]:not(:first-child)::before { display: block; content: attr(data-label); font-size: 13px; line-height: 1.4; margin-bottom: 5px; }
+  .table-wrap.cards td:first-child { font-weight: 550; }
+  .table-wrap.cards .row-action-group { justify-content: flex-start; }
+  #recurring-table tr { padding: 18px 16px; gap: 16px 12px; }
+  #recurring-table .recurring-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #recurring-table .recurring-actions-cell { padding-top: 16px; }
+  #recurring-table .row-action { min-height: 44px; }
+  .log-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 4px; }
+  .log-tabs button { padding: 10px 6px; min-width: 0; min-height: 44px; font-size: 14px; white-space: normal; }
+  .audit-heading { flex-wrap: wrap; gap: 12px; }
+  .audit-heading > div { min-width: 0; }
+  .audit-pagination > div { flex-wrap: wrap; justify-content: center; }
+  .audit-pagination > div > span { flex: 1 1 100%; order: -1; }
+
+  .overview-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px; gap: 20px 0; }
+  .overview-counts a { padding-left: 16px; }
+  .overview-counts a:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .overview-counts span { font-size: 14px; }
+  .overview-counts strong { font-size: 28px; }
+  .desk-panel-heading { flex-wrap: wrap; padding: 18px 16px; gap: 10px; }
+  .desk-panel-heading > div { min-width: 0; flex: 1 1 170px; }
+  .desk-panel-heading h2 { font-size: 18px; }
+  .desk-panel-heading p { font-size: 14px; }
+  .desk-link { font-size: 14px; min-height: 40px; display: inline-flex; align-items: center; }
+  .queue-tabs { display: flex; width: auto; max-width: none; flex-wrap: wrap; margin: 0 16px 8px; gap: 4px; }
+  .queue-tabs button { flex: 1 1 auto; padding: 8px; font-size: 14px; min-height: 44px; }
+  .deadline-rows { padding: 0 16px; }
+  .deadline-row { grid-template-columns: 40px minmax(0, 1fr); gap: 6px 12px; padding: 16px 0; }
+  .deadline-date { grid-column: 1; grid-row: 1 / 3; align-self: start; width: 40px; }
+  .deadline-copy { grid-column: 2; }
+  .deadline-copy b { font-size: 16px; }
+  .deadline-copy small { white-space: normal; max-width: none; font-size: 14px; }
+  .deadline-amount { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; text-align: left; font-size: 18px; overflow-wrap: anywhere; }
+  .deadline-hint, .deadline-late { flex-basis: 100%; margin: 2px 0 0; font-size: 13px; }
+  .deadline-open { display: none; }
+  .desk-panel-footer { padding: 14px 16px; flex-wrap: wrap; gap: 6px; }
+  .month-ledger { display: flex; flex-direction: column; }
+  .currency-ledger-row { margin: 0 16px; padding: 16px 0; }
+  .currency-ledger-row + .currency-ledger-row { border-left: 0; border-top: 1px solid var(--desk-rule); }
+  .currency-ledger-heading { display: flex; flex-wrap: wrap; gap: 8px; }
+  .currency-ledger-caption { display: flex; flex-wrap: wrap; }
+  .overview-secondary { grid-template-columns: minmax(0, 1fr); }
+  .overview-secondary .work-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 16px; }
+  .overview-secondary .work-item-money { margin: 0; max-width: none; text-align: left; font-size: 17px; overflow-wrap: anywhere; }
+  .overview-secondary .work-item-state { display: inline; margin-left: 8px; }
+  .overview-secondary .work-item-arrow { display: none; }
+
+  .summary-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .summary-card { padding: 20px; }
+  .summary-top { margin-bottom: 16px; }
+  .summary-card .currency-label { font-size: 16px; }
+  .summary-amount { font-size: 30px; overflow-wrap: anywhere; }
+  .summary-caption { font-size: 14px; min-height: 0; }
+  .budget-card-detail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); font-size: 14px; gap: 16px; }
+  .budget-card-detail b { display: block; margin: 4px 0 0; overflow-wrap: anywhere; }
+  .budget-toolbar { flex-wrap: wrap; gap: 16px; }
+  .budget-toolbar label { font-size: 14px; }
+  .budget-switch .status-tab { min-width: 44px; min-height: 44px; }
+  .work-panel-heading { flex-wrap: wrap; gap: 12px; padding: 18px 16px; }
+  .work-panel-heading h2 { font-size: 18px; }
+  .chart-body { padding: 0 16px 18px; }
+
+  .notification-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 18px 16px; }
+  .notification-card > div { min-width: 0; }
+  .notification-card h3 { font-size: 17px; overflow-wrap: anywhere; }
+  .notification-card p, .notification-toolbar p, .browser-notice p { font-size: 15px; max-width: none; }
+  .notification-actions { width: 100%; margin: 0; gap: 8px; justify-content: flex-start; }
+  .notification-actions > .row-action { flex: 1 1 100%; }
+  .browser-notice .button { max-width: none; min-height: 44px; }
+  .browser-notice b { font-size: 16px; }
+
+  dialog, dialog.wide, dialog:has(.mobile-navigation) { width: calc(100vw - 24px); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 20px 18px; border-radius: 16px; }
+  .modal-header { gap: 12px; margin-bottom: 22px; }
+  .modal-header h2 { font-size: 23px; }
+  .modal-header .icon-button { width: 44px; height: 44px; }
+  .modal-form { gap: 18px; }
+  .modal-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding-top: 18px; }
+  .modal-actions .button { width: 100%; min-height: 46px; white-space: normal; }
+  .modal-actions .primary { order: -1; }
+  .app-footer { padding: 16px; }
+}
+@media (max-width: 380px) {
+  #main-content { padding-left: 12px; padding-right: 12px; }
+  .topbar, [data-theme='dark'] .topbar { padding-left: 8px; padding-right: 8px; gap: 4px; }
+  .mobile-brand { gap: 0; }
+  .mobile-brand > a { font-size: 16px; }
+  .ledger-search-tools { flex-wrap: wrap; }
+  .ledger-search-tools .search-field { flex-basis: 100%; }
+  .ledger-filter-toggle { width: 100%; }
+  #occurrence-table tr { grid-template-columns: minmax(0, 1fr); }
+  #occurrence-table td.payment-amount-cell, #occurrence-table td.payment-status-cell,
+  #occurrence-table td.payment-due-cell, #occurrence-table td.payment-paid-cell { grid-column: 1; grid-row: auto; justify-self: start; }
+  .table-wrap.cards tr, #recurring-table tr { grid-template-columns: minmax(0, 1fr); }
+  .budget-card-detail { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .budget-year-label { flex-wrap: wrap; font-size: 14px; gap: 10px; }
+  .budget-year-label input { width: 110px; min-height: 46px; }
+  .login-form-side { width: 100%; min-width: 0; padding: 24px 20px; }
+  .login-topbar { gap: 12px; flex-wrap: wrap; }
+  .login-content { width: 100%; min-width: 0; max-width: none; }
+  .login-content h1 { font-size: 32px; }
+  .login-content input { width: 100%; min-width: 0; }
+  .login-topbar .topbar-right .lang-toggle { display: inline-flex; }
+}

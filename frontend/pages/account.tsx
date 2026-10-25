@@ -366,6 +366,10 @@ const Item = styled.div`
   padding: 0.8rem 1.2rem;
   border-radius: ${({ theme }) => theme.radius.md};
   background: ${({ theme }) => theme.color.tile};
+  min-width: 0;
+  > div, > span { min-width: 0; overflow-wrap: anywhere; }
+  button { flex-shrink: 0; }
+  @media (max-width: 480px) { flex-wrap: wrap; padding: 12px; }
   b { color: ${({ theme }) => theme.color.strong}; font-weight: 500; }
   small { display: block; color: ${({ theme }) => theme.color.muted}; word-break: break-all; }
 `;
@@ -374,7 +378,7 @@ const Grid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.6rem;
-  ${({ theme }) => theme.mobile} { grid-template-columns: 1fr; }
+  @media (max-width: 1000px) { grid-template-columns: 1fr; }
   > * { gap: 1.2rem; }
 `;
 

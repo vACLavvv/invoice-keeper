@@ -54,6 +54,7 @@ export function MonthChart({ budget, currency }: { budget: Budget; currency: Cur
   const top = niceMax(Math.max(...budget.months.map((m) => Number(m.currencies[currency].planned))));
   const ticks = [1, 0.5, 0];
   return (
+    <>
     <Chart role="group" aria-label={t('План и оплата по месяцам, {c}', { c: currency })}>
       <Axis aria-hidden="true">{ticks.map((k) => <span key={k}>{short(top * k)}</span>)}</Axis>
       <Plot>
@@ -81,6 +82,19 @@ export function MonthChart({ budget, currency }: { budget: Budget; currency: Cur
         })}
       </Plot>
     </Chart>
+    <MobileMonths aria-label={t('План и оплата по месяцам, {c}', { c: currency })}>
+      {budget.months.map((m) => {
+        const line = m.currencies[currency];
+        const total = Number(line.planned);
+        return <button type="button" key={m.month} onClick={() => { setMonth(m.month); router.push('/calendar'); }}>
+          <span>{date(m.month + '-01', { month: 'long' })}</span>
+          <b>{money(line.planned)} {symbols[currency]}</b>
+          <span className="month-chart-track" aria-hidden="true"><i style={{ width: `${total / top * 100}%`, background: colors.remaining }}><i style={{ width: `${total > 0 ? Math.min(100, Number(line.paid) / total * 100) : 0}%`, background: colors.paid }} /></i></span>
+          <small>{t('Оплачено')} {money(line.paid)} {symbols[currency]}</small>
+        </button>;
+      })}
+    </MobileMonths>
+    </>
   );
 }
 
@@ -135,6 +149,18 @@ const Chart = styled.div`
   padding: 1.6rem 1.6rem 0.8rem;
   border-radius: ${({ theme }) => theme.radius.lg};
   background: ${({ theme }) => theme.color.surface};
+  @media (max-width: 720px) { display: none; }
+`;
+
+const MobileMonths = styled.div`
+  display: none;
+  @media (max-width: 720px) { display: grid; gap: 4px; }
+  button { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; text-align: left; padding: 12px 0; background: transparent; color: var(--desk-ink); border-bottom: 1px solid var(--desk-rule); }
+  button > span:first-child { font-size: 15px; text-transform: capitalize; }
+  b { text-align: right; font-size: 15px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  small { grid-column: 1 / -1; font-size: 13px; color: var(--desk-muted); }
+  .month-chart-track { grid-column: 1 / -1; height: 7px; background: var(--desk-raised); border-radius: 4px; overflow: hidden; }
+  i { display: block; height: 100%; border-radius: inherit; }
 `;
 
 const Axis = styled.div`
@@ -241,8 +267,9 @@ const BarRow = styled.div`
   outline-offset: 2px;
   &:hover, &:focus-visible { background: ${({ theme }) => theme.color.hover}; }
   ${({ theme }) => theme.mobile} {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+    ${Tooltip} { left: 0; right: 0; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
   }
 `;
 
@@ -266,4 +293,5 @@ const BarValue = styled.span`
   color: ${({ theme }) => theme.color.muted};
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  ${({ theme }) => theme.mobile} { white-space: normal; overflow-wrap: anywhere; text-align: right; }
 `;

@@ -164,6 +164,7 @@ export function Shell({ title, heading, subtitle, action, extra, children }: Pro
         <nav className="mobile-navigation" aria-label={t('Разделы')}>{navigation}</nav>
         <div className="mobile-account"><Link href="/account" onClick={() => setMenuOpen(false)}>{user.display_name} · {t('Аккаунт')}</Link>
           <button className="text-button" type="button" onClick={logout}>{t('Выйти')}</button></div>
+        <div className="mobile-preferences"><Switches /></div>
       </Modal>}
       {creating && <CreatePaymentModal onClose={() => setCreating(false)} />}
     </div>

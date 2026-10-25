@@ -61,17 +61,17 @@ export default function Suggestions() {
         </Grid>
       )}
       {decided.length > 0 && (
-        <TableWrap>
+        <TableWrap className="cards">
           <table>
             <thead><tr><th>{t('Разобрано')}</th><th>{t('Сумма')}</th><th>{t('Следующая оплата')}</th><th>{t('Решение')}</th><th>{t('Источник')}</th></tr></thead>
             <tbody>
               {decided.map((s) => (
                 <tr key={s.id}>
                   <td>{s.title}</td>
-                  <td><Amount>{symbols[s.currency]} {money(s.amount)}</Amount></td>
-                  <td><Muted>{date(s.next_due_date, { day: '2-digit', month: '2-digit', year: 'numeric' })}</Muted></td>
-                  <td><Pill $status={s.status === 'accepted' ? 'active' : 'archived'}>{s.status === 'accepted' ? t('добавлено') : t('отклонено')}</Pill></td>
-                  <td><Muted>{s.source_key.split(':')[0]}</Muted></td>
+                  <td data-label={t('Сумма')}><Amount>{symbols[s.currency]} {money(s.amount)}</Amount></td>
+                  <td data-label={t('Следующая оплата')}><Muted>{date(s.next_due_date, { day: '2-digit', month: '2-digit', year: 'numeric' })}</Muted></td>
+                  <td data-label={t('Решение')}><Pill $status={s.status === 'accepted' ? 'active' : 'archived'}>{s.status === 'accepted' ? t('добавлено') : t('отклонено')}</Pill></td>
+                  <td data-label={t('Источник')}><Muted>{s.source_key.split(':')[0]}</Muted></td>
                 </tr>
               ))}
             </tbody>
@@ -122,7 +122,7 @@ function AcceptModal({ suggestion: s, onClose }: { suggestion: Suggestion; onClo
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(28rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 28rem), 1fr));
   gap: 1.6rem;
   ${Tile} { gap: 0.6rem; }
   ${Row} { margin-top: 1.2rem; }

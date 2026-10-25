@@ -76,17 +76,17 @@ export default function Extension() {
       {!keys ? <Empty>{t('Загружаем…')}</Empty> : keys.length === 0 ? (
         <Empty><b>{t('Ключей пока нет')}</b>{t('Создайте ключ, чтобы подключить расширение.')}</Empty>
       ) : (
-        <TableWrap>
+        <TableWrap className="cards">
           <table>
             <thead><tr><th>{t('Название')}</th><th>{t('Ключ')}</th><th>{t('Создан')}</th><th>{t('Действует до')}</th><th>{t('Последнее использование')}</th><th /></tr></thead>
             <tbody>
               {keys.map((k) => (
                 <tr key={k.id}>
                   <td>{k.name}</td>
-                  <td><Muted><code>{k.prefix}…</code></Muted></td>
-                  <td><Muted>{date(k.created_at)}</Muted></td>
-                  <td><Muted>{k.expires_at ? date(k.expires_at, { day: 'numeric', month: 'short', year: 'numeric' }) : t('бессрочно')}</Muted></td>
-                  <td><Muted>{k.last_used_at ? time.format(new Date(k.last_used_at)) : t('ещё не использовался')}</Muted></td>
+                  <td data-label={t('Ключ')}><Muted><code>{k.prefix}…</code></Muted></td>
+                  <td data-label={t('Создан')}><Muted>{date(k.created_at)}</Muted></td>
+                  <td data-label={t('Действует до')}><Muted>{k.expires_at ? date(k.expires_at, { day: 'numeric', month: 'short', year: 'numeric' }) : t('бессрочно')}</Muted></td>
+                  <td data-label={t('Последнее использование')}><Muted>{k.last_used_at ? time.format(new Date(k.last_used_at)) : t('ещё не использовался')}</Muted></td>
                   <td><Button type="button" $small $variant="secondary" onClick={() => remove(k)}>{t('удалить')}</Button></td>
                 </tr>
               ))}
@@ -183,7 +183,7 @@ function TokenModal({ token, onClose }: { token: string; onClose: () => void }) 
 
 const Steps = styled.div`
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 1.6rem;
   ${Tile} { min-height: 18rem; gap: 1rem; }
   code { color: ${({ theme }) => theme.color.strong}; }
@@ -192,9 +192,8 @@ const Steps = styled.div`
 `;
 
 const Corner = styled.div`
-  position: absolute;
-  right: 1.6rem;
-  bottom: 1.6rem;
+  justify-self: start;
+  margin-top: 0.8rem;
 `;
 
 const Token = styled.code`

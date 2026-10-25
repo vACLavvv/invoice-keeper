@@ -12,8 +12,8 @@ export default function Help() {
     { href: '/recurring', title: t('Регулярные'), text: t('Платежи с повтором: месяц, квартал или год. Изменение, пауза, импорт из CSV.') },
     { href: '/calendar', title: t('Календарь'), text: t('Сроки месяца по дням; клик по платежу открывает отметку оплаты.') },
     { href: '/budget', title: t('Бюджет'), text: t('План на год по месяцам и категориям, оплачено и остаток в каждой валюте.') },
-    { href: '/extension', title: t('Расширение'), text: t('Подтягивает платежи из кабинетов сервисов в один клик.') },
     { href: '/account', title: t('Аккаунт'), text: t('Привязка Telegram, пароль или двухфакторный вход, активные сессии и токены API.') },
+    { href: '/extension', title: t('Расширение'), text: t('Подтягивает платежи из кабинетов сервисов в один клик.') },
     ...(isAdmin ? [
       { href: '/team', title: t('Команда'), text: t('Обычные пользователи: создать, изменить, удалить.') },
       { href: '/suggestions', title: t('Предложения'), text: t('Платежи, найденные расширением: принять или отклонить.') },
@@ -116,17 +116,28 @@ export default function Help() {
 
 const Grid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
-  gap: 1.2rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+  container: help-sections / inline-size;
 `;
 
-// Each grid alternates in reading order, including when it becomes one column.
-// Local colour tokens keep titles, descriptions and arrows legible in both themes.
-const alternatingCard = css`
+const lightCard = css`
   --help-card-background: #ffffff;
   --help-card-ink: #202126;
   --help-card-border: #dfe2e7;
   --help-card-hover: #f3f4f6;
+`;
+
+const darkCard = css`
+  --help-card-background: #202126;
+  --help-card-ink: #ffffff;
+  --help-card-border: #202126;
+  --help-card-hover: #303238;
+`;
+
+// Local colour tokens keep titles, descriptions and arrows legible in both themes.
+const alternatingCard = css`
+  ${lightCard}
   --ink: var(--help-card-ink);
   --desk-ink: var(--help-card-ink);
   --desk-muted: var(--help-card-ink);
@@ -135,10 +146,7 @@ const alternatingCard = css`
   color: var(--help-card-ink);
   border-color: var(--help-card-border);
   &:nth-child(even) {
-    --help-card-background: #202126;
-    --help-card-ink: #ffffff;
-    --help-card-border: #202126;
-    --help-card-hover: #303238;
+    ${darkCard}
   }
 `;
 
@@ -153,6 +161,18 @@ const Card = styled(Link)`
   line-height: 1.55;
   transition: background 0.15s;
   &:hover { background: var(--help-card-hover); }
+
+  /* With odd column counts, alternating items already form a checkerboard.
+     Even counts need every second row inverted. Thresholds match 260px + 12px. */
+  @container help-sections (532px <= width < 804px) {
+    &:nth-child(n) { ${lightCard} }
+    &:nth-child(4n + 2), &:nth-child(4n + 3) { ${darkCard} }
+  }
+  @container help-sections (1076px <= width < 1348px) {
+    &:nth-child(n) { ${lightCard} }
+    &:nth-child(8n + 2), &:nth-child(8n + 4),
+    &:nth-child(8n + 5), &:nth-child(8n + 7) { ${darkCard} }
+  }
 `;
 
 const RuleTile = styled(Tile)`
